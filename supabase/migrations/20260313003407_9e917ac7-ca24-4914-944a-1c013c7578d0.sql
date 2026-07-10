@@ -1,0 +1,1 @@
+UPDATE public.repricer_settings SET safe_mode_active = false, safe_mode_reason = NULL, safe_mode_activated_at = NULL, safe_mode_auto_resume_at = NULL, circuit_breaker_error_count = 0, circuit_breaker_window_start = now() WHERE user_id = '020dd71f-78ce-4bc2-9117-dc997c533ab9';

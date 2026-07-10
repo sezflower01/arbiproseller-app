@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "CHU4wqPjHKw=",
+  "success": true,
+  "projectFilePath": "/dev-server/print-clients/windows/ArbiProSeller.PrintClient.csproj",
+  "expectedPackageFiles": [
+    "/root/.nuget/packages/microsoft.win32.systemevents/8.0.0/microsoft.win32.systemevents.8.0.0.nupkg.sha512",
+    "/root/.nuget/packages/system.drawing.common/8.0.13/system.drawing.common.8.0.13.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.netcore.app.runtime.win-x64/8.0.24/microsoft.netcore.app.runtime.win-x64.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.aspnetcore.app.runtime.win-x64/8.0.24/microsoft.aspnetcore.app.runtime.win-x64.8.0.24.nupkg.sha512",
+    "/root/.nuget/packages/microsoft.netcore.app.host.win-x64/8.0.24/microsoft.netcore.app.host.win-x64.8.0.24.nupkg.sha512"
+  ],
+  "logs": []
+}

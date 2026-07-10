@@ -1,0 +1,71 @@
+name: Build Windows Print Client
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'print-clients/windows/**'
+      - '.github/workflows/build-print-client.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. print-client-v1.0.1). Leave blank to only upload as workflow artifact.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: print-clients/windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish self-contained single-file EXE
+        shell: cmd
+        run: |
+          dotnet publish ArbiProSeller.PrintClient.csproj ^
+            -c Release ^
+            -r win-x64 ^
+            --self-contained true ^
+            /p:PublishSingleFile=true ^
+            /p:IncludeNativeLibrariesForSelfExtract=true ^
+            /p:EnableCompressionInSingleFile=true ^
+            -o dist
+
+      - name: Verify EXE exists
+        shell: pwsh
+        run: |
+          if (-Not (Test-Path "dist/ArbiProSellerPrintClient.exe")) {
+            Write-Error "EXE was not produced"
+            exit 1
+          }
+          Get-Item dist/ArbiProSellerPrintClient.exe | Select-Object Name, Length, LastWriteTime
+
+      - name: Upload as workflow artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArbiProSellerPrintClient
+          path: print-clients/windows/dist/ArbiProSellerPrintClient.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create / update GitHub Release (when tag provided)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: ${{ github.event.inputs.release_tag }}
+          files: print-clients/windows/dist/ArbiProSellerPrintClient.exe
+          generate_release_notes: true

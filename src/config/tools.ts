@@ -1,0 +1,54 @@
+export type ToolLink = { 
+  path: string; 
+  label: string; 
+  ga?: string; 
+  adminOnly?: boolean;
+};
+
+export const TOOLS: ToolLink[] = [
+  { path: '/tools/repricer', label: 'Advanced Repricer', ga: 'tool_menu_repricer' },
+  { path: '/tools/product-analyzer', label: 'Product Analyzer', ga: 'tool_menu_product_analyzer' },
+  { path: '/tools/seller-analyzer', label: 'Seller Analyzer', ga: 'tool_menu_seller_analyzer' },
+  { path: '/tools/sales', label: 'Sales Report', ga: 'tool_menu_sales', adminOnly: true },
+  { path: '/tools/roi', label: 'ROI Calculator', ga: 'tool_menu_roi', adminOnly: true },
+  { path: '/tools/target-roi-price', label: 'Target ROI Price', ga: 'tool_menu_target_roi_price', adminOnly: true },
+  { path: '/tools/fba-fee', label: 'FBA Fee Calculator', ga: 'tool_menu_fba_fee', adminOnly: true },
+  { path: '/tools/break-even', label: 'Break-even Calculator', ga: 'tool_menu_break_even', adminOnly: true },
+  { path: '/tools/bsr-sales', label: 'BSR → Sales Estimator', ga: 'tool_menu_bsr_sales', adminOnly: true },
+  { path: '/tools/tracking', label: 'Worldwide Tracking', ga: 'tool_menu_tracking', adminOnly: true },
+  { path: '/tools/label-printing', label: 'Label Printing', ga: 'tool_menu_label_printing', adminOnly: true },
+  { path: '/tools/printing-without-pdf', label: 'Printing Without PDF', ga: 'tool_menu_printing_without_pdf', adminOnly: true },
+  { path: '/tools/create-listing', label: 'Create Listing', ga: 'tool_menu_create_listing' },
+  { path: '/tools/sourcer', label: 'Sourcer', ga: 'tool_menu_sourcer', adminOnly: true },
+  { path: '/tools/inventory', label: 'Inventory Management', ga: 'tool_menu_inventory', adminOnly: true },
+  { path: '/tools/synced-inventory', label: 'Inventory', ga: 'tool_menu_synced_inventory' },
+  { path: '/tools/inventory-review', label: 'Inventory Review Queue', ga: 'tool_menu_inventory_review', adminOnly: true },
+  { path: '/tools/created-listings', label: 'Product Library', ga: 'tool_menu_created_listings' },
+  { path: '/tools/still-thinking', label: 'Still Thinking', ga: 'tool_menu_still_thinking' },
+  { path: '/tools/suppliers', label: 'Suppliers', ga: 'tool_menu_suppliers' },
+  { path: '/tools/reports', label: 'Reports & Accounting', ga: 'tool_menu_reports', adminOnly: true },
+  { path: '/tools/profit-loss', label: 'Profit & Loss', ga: 'tool_menu_profit_loss', adminOnly: true },
+  { path: '/tools/fec-backfill', label: 'FEC Backfill', ga: 'tool_menu_fec_backfill', adminOnly: true },
+  { path: '/tools/price-discrepancy-audit', label: 'Price Discrepancy Audit', ga: 'tool_menu_price_discrepancy_audit', adminOnly: true },
+  { path: '/tools/disposition-management', label: 'Disposition Management', ga: 'tool_menu_disposition_management' },
+  { path: '/tools/inventory-writeoff', label: 'Inventory Write-Off', ga: 'tool_menu_inventory_writeoff' },
+  
+  { path: '/tools/settlement', label: 'Settlement', ga: 'tool_menu_settlement', adminOnly: true },
+  { path: '/tools/reimbursements', label: 'Reimbursements', ga: 'tool_menu_reimbursements', adminOnly: true },
+  { path: '/tools/shipment-builder', label: 'FBA Shipment Builder', ga: 'tool_menu_shipment_builder', adminOnly: true },
+  { path: '/tools/purchase-vs-shipment', label: 'Purchase vs Shipment Report', ga: 'tool_menu_purchase_vs_shipment' },
+  { path: '/tools/shipment-tracking', label: 'Shipment Tracking', ga: 'tool_menu_shipment_tracking', adminOnly: true },
+  { path: '/tools/shipment-accounting', label: 'Reports Profit & Loss', ga: 'tool_menu_shipment_accounting', adminOnly: true },
+  { path: '/tools/replenish-search', label: 'Replenish Search', ga: 'tool_menu_replenish_search', adminOnly: true },
+  { path: '/tools/need-buy-again', label: 'Need to Buy Again', ga: 'tool_menu_need_buy_again' },
+  { path: '/tools/fetch-listing-price', label: 'Fetch Listing Price', ga: 'tool_menu_fetch_listing_price', adminOnly: true },
+  { path: '/tools/asin-lookup', label: 'ASIN Title & Image', ga: 'tool_menu_asin_lookup', adminOnly: true },
+  { path: '/tools/upc-to-asin', label: 'UPC/EAN → ASIN', ga: 'tool_menu_upc_to_asin', adminOnly: true },
+  { path: '/tools/price-history', label: 'Price History', ga: 'tool_menu_price_history', adminOnly: true },
+  { path: '/tools/product-finder', label: 'Product Finder', ga: 'tool_menu_product_finder', adminOnly: true },
+  { path: '/tools/my-database-products', label: 'My Database Products', ga: 'tool_menu_my_database_products' },
+  { path: '/tools/approved-products', label: 'Approved Product Finder', ga: 'tool_menu_approved_products' },
+  { path: '/tools/amazon-connect', label: 'Grant Us Access', ga: 'tool_menu_amazon_connect' },
+  { path: '/tools/email-center', label: 'Email Center', ga: 'tool_menu_email_center' },
+  { path: '/tools/scan-categories', label: 'Scan Categories', ga: 'tool_menu_scan_categories', adminOnly: true },
+];

@@ -1,0 +1,1 @@
+ALTER TABLE public.repricer_rules ADD COLUMN IF NOT EXISTS war_protection_minutes integer DEFAULT 30;

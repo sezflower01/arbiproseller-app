@@ -1,0 +1,1 @@
+ALTER TABLE public.user_sync_status ADD COLUMN IF NOT EXISTS repricer_assignments_created boolean NOT NULL DEFAULT false;

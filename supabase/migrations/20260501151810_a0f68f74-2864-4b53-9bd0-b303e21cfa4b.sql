@@ -1,0 +1,30 @@
+SELECT cron.unschedule(40);
+
+SELECT cron.schedule(
+  'sync-inventory-report-4h',
+  '0 */4 * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://mstibdszibcheodvnprm.supabase.co/functions/v1/sync-inventory-report',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdGliZHN6aWJjaGVvZHZucHJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MTA3NTUsImV4cCI6MjA1OTM4Njc1NX0.akgxF2XOOlNk8OTECcLeOSP1DWqRY89dBDW8GkE2pgc',
+      'apikey', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdGliZHN6aWJjaGVvZHZucHJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MTA3NTUsImV4cCI6MjA1OTM4Njc1NX0.akgxF2XOOlNk8OTECcLeOSP1DWqRY89dBDW8GkE2pgc'
+    ),
+    body := jsonb_build_object('triggered_by', 'cron', 'time', now()),
+    timeout_milliseconds := 300000
+  ) AS request_id;
+  $$
+);
+
+-- Also kick it off NOW so the user gets fresh data immediately (not waiting for 16:00 UTC)
+SELECT net.http_post(
+  url := 'https://mstibdszibcheodvnprm.supabase.co/functions/v1/sync-inventory-report',
+  headers := jsonb_build_object(
+    'Content-Type', 'application/json',
+    'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdGliZHN6aWJjaGVvZHZucHJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MTA3NTUsImV4cCI6MjA1OTM4Njc1NX0.akgxF2XOOlNk8OTECcLeOSP1DWqRY89dBDW8GkE2pgc',
+    'apikey', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdGliZHN6aWJjaGVvZHZucHJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MTA3NTUsImV4cCI6MjA1OTM4Njc1NX0.akgxF2XOOlNk8OTECcLeOSP1DWqRY89dBDW8GkE2pgc'
+  ),
+  body := jsonb_build_object('triggered_by', 'manual_kick_after_cron_fix', 'time', now()),
+  timeout_milliseconds := 300000
+) AS request_id;

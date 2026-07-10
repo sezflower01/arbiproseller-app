@@ -1,0 +1,1 @@
+UPDATE inventory SET available = 26, reserved = 8, source = 'amazon_sync', listing_status = 'ACTIVE', updated_at = now() WHERE id = '649f30af-f545-48f7-a423-b067a63ca54e';

@@ -1,0 +1,1 @@
+UPDATE public.repricer_rules SET profit_guard_mode = 'respect_min_max' WHERE id IN ('61739d72-78ff-4bbe-b309-d8ae5d5d8794', '662a4759-8bc8-4d29-b763-c8258a436dae');

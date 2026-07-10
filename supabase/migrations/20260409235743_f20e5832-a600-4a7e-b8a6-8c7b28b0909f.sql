@@ -1,0 +1,1 @@
+ALTER TABLE public.created_listings ADD COLUMN notes TEXT DEFAULT NULL;

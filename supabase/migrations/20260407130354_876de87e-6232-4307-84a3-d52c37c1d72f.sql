@@ -1,0 +1,2 @@
+ALTER TABLE public.inventory DROP CONSTRAINT inventory_source_check;
+ALTER TABLE public.inventory ADD CONSTRAINT inventory_source_check CHECK (source = ANY (ARRAY['manual', 'amazon_sync', 'amazon_sync_fbm', 'preserved_db']));

@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_repricer_price_actions_user_created ON public.repricer_price_actions (user_id, created_at DESC);

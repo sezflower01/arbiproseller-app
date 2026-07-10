@@ -1,0 +1,1 @@
+SELECT public.enqueue_full_inventory_refresh('020dd71f-78ce-4bc2-9117-dc997c533ab9'::uuid);

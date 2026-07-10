@@ -1,0 +1,1 @@
+ALTER TABLE public.repricer_price_actions ADD COLUMN rule_name text;

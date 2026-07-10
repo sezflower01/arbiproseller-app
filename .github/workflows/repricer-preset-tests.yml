@@ -1,0 +1,35 @@
+name: Repricer Preset Tests
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/repricer-ai-evaluate/**'
+      - '.github/workflows/repricer-preset-tests.yml'
+  pull_request:
+    paths:
+      - 'supabase/functions/repricer-ai-evaluate/**'
+      - '.github/workflows/repricer-preset-tests.yml'
+
+# Behavior-lock guard: these tests prove that the 6 repricer presets remain
+# semantically distinct (snapshot suite) and behave correctly under realistic
+# market conditions (24 scenario suite). Failure here means a preset has
+# silently drifted — block the merge.
+jobs:
+  preset-behavior-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Run preset snapshot tests (identity + uniqueness)
+        run: deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/presets_snapshot_test.ts
+
+      - name: Run 24 behavioral scenario tests
+        run: deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/scenarios_test.ts
+
+      - name: Run underpriced-recovery + anomaly + fast-lane cooldown tests
+        run: deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/recovery_test.ts

@@ -1,0 +1,469 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
+};
+
+function hmacSha256(key: string | Uint8Array, data: string): Uint8Array {
+  const hmac = createHmac('sha256', key as any);
+  hmac.update(data);
+  return new Uint8Array(hmac.digest());
+}
+
+function getSigningKey(key: string, dateStamp: string, region: string, service: string): Uint8Array {
+  const kDate = hmacSha256(`AWS4${key}`, dateStamp);
+  const kRegion = hmacSha256(kDate, region);
+  const kService = hmacSha256(kRegion, service);
+  return hmacSha256(kService, 'aws4_request');
+}
+
+function getAwsSignature(stringToSign: string, kSigning: Uint8Array): string {
+  const hmac = createHmac('sha256', kSigning as any);
+  hmac.update(stringToSign);
+  return hmac.digest('hex');
+}
+
+async function getLwaAccessToken(refreshToken: string): Promise<string> {
+  const clientId = Deno.env.get('SPAPI_LWA_CLIENT_ID') || Deno.env.get('LWA_CLIENT_ID');
+  const clientSecret = Deno.env.get('SPAPI_LWA_CLIENT_SECRET') || Deno.env.get('LWA_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('Missing LWA credentials');
+  const response = await fetch('https://api.amazon.com/auth/o2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`LWA token error: ${response.status} - ${errorText}`);
+  }
+  return (await response.json()).access_token;
+}
+
+async function callSpApiRaw(
+  method: string, path: string, accessToken: string,
+  queryString: string,
+): Promise<Response> {
+  const awsAccessKeyId = Deno.env.get('AWS_ACCESS_KEY_ID')!;
+  const awsSecretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')!;
+  const region = Deno.env.get('SPAPI_AWS_REGION') || 'us-east-1';
+  const host = 'sellingpartnerapi-na.amazon.com';
+  const service = 'execute-api';
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  const headers: Record<string, string> = {
+    'host': host, 'x-amz-date': amzDate, 'x-amz-access-token': accessToken,
+  };
+  const sortedHeaderKeys = Object.keys(headers).sort();
+  const canonicalHeaders = sortedHeaderKeys.map(k => `${k}:${headers[k]}\n`).join('');
+  const signedHeaders = sortedHeaderKeys.join(';');
+  const canonicalRequest = `${method}\n${path}\n${queryString}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(canonicalRequest));
+  const requestHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const stringToSign = `${algorithm}\n${amzDate}\n${credentialScope}\n${requestHash}`;
+  const signingKey = getSigningKey(awsSecretAccessKey, dateStamp, region, service);
+  const signature = getAwsSignature(stringToSign, signingKey);
+  const authorizationHeader = `${algorithm} Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const url = `https://${host}${path}${queryString ? '?' + queryString : ''}`;
+  return await fetch(url, {
+    method, headers: { ...headers, 'Authorization': authorizationHeader },
+  });
+}
+
+interface VerifyResult {
+  asin: string;
+  sku: string;
+  db_before: { available: number; reserved: number; inbound: number };
+  live: { available: number; reserved: number; inbound: number };
+  action: 'corrected' | 'unchanged' | 'not_found' | 'error';
+  error?: string;
+  delta?: { available: number; reserved: number; inbound: number };
+}
+
+interface InventoryRow {
+  id: string;
+  asin: string;
+  sku: string;
+  available: number | null;
+  reserved: number | null;
+  inbound: number | null;
+  source: string | null;
+  last_inventory_sync_at: string | null;
+  listing_status: string | null;
+}
+
+const FULL_CATALOG_PAGE_SIZE = 500;
+
+function buildInventoryRowsQuery(supabase: any, userId: string, mode: string) {
+  let query = supabase
+    .from('inventory')
+    .select('id, asin, sku, available, reserved, inbound, source, last_inventory_sync_at, listing_status')
+    .eq('user_id', userId)
+    .not('listing_status', 'in', '("NOT_IN_CATALOG","DELETED")');
+
+  if (mode === 'suspicious') {
+    const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    query = query
+      .or(`last_inventory_sync_at.is.null,last_inventory_sync_at.lt.${staleThreshold},source.is.null,source.neq.live_api`)
+      .order('last_inventory_sync_at', { ascending: true, nullsFirst: true });
+  } else if (mode === 'in_stock') {
+    query = query
+      .or('available.gt.0,reserved.gt.0,inbound.gt.0')
+      .order('last_inventory_sync_at', { ascending: true, nullsFirst: true });
+  } else {
+    query = query.order('id', { ascending: true });
+  }
+
+  return query;
+}
+
+async function fetchInventoryRowsToVerify(
+  supabase: any,
+  userId: string,
+  mode: string,
+  effectiveLimit: number | null,
+): Promise<InventoryRow[]> {
+  const isFullCatalogMode = mode === 'full_catalog' || mode === 'all';
+
+  if (!isFullCatalogMode) {
+    const { data, error } = await buildInventoryRowsQuery(supabase, userId, mode).limit(effectiveLimit ?? 50);
+    if (error) throw error;
+    return (data || []) as InventoryRow[];
+  }
+
+  const rows: InventoryRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await buildInventoryRowsQuery(supabase, userId, mode)
+      .range(from, from + FULL_CATALOG_PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    rows.push(...(data as InventoryRow[]));
+    console.log(`[BULK-VERIFY] Loaded inventory page ${Math.floor(from / FULL_CATALOG_PAGE_SIZE) + 1}: ${data.length} rows`);
+
+    if (data.length < FULL_CATALOG_PAGE_SIZE) break;
+    from += FULL_CATALOG_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+// SP-API getInventorySummaries supports multiple sellerSkus via repeated params
+// but has a limit. We'll use nextToken pagination with batches of SKUs.
+async function fetchInventoryBatch(
+  skus: string[], marketplaceId: string, accessToken: string
+): Promise<Record<string, any>> {
+  const result: Record<string, any> = {};
+  
+  // The API doesn't support multiple sellerSkus params well, so we paginate with nextToken
+  // Instead, call once per SKU but with proper retry + backoff
+  // Actually the API supports comma-separated or repeated sellerSkus param
+  // Let's use the "nextToken" approach: fetch all inventory and filter
+  
+  // Better approach: use granularity endpoint without sellerSkus filter to get ALL inventory
+  // then match locally. This is 1 API call instead of 213.
+  
+  let nextToken: string | null = null;
+  let pageCount = 0;
+  const maxPages = 50;
+  
+  do {
+    const params: Record<string, string> = {
+      marketplaceIds: marketplaceId,
+      details: 'true',
+      granularityType: 'Marketplace',
+      granularityId: marketplaceId,
+    };
+    if (nextToken) {
+      params.nextToken = nextToken;
+    }
+    
+    // Build query string with sorted params (required for AWS signing)
+    const sortedParams = Object.keys(params).sort();
+    const queryString = sortedParams.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+    
+    const response = await callSpApiRaw('GET', '/fba/inventory/v1/summaries', accessToken, queryString);
+    
+    if (response.status === 429) {
+      // Rate limited - wait and retry
+      console.warn(`[BULK-VERIFY] Rate limited on page ${pageCount + 1}, waiting 2s...`);
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`SP-API ${response.status}: ${errorText}`);
+    }
+    
+    const data = await response.json();
+    const summaries = data?.payload?.inventorySummaries || [];
+    
+    for (const s of summaries) {
+      const sku = s.sellerSku;
+      if (sku) {
+        const d = s?.inventoryDetails || s || {};
+        const inboundReceiving = d?.inboundReceivingQuantity ?? s?.inboundReceivingQuantity ?? 0;
+        const inboundShipped = d?.inboundShippedQuantity ?? s?.inboundShippedQuantity ?? 0;
+        result[sku] = {
+          available: d?.fulfillableQuantity ?? s?.totalFulfillableQuantity ?? 0,
+          reserved: d?.reservedQuantity?.totalReservedQuantity ?? s?.reservedQuantity?.totalReservedQuantity ?? 0,
+          inbound: inboundReceiving + inboundShipped,
+        };
+      }
+    }
+    
+    nextToken = data?.pagination?.nextToken || null;
+    pageCount++;
+    
+    console.log(`[BULK-VERIFY] Fetched page ${pageCount}: ${summaries.length} items (total so far: ${Object.keys(result).length})`);
+    
+    // Small delay between pages to be respectful
+    if (nextToken) {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  } while (nextToken && pageCount < maxPages);
+  
+  return result;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const body = await req.json();
+    const requestedMode = typeof body?.mode === 'string' ? body.mode : 'suspicious';
+    const mode = requestedMode;
+    const isFullCatalogMode = mode === 'full_catalog' || mode === 'all';
+    const requestedLimit = typeof body?.limit === 'number' && Number.isFinite(body.limit) && body.limit > 0
+      ? Math.floor(body.limit)
+      : null;
+    const dryRun = typeof body?.dry_run === 'boolean'
+      ? body.dry_run
+      : typeof body?.dryRun === 'boolean'
+        ? body.dryRun
+        : true;
+    const user_id = body?.user_id;
+    const effectiveLimit = isFullCatalogMode ? null : Math.min(requestedLimit ?? 50, 1000);
+
+    // Auth
+    const authHeader = req.headers.get('Authorization');
+    const internalHeader = req.headers.get('x-internal-secret');
+    const configuredInternalSecret = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
+
+    let userId: string | null = null;
+
+    if (internalHeader && configuredInternalSecret && internalHeader === configuredInternalSecret) {
+      if (!user_id) {
+        return new Response(JSON.stringify({ error: 'Missing user_id for internal call' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user_id;
+    } else {
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
+    }
+
+    const marketplaceId = 'ATVPDKIKX0DER'; // US
+
+    console.log(`[BULK-VERIFY] Starting: mode=${mode}, limit=${effectiveLimit ?? 'ALL'}, dry_run=${dryRun}, user=${userId}`);
+
+    const rows = await fetchInventoryRowsToVerify(supabase, userId, mode, effectiveLimit);
+    if (!rows || rows.length === 0) {
+      return new Response(JSON.stringify({
+        summary: { total: 0, corrected: 0, unchanged: 0, not_found: 0, errors: 0 },
+        results: [], dry_run: dryRun,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    console.log(`[BULK-VERIFY] Found ${rows.length} rows to verify`);
+
+    // Get access token once
+    const refreshToken = Deno.env.get('SPAPI_REFRESH_TOKEN')!;
+    const accessToken = await getLwaAccessToken(refreshToken);
+
+    // Fetch ALL inventory from SP-API in one paginated call (instead of 1 call per SKU)
+    console.log(`[BULK-VERIFY] Fetching all inventory summaries from SP-API...`);
+    const liveInventoryMap = await fetchInventoryBatch([], marketplaceId, accessToken);
+    console.log(`[BULK-VERIFY] Got ${Object.keys(liveInventoryMap).length} SKUs from SP-API`);
+
+    const results: VerifyResult[] = [];
+    const updateBatch: { id: string; asin: string; available: number; reserved: number; inbound: number; listing_status: string; prev_available: number; prev_reserved: number }[] = [];
+    const protectBatch: string[] = []; // IDs of unchanged items to tag as live_api for protection
+
+    for (const row of rows) {
+      const dbBefore = {
+        available: row.available || 0,
+        reserved: row.reserved || 0,
+        inbound: row.inbound || 0,
+      };
+
+      const live = liveInventoryMap[row.sku] || null;
+
+      if (!live) {
+        // SKU missing from the bulk SP-API snapshot is not authoritative enough to zero stock.
+        // This happens intermittently in scheduled full-catalog runs and was causing 0/0/0 wipes
+        // until manual per-SKU Live Update repaired the row. Keep DB quantities unchanged here.
+        results.push({
+          asin: row.asin, sku: row.sku, db_before: dbBefore,
+          live: dbBefore,
+          action: 'not_found',
+        });
+        continue;
+      }
+
+      const delta = {
+        available: live.available - dbBefore.available,
+        reserved: live.reserved - dbBefore.reserved,
+        inbound: live.inbound - dbBefore.inbound,
+      };
+
+      const changed = delta.available !== 0 || delta.reserved !== 0 || delta.inbound !== 0;
+
+      if (!dryRun) {
+        const totalLive = live.available + live.reserved + live.inbound;
+        if (changed) {
+          // Match rescue-inventory-asin: always set INACTIVE when zero stock
+          updateBatch.push({
+            id: row.id,
+            asin: row.asin,
+            available: live.available,
+            reserved: live.reserved,
+            inbound: live.inbound,
+            listing_status: totalLive > 0 ? 'ACTIVE' : 'INACTIVE',
+            prev_available: dbBefore.available,
+            prev_reserved: dbBefore.reserved,
+          });
+        } else {
+          // CRITICAL: Even unchanged items need source='live_api' + fresh timestamp
+          // so sync-inventory-report respects the 2-hour protection window
+          // and doesn't overwrite verified data with stale report data.
+          protectBatch.push(row.id);
+        }
+      }
+
+      results.push({
+        asin: row.asin, sku: row.sku, db_before: dbBefore, live, delta,
+        action: changed ? 'corrected' : 'unchanged',
+      });
+    }
+
+    // Apply updates
+    if (updateBatch.length > 0 && !dryRun) {
+      console.log(`[BULK-VERIFY] Applying ${updateBatch.length} corrections...`);
+      const restockAsins: string[] = [];
+
+      for (let i = 0; i < updateBatch.length; i++) {
+        const u = updateBatch[i];
+        const nowIso = new Date().toISOString();
+        await supabase
+          .from('inventory')
+          .update({
+            available: u.available,
+            reserved: u.reserved,
+            inbound: u.inbound,
+            listing_status: u.listing_status,
+            source: 'live_api',
+            last_inventory_sync_at: nowIso,
+            last_summaries_at: nowIso,
+          })
+          .eq('id', u.id);
+
+        // Track restock events (stock recovered from zero) — matches rescue-inventory-asin logic
+        const prevSellable = (u.prev_available || 0) + (u.prev_reserved || 0);
+        const newSellable = u.available + u.reserved;
+        if (prevSellable === 0 && newSellable > 0) {
+          restockAsins.push(u.asin);
+        }
+      }
+
+      // Re-enable repricer assignments for restocked ASINs (matches rescue-inventory-asin)
+      if (restockAsins.length > 0) {
+        console.log(`[BULK-VERIFY] Restocked ASINs detected: ${restockAsins.length}, re-enabling assignments...`);
+        for (const asin of restockAsins) {
+          const { data: reEnabled } = await supabase
+            .from('repricer_assignments')
+            .update({ is_enabled: true })
+            .eq('user_id', userId)
+            .eq('asin', asin)
+            .eq('is_enabled', false)
+            .select('asin, marketplace');
+          if (reEnabled?.length) {
+            console.log(`[BULK-VERIFY] Re-enabled ${reEnabled.length} assignment(s) for ${asin}`);
+          }
+        }
+      }
+
+      console.log(`[BULK-VERIFY] All ${updateBatch.length} corrections applied`);
+    }
+
+    // Protect unchanged items: tag as live_api so sync-inventory-report won't overwrite
+    if (protectBatch.length > 0 && !dryRun) {
+      console.log(`[BULK-VERIFY] Protecting ${protectBatch.length} unchanged items with live_api tag...`);
+      const PROTECT_BATCH_SIZE = 200;
+      for (let i = 0; i < protectBatch.length; i += PROTECT_BATCH_SIZE) {
+        const batch = protectBatch.slice(i, i + PROTECT_BATCH_SIZE);
+        const nowIso = new Date().toISOString();
+        await supabase
+          .from('inventory')
+          .update({
+            source: 'live_api',
+            last_inventory_sync_at: nowIso,
+            last_summaries_at: nowIso,
+          })
+          .in('id', batch);
+      }
+      console.log(`[BULK-VERIFY] Protected ${protectBatch.length} unchanged items`);
+    }
+
+    const summary = {
+      total: results.length,
+      corrected: results.filter(r => r.action === 'corrected').length,
+      unchanged: results.filter(r => r.action === 'unchanged').length,
+      not_found: results.filter(r => r.action === 'not_found').length,
+      errors: results.filter(r => r.action === 'error').length,
+    };
+
+    console.log(`[BULK-VERIFY] Complete: ${JSON.stringify(summary)} dry_run=${dryRun}`);
+
+    return new Response(JSON.stringify({ summary, results, dry_run: dryRun }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    console.error(`[BULK-VERIFY] Error:`, (err as Error).message);
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

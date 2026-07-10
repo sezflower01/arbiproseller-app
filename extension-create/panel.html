@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ArbiProSeller — Create Listing</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div id="apx-root">
+    <header class="apx-header" id="apx-drag">
+      <div class="apx-brand">
+        <span class="apx-logo">📝</span>
+        <span>Create Listing</span>
+      </div>
+      <div class="apx-actions">
+        <button id="apx-reset" title="Reset position">⌂</button>
+        <button id="apx-collapse" title="Collapse">–</button>
+        <button id="apx-close" title="Close (Alt+L to toggle)">×</button>
+      </div>
+    </header>
+
+    <main id="apx-body">
+      <div id="apx-signin" class="apx-card hidden">
+        <p>You're signed out of ArbiProSeller. Reconnect to create or fetch listings.</p>
+        <button id="apx-signin-btn" class="apx-primary">Reconnect to ArbiProSeller</button>
+      </div>
+
+      <div id="apx-content" class="hidden">
+        <!-- Mode tabs -->
+        <div class="apx-tabs apx-tabs-4">
+          <button class="apx-tab active" data-tab="new">New Listing</button>
+          <button class="apx-tab" data-tab="purchase">Add Purchase</button>
+          <button class="apx-tab" data-tab="edit">Edit Listing</button>
+          <button class="apx-tab" data-tab="print">Print Label</button>
+        </div>
+
+        <div id="apx-mode-new">
+        <!-- Step 1: ASIN fetch -->
+        <div class="apx-fetch-row">
+          <input id="apx-asin" type="text" placeholder="ASIN (e.g. B0XXXXXXXX)" maxlength="10" />
+          <button id="apx-fetch" class="apx-primary">Fetch</button>
+        </div>
+        <div class="apx-status" id="apx-fetch-status"></div>
+
+        <!-- Product card -->
+        <div id="apx-product-card" class="apx-card hidden">
+          <div class="apx-product">
+            <img id="apx-img" src="" alt="" />
+            <div>
+              <div class="t" id="apx-title">—</div>
+              <div class="p"><span id="apx-price">—</span> · <span id="apx-mkt">—</span></div>
+            </div>
+          </div>
+          <div id="apx-mkt-chips" style="margin-top:8px"></div>
+        </div>
+
+        <!-- Listing details -->
+        <div id="apx-form" class="hidden">
+          <div class="apx-card">
+            <div class="apx-k" style="margin-bottom:6px">Listing details</div>
+            <div class="apx-grid2">
+              <label class="apx-field">SKU
+                <input id="apx-sku" type="text" />
+              </label>
+              <label class="apx-field">Marketplace
+                <select id="apx-mkt-select"></select>
+              </label>
+            </div>
+            <div class="apx-grid3" style="margin-top:8px">
+              <label class="apx-field">Total cost ($)
+                <input id="apx-totalcost" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+              <label class="apx-field">Units
+                <input id="apx-units" type="number" min="1" value="1" />
+              </label>
+              <label class="apx-field">Sell price ($)
+                <input id="apx-sellprice" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+            </div>
+            <div class="apx-grid3" style="margin-top:8px">
+              <label class="apx-field">Quantity
+                <input id="apx-qty" type="number" min="1" value="1" />
+              </label>
+              <label class="apx-field">Condition
+                <select id="apx-cond">
+                  <option value="new_new" selected>New</option>
+                  <option value="used_likenew">Used - Like New</option>
+                  <option value="used_verygood">Used - Very Good</option>
+                  <option value="used_good">Used - Good</option>
+                  <option value="used_acceptable">Used - Acceptable</option>
+                </select>
+              </label>
+              <label class="apx-field">Channel
+                <select id="apx-fc">
+                  <option value="FBA" selected>FBA</option>
+                  <option value="FBM">FBM</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="apx-roi-out">
+              <div><div class="apx-k">COG / unit</div><div class="apx-v" id="apx-cog">—</div></div>
+              <div><div class="apx-k">Profit</div><div class="apx-v" id="apx-profit">—</div></div>
+              <div><div class="apx-k">ROI</div><div class="apx-v" id="apx-roi">—</div></div>
+            </div>
+          </div>
+
+          <div class="apx-card">
+            <div class="apx-k" style="margin-bottom:6px">Supplier links</div>
+            <div id="apx-sourcing-banner" class="apx-sourcing-banner hidden"></div>
+            <div id="apx-supplier-chips" class="apx-supplier-chips"></div>
+            <div id="apx-suppliers"></div>
+            <button id="apx-add-supplier" class="apx-primary ghost" style="font-size:11px;padding:4px 10px">+ Add supplier</button>
+          </div>
+
+          <div class="apx-card">
+            <div class="apx-k">Create mode</div>
+            <div class="apx-mode">
+              <label><input type="radio" name="mode" value="amazon" checked /> Create on Amazon + save</label>
+              <label><input type="radio" name="mode" value="database" /> Save to DB only</label>
+            </div>
+          </div>
+
+          <div id="apx-new-fba-warning" class="apx-fba-warning hidden"></div>
+
+          <div id="apx-issues" class="apx-issues hidden"></div>
+
+          <div class="apx-actions-row">
+            <button id="apx-validate" class="apx-primary ghost">Validate</button>
+            <button id="apx-create" class="apx-primary">Create</button>
+          </div>
+          <div class="apx-actions-row" style="margin-top:6px">
+            <button id="apx-thinking" class="apx-primary ghost" style="flex:1;font-size:12px" title="Save this ASIN to Still Thinking — for items you're considering but haven't bought yet. No cost or units required.">💭 Save as Still Thinking</button>
+          </div>
+          <div class="apx-actions-row" style="margin-top:6px;gap:6px">
+            <button id="apx-open-thinking" class="apx-primary ghost" style="flex:1;font-size:12px" title="Open the Still Thinking records page">📋 Still Thinking</button>
+            <button id="apx-open-buyagain" class="apx-primary ghost" style="flex:1;font-size:12px" title="Open the Need Buy Again page">🛒 Buy Again</button>
+          </div>
+          <div class="apx-status" id="apx-action-status"></div>
+        </div>
+        </div><!-- /apx-mode-new -->
+
+        <!-- =========== ADD PURCHASE MODE =========== -->
+        <div id="apx-mode-purchase" class="hidden">
+          <div class="apx-subtabs">
+            <button class="apx-subtab active" data-sub="asin">By ASIN</button>
+            <button class="apx-subtab" data-sub="title">By Title</button>
+            <button class="apx-subtab" data-sub="supplier">By Supplier</button>
+          </div>
+
+          <div id="apx-sub-asin">
+            <div class="apx-fetch-row">
+              <input id="apx-p-asin" type="text" placeholder="ASIN (e.g. B0XXXXXXXX)" maxlength="10" />
+              <button id="apx-p-find" class="apx-primary">Find</button>
+            </div>
+            <div class="apx-status" id="apx-p-find-status"></div>
+          </div>
+
+          <div id="apx-sub-title" class="hidden">
+            <div class="apx-fetch-row">
+              <input id="apx-p-title-q" type="text" placeholder="Search by product title (e.g. funko pop anthony edwards)" />
+              <button id="apx-p-title-find" class="apx-primary">Search</button>
+            </div>
+            <div class="apx-status" id="apx-p-title-status"></div>
+            <div id="apx-p-title-results"></div>
+          </div>
+
+          <div id="apx-sub-supplier" class="hidden">
+            <div class="apx-fetch-row">
+              <input id="apx-p-supplier" type="text" placeholder="Supplier name or domain (e.g. collectorstore)" />
+              <button id="apx-p-supplier-find" class="apx-primary">Search</button>
+            </div>
+            <div class="apx-status" id="apx-p-supplier-status"></div>
+            <div id="apx-p-supplier-results"></div>
+          </div>
+
+          <div id="apx-p-sku-picker" class="apx-options hidden" style="margin-top:6px"></div>
+          <div id="apx-p-card" class="apx-card hidden">
+            <div class="apx-product">
+              <img id="apx-p-img" src="" alt="" />
+              <div style="flex:1;min-width:0">
+                <div class="t" id="apx-p-title">—</div>
+                <div class="p"><span id="apx-p-asin-lbl">—</span> · <span id="apx-p-price">—</span></div>
+                <div class="p" style="margin-top:2px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)">SKU: <span id="apx-p-sku-lbl" style="color:var(--text);font-weight:600">—</span></div>
+              </div>
+            </div>
+            <div class="apx-grid3" style="margin-top:8px">
+              <div><div class="apx-k">Units</div><div class="apx-v" id="apx-p-units">—</div></div>
+              <div><div class="apx-k">COG</div><div class="apx-v" id="apx-p-cog">—</div></div>
+              <div><div class="apx-k">Total</div><div class="apx-v" id="apx-p-total">—</div></div>
+            </div>
+            <div style="margin-top:8px;font-size:11px;color:var(--muted)">
+              Created: <span id="apx-p-date">—</span>
+            </div>
+            <div id="apx-p-suppliers" style="margin-top:6px"></div>
+          </div>
+
+          <!-- Replenishment forecast (mirrors Need to Buy Again page) -->
+          <div id="apx-p-replenish" class="apx-card apx-replenish hidden">
+            <div class="apx-replenish-head">
+              <span class="apx-k">Need to Buy Again</span>
+              <span id="apx-rep-risk" class="apx-rep-risk apx-rep-unknown">—</span>
+            </div>
+            <div class="apx-rep-hero">
+              <div class="apx-rep-qty">
+                <span id="apx-rep-qty">—</span>
+                <span class="apx-k">units to reorder</span>
+              </div>
+              <div class="apx-rep-stockout">
+                <span id="apx-rep-stockout">—</span>
+                <span class="apx-k">days of stock</span>
+              </div>
+            </div>
+            <div class="apx-grid3 apx-rep-stock">
+              <div><div class="apx-k">Available</div><div class="apx-v" id="apx-rep-avail">—</div></div>
+              <div><div class="apx-k">Inbound</div><div class="apx-v" id="apx-rep-inbound">—</div></div>
+              <div><div class="apx-k">Reserved</div><div class="apx-v" id="apx-rep-reserved">—</div></div>
+            </div>
+            <div class="apx-grid3 apx-rep-sales">
+              <div><div class="apx-k">7d sold</div><div class="apx-v" id="apx-rep-s7">—</div></div>
+              <div><div class="apx-k">30d sold</div><div class="apx-v" id="apx-rep-s30">—</div></div>
+              <div><div class="apx-k">90d sold</div><div class="apx-v" id="apx-rep-s90">—</div></div>
+            </div>
+            <div class="apx-rep-meta" id="apx-rep-meta">—</div>
+            <div class="apx-rep-status" id="apx-rep-status"></div>
+          </div>
+
+          <div id="apx-p-form" class="apx-card hidden">
+            <div class="apx-k" style="margin-bottom:6px">New purchase batch</div>
+            <div class="apx-grid3">
+              <label class="apx-field">New Total Cost ($)
+                <input id="apx-p-totalcost" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+              <label class="apx-field">New Units
+                <input id="apx-p-newunits" type="number" min="1" value="1" />
+              </label>
+              <label class="apx-field">COG (auto)
+                <input id="apx-p-newcog" type="text" readonly />
+              </label>
+            </div>
+            <div id="apx-p-fba-warning" class="apx-fba-warning hidden"></div>
+            <label id="apx-p-fbm-confirm-wrap" class="apx-fbm-confirm hidden">
+              <input id="apx-p-fbm-confirm" type="checkbox" />
+              I understand FBA is not available for this ASIN right now and want to save this purchase as FBM only.
+            </label>
+            <div class="apx-actions-row">
+              <button id="apx-p-add" class="apx-primary">Add Purchase</button>
+            </div>
+            <div class="apx-status" id="apx-p-action-status"></div>
+          </div>
+        </div>
+
+        <!-- =========== EDIT LISTING MODE =========== -->
+        <div id="apx-mode-edit" class="hidden">
+          <div class="apx-fetch-row">
+            <input id="apx-e-asin" type="text" placeholder="ASIN (e.g. B0XXXXXXXX)" maxlength="10" />
+            <button id="apx-e-find" class="apx-primary">Find</button>
+          </div>
+          <div class="apx-status" id="apx-e-find-status"></div>
+
+          <div id="apx-e-sku-picker" class="apx-options hidden" style="margin-top:6px"></div>
+
+          <div id="apx-e-card" class="apx-card hidden">
+            <div class="apx-product">
+              <img id="apx-e-img" src="" alt="" />
+              <div style="flex:1;min-width:0">
+                <div class="t" id="apx-e-title">—</div>
+                <div class="p"><span id="apx-e-asin-lbl">—</span> · <span id="apx-e-price">—</span></div>
+                <div class="p" style="margin-top:2px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)">SKU: <span id="apx-e-sku-lbl" style="color:var(--text);font-weight:600">—</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="apx-e-form" class="apx-card hidden">
+            <div class="apx-k" style="margin-bottom:6px">Edit listing</div>
+            <div class="apx-grid3">
+              <label class="apx-field">Total Cost ($)
+                <input id="apx-e-totalcost" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+              <label class="apx-field">Units
+                <input id="apx-e-units" type="number" min="1" placeholder="1" />
+              </label>
+              <label class="apx-field">COG ($)
+                <input id="apx-e-cog" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+            </div>
+
+            <div style="margin-top:10px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div class="apx-k">Supplier Links & Discounts</div>
+                <button id="apx-e-add-supplier" class="apx-primary ghost" style="font-size:11px;padding:4px 10px">+ Add</button>
+              </div>
+              <div id="apx-e-suppliers"></div>
+            </div>
+
+            <div class="apx-actions-row" style="margin-top:10px">
+              <button id="apx-e-cancel" class="apx-primary ghost">Cancel</button>
+              <button id="apx-e-save" class="apx-primary">Save Changes</button>
+            </div>
+            <div class="apx-status" id="apx-e-action-status"></div>
+          </div>
+        </div>
+
+        <!-- =========== PRINT LABEL MODE =========== -->
+        <div id="apx-mode-print" class="hidden">
+          <div class="apx-fetch-row">
+            <input id="apx-l-asin" type="text" placeholder="ASIN (e.g. B0XXXXXXXX)" maxlength="10" />
+            <button id="apx-l-find" class="apx-primary">Find</button>
+          </div>
+          <div class="apx-status" id="apx-l-find-status"></div>
+
+          <div id="apx-l-sku-picker" class="apx-options hidden" style="margin-top:6px"></div>
+          <div id="apx-l-card" class="apx-card hidden">
+            <div class="apx-product">
+              <img id="apx-l-img" src="" alt="" />
+              <div style="flex:1;min-width:0">
+                <div class="t" id="apx-l-title">—</div>
+                <div class="p">
+                  <span id="apx-l-asin-lbl">—</span>
+                  · FNSKU: <span id="apx-l-fnsku" style="font-family:monospace">—</span>
+                </div>
+              </div>
+            </div>
+            <div id="apx-l-warning" class="apx-status err hidden" style="text-align:left;margin-top:8px"></div>
+            <div id="apx-l-selected" class="apx-selected hidden"></div>
+            <div id="apx-l-options" class="apx-options hidden"></div>
+          </div>
+
+          <div id="apx-l-form" class="apx-card hidden">
+            <div class="apx-k" style="margin-bottom:6px">Print thermal labels</div>
+            <label class="apx-field" style="margin-bottom:8px">FNSKU (X00 Code)
+              <input id="apx-l-fnsku-input" type="text" maxlength="10" placeholder="Enter X00 FNSKU" />
+            </label>
+            <div class="apx-grid2">
+              <label class="apx-field">Quantity (1–100)
+                <input id="apx-l-qty" type="number" min="1" max="100" value="1" />
+              </label>
+              <label class="apx-field">Condition
+                <select id="apx-l-cond">
+                  <option value="NEW" selected>New</option>
+                  <option value="USED - LIKE NEW">Used - Like New</option>
+                  <option value="USED - VERY GOOD">Used - Very Good</option>
+                  <option value="USED - GOOD">Used - Good</option>
+                  <option value="USED - ACCEPTABLE">Used - Acceptable</option>
+                </select>
+              </label>
+            </div>
+            <div class="apx-status" id="apx-l-client-status" style="text-align:left"></div>
+            <div class="apx-actions-row">
+              <button id="apx-l-recheck" class="apx-primary ghost">Recheck Printer</button>
+              <button id="apx-l-print" class="apx-primary">Print Labels</button>
+            </div>
+            <div class="apx-status" id="apx-l-action-status"></div>
+            <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">
+              Requires the ArbiProSeller Print Client running on this PC (localhost:7777).
+              Configure printer & label size in <b>ArbiProSeller → Settings → Connect Printer</b>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

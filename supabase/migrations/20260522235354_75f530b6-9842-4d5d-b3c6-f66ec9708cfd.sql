@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS shipment_business_mode text NOT NULL DEFAULT 'oa' CHECK (shipment_business_mode IN ('oa','wholesale','hybrid','prep_center'));

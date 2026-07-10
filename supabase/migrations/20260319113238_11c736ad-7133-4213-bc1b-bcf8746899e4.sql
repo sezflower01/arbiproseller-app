@@ -1,0 +1,1 @@
+UPDATE public.repricer_settings SET sp_api_calls_per_minute_cap = 30 WHERE user_id = '020dd71f-78ce-4bc2-9117-dc997c533ab9';

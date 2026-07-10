@@ -1,0 +1,1 @@
+ALTER TABLE public.keepa_daily_usage ADD COLUMN IF NOT EXISTS keepa_429_count integer NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS keepa_retry_success_count integer NOT NULL DEFAULT 0;

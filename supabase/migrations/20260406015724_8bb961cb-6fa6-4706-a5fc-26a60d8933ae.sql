@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS primary_marketplace_id text DEFAULT NULL;

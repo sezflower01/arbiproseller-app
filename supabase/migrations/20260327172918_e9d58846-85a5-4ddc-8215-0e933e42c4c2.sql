@@ -1,0 +1,1 @@
+ALTER TABLE public.repricer_rules ADD COLUMN IF NOT EXISTS enable_auto_floor boolean NOT NULL DEFAULT true;

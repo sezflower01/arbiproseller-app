@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS mobile_scan_cost_memory_user_asin_uniq ON public.mobile_scan_cost_memory (user_id, asin);

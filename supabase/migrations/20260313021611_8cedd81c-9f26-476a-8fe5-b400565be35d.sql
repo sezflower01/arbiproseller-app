@@ -1,0 +1,1 @@
+UPDATE public.repricer_settings SET circuit_breaker_error_count = 0, circuit_breaker_window_start = now() WHERE user_id = '020dd71f-78ce-4bc2-9117-dc997c533ab9';

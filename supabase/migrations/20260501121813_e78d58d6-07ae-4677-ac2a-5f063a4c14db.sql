@@ -1,0 +1,2 @@
+ALTER TABLE public.repricer_rules ADD COLUMN IF NOT EXISTS suppressed_bb_undercut numeric NOT NULL DEFAULT 0.01;
+COMMENT ON COLUMN public.repricer_rules.suppressed_bb_undercut IS 'Per-rule undercut amount applied when Buy Box is suppressed. Overrides normal undercut/match in suppressed-BB scenarios. Default $0.01. Set to $0.00 to match the lowest valid competitor exactly.';

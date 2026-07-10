@@ -1,0 +1,1 @@
+ALTER TABLE public.repricer_assignments ADD COLUMN IF NOT EXISTS ui_edit_locked boolean NOT NULL DEFAULT false;

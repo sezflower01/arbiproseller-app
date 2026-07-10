@@ -1,0 +1,1 @@
+SELECT vault.create_secret('3920f52ef988a9d036ce5f9043723f4bba0d44e7f19f590fb835e08bf372e9c9', 'INTERNAL_SYNC_SECRET', 'Shared secret for cron→edge function internal auth');

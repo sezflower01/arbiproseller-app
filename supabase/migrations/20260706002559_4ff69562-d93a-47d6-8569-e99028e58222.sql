@@ -1,0 +1,1 @@
+DELETE FROM public.cogs_adjustments WHERE id = '58375318-0ce4-401b-9ce9-a1ee36badde2';

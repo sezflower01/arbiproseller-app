@@ -1,0 +1,3 @@
+ALTER TABLE public.repricer_rules ALTER COLUMN suppressed_bb_undercut DROP NOT NULL;
+ALTER TABLE public.repricer_rules ALTER COLUMN suppressed_bb_undercut DROP DEFAULT;
+COMMENT ON COLUMN public.repricer_rules.suppressed_bb_undercut IS 'Per-rule undercut amount applied when Buy Box is suppressed. REQUIRED user setting — no default. NULL = unset, suppressed-BB pricing will be skipped. 0.00 = match exactly. Positive = undercut by that amount.';

@@ -1,0 +1,1 @@
+ALTER TABLE public.still_thinking_listings ADD COLUMN IF NOT EXISTS discount_code text;

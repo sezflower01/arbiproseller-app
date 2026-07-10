@@ -1,0 +1,1 @@
+ALTER TABLE public.replenishment_order_items ADD COLUMN packed BOOLEAN NOT NULL DEFAULT false;

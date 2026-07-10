@@ -1,0 +1,1 @@
+SELECT cron.unschedule('repricer-scheduler-5min');

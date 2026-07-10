@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.repair_sales_orders_asin_for_user(uuid, int);

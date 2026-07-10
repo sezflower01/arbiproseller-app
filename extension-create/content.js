@@ -1,0 +1,273 @@
+// Detects ASIN + marketplace, mounts a draggable Create-Listing panel,
+// supports collapse / close / reset / Alt+A — clone of analyzer extension
+// but uses its own storage key + panel id so both extensions can coexist.
+(function () {
+  const ASIN_RE = /\/(?:dp|gp\/product|gp\/aw\/d|gp\/offer-listing)\/([A-Z0-9]{10})(?:[/?]|$)/;
+
+  const HOST_TO_MARKET = [
+    [/amazon\.com\.mx/, "MX"], [/amazon\.com\.br/, "BR"],
+    [/amazon\.co\.uk/, "GB"], [/amazon\.co\.jp/, "JP"],
+    [/amazon\.ca/, "CA"], [/amazon\.de/, "DE"], [/amazon\.fr/, "FR"],
+    [/amazon\.it/, "IT"], [/amazon\.es/, "ES"], [/amazon\.com/, "US"],
+  ];
+
+  const DEFAULT_POS = { top: 96, right: 16, left: null };
+  const SIZE = { width: 380, height: 720, collapsedHeight: 48 };
+  const STORE_KEY = "arbipro_create_panel_state";
+
+  const detectMarketplace = () => {
+    for (const [re, code] of HOST_TO_MARKET) if (re.test(location.hostname)) return code;
+    return "US";
+  };
+  const detectAsin = () => {
+    const m = location.pathname.match(ASIN_RE);
+    if (m) return m[1];
+    const input = document.querySelector("input#ASIN, input[name='ASIN.0'], input[name='ASIN']");
+    if (input?.value && /^[A-Z0-9]{10}$/.test(input.value)) return input.value;
+    const v = document.querySelector("[data-asin]")?.getAttribute("data-asin");
+    return v && /^[A-Z0-9]{10}$/.test(v) ? v : null;
+  };
+
+  let panelState = { pos: { ...DEFAULT_POS }, collapsed: false, hidden: false };
+  async function loadState() {
+    try { const o = await chrome.storage.local.get(STORE_KEY); if (o[STORE_KEY]) panelState = { ...panelState, ...o[STORE_KEY] }; } catch {}
+  }
+  const saveState = () => { try { chrome.storage.local.set({ [STORE_KEY]: panelState }); } catch {} };
+
+  // ─── Sourcing context capture ───
+  // When the user lands on an Amazon page from a supplier site, persist
+  // that referrer as the "current sourcing session" so the Create panel
+  // can auto-prefill the supplier link. Also accumulate a rolling list of
+  // recent supplier domains for quick re-pick.
+  const SOURCING_KEY = "arbipro_sourcing_session";
+  const RECENT_SUPPLIERS_KEY = "arbipro_recent_suppliers";
+  const SOURCING_TTL_MS = 30 * 60 * 1000; // 30 min — covers typical OA flow
+  const AMAZON_HOST_RE = /(^|\.)amazon\./i;
+  const SUPPLIER_HOST_BLOCKLIST = /(google\.|bing\.|duckduckgo\.|youtube\.|facebook\.|reddit\.|t\.co|chrome:|chrome-extension:)/i;
+
+  async function captureSourcingFromReferrer() {
+    try {
+      const ref = document.referrer || "";
+      if (!ref) return;
+      let u;
+      try { u = new URL(ref); } catch { return; }
+      if (!/^https?:$/.test(u.protocol)) return;
+      if (AMAZON_HOST_RE.test(u.hostname)) return;
+      if (SUPPLIER_HOST_BLOCKLIST.test(u.hostname)) return;
+
+      const session = {
+        supplier_url: u.href,
+        supplier_domain: u.hostname.replace(/^www\./, ""),
+        supplier_title: null,
+        source_timestamp: Date.now(),
+      };
+      await chrome.storage.local.set({ [SOURCING_KEY]: session });
+
+      // Update recent suppliers (dedup by domain, max 10, most-recent first).
+      const cur = await chrome.storage.local.get(RECENT_SUPPLIERS_KEY);
+      const list = Array.isArray(cur[RECENT_SUPPLIERS_KEY]) ? cur[RECENT_SUPPLIERS_KEY] : [];
+      const filtered = list.filter((r) => r && r.domain !== session.supplier_domain);
+      filtered.unshift({ domain: session.supplier_domain, url: session.supplier_url, ts: session.source_timestamp });
+      await chrome.storage.local.set({ [RECENT_SUPPLIERS_KEY]: filtered.slice(0, 10) });
+
+      // Notify panel if mounted.
+      try { postToPanel({ type: "SOURCING_SESSION", session }); } catch {}
+    } catch {}
+  }
+
+  async function getSourcingSession() {
+    try {
+      const o = await chrome.storage.local.get(SOURCING_KEY);
+      const s = o[SOURCING_KEY];
+      if (!s || !s.supplier_url) return null;
+      if (Date.now() - (s.source_timestamp || 0) > SOURCING_TTL_MS) return null;
+      return s;
+    } catch { return null; }
+  }
+
+  function isOnScreen(pos) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if ((pos.top ?? 0) < -40 || (pos.top ?? 0) > vh - 40) return false;
+    if (pos.left != null && (pos.left < -40 || pos.left > vw - 60)) return false;
+    if (pos.right != null && (pos.right < -40 || pos.right > vw - 60)) return false;
+    return true;
+  }
+
+  function applyPosition() {
+    if (!iframe) return;
+    if (!isOnScreen(panelState.pos)) panelState.pos = { ...DEFAULT_POS };
+    const { top, left, right } = panelState.pos;
+    iframe.style.top = `${top}px`;
+    if (left != null) { iframe.style.left = `${left}px`; iframe.style.right = "auto"; }
+    else { iframe.style.right = `${right ?? 16}px`; iframe.style.left = "auto"; }
+    const maxW = Math.min(SIZE.width, window.innerWidth - 24);
+    iframe.style.width = `${maxW}px`;
+    iframe.style.height = `${panelState.collapsed ? SIZE.collapsedHeight : Math.min(SIZE.height, window.innerHeight - 32)}px`;
+  }
+
+  let iframe = null;
+  function mountPanel() {
+    if (iframe) return iframe;
+    iframe = document.createElement("iframe");
+    iframe.id = "arbipro-create-panel-frame";
+    iframe.src = chrome.runtime.getURL("panel.html");
+    iframe.allow = "clipboard-write";
+    document.documentElement.appendChild(iframe);
+    applyPosition();
+    if (panelState.hidden) iframe.style.display = "none";
+    return iframe;
+  }
+  const unmountPanel = () => { iframe?.remove(); iframe = null; };
+  const postToPanel = (msg) => iframe?.contentWindow?.postMessage({ source: "arbipro-host", ...msg }, "*");
+
+  let launcher = null;
+  function ensureLauncher() {
+    if (launcher) return launcher;
+    launcher = document.createElement("button");
+    launcher.id = "arbipro-create-launcher";
+    launcher.type = "button";
+    launcher.title = "Open Create Listing (Alt+A)";
+    launcher.textContent = "📝";
+    Object.assign(launcher.style, {
+      position: "fixed", right: "16px", bottom: "70px", zIndex: "2147483647",
+      width: "44px", height: "44px", borderRadius: "999px", border: "none",
+      background: "#2563eb", color: "#fff", fontSize: "20px", cursor: "pointer",
+      boxShadow: "0 6px 20px rgba(0,0,0,0.35)",
+    });
+    launcher.addEventListener("click", () => {
+      panelState.hidden = false;
+      hideLauncher();
+      mountPanel();
+      pushCurrentAsin(true);
+      saveState();
+    });
+    document.documentElement.appendChild(launcher);
+    return launcher;
+  }
+  function hideLauncher() { launcher?.remove(); launcher = null; }
+
+  // Drag — uses a transparent host overlay so mousemove keeps firing on the
+  // host page even while the cursor is over the iframe (cross-frame events
+  // don't bubble). Coordinates use screenX/Y for jitter-free tracking.
+  let dragStart = null; // { startLeft, startTop, startSX, startSY }
+  let overlay = null;
+  function ensureOverlay() {
+    if (overlay) return overlay;
+    overlay = document.createElement("div");
+    overlay.id = "arbipro-create-drag-overlay";
+    Object.assign(overlay.style, {
+      position: "fixed", inset: "0", zIndex: "2147483646",
+      cursor: "grabbing", background: "transparent",
+    });
+    document.documentElement.appendChild(overlay);
+    return overlay;
+  }
+  function removeOverlay() { overlay?.remove(); overlay = null; }
+
+  function beginDrag(sx, sy) {
+    if (!iframe) return;
+    const r = iframe.getBoundingClientRect();
+    dragStart = { startLeft: r.left, startTop: r.top, startSX: sx, startSY: sy };
+    ensureOverlay();
+    iframe.style.pointerEvents = "none";
+  }
+  let rafPending = false, lastSX = 0, lastSY = 0;
+  function onHostMove(e) {
+    if (!dragStart || !iframe) return;
+    lastSX = e.screenX; lastSY = e.screenY;
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (!dragStart || !iframe) return;
+      const dx = lastSX - dragStart.startSX;
+      const dy = lastSY - dragStart.startSY;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const left = Math.max(-40, Math.min(vw - 40, dragStart.startLeft + dx));
+      const top = Math.max(0, Math.min(vh - 40, dragStart.startTop + dy));
+      panelState.pos = { top, left, right: null };
+      iframe.style.left = `${left}px`;
+      iframe.style.right = "auto";
+      iframe.style.top = `${top}px`;
+    });
+  }
+  function endDrag() {
+    if (!dragStart) return;
+    dragStart = null;
+    removeOverlay();
+    if (iframe) iframe.style.pointerEvents = "";
+    saveState();
+  }
+  window.addEventListener("mousemove", onHostMove, true);
+  window.addEventListener("mouseup", endDrag, true);
+
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || d.source !== "arbipro-create-panel") return;
+    switch (d.type) {
+      case "READY":
+        postToPanel({ type: "RESTORE_STATE", collapsed: panelState.collapsed });
+        pushCurrentAsin(true);
+        // Push current sourcing session (if any) so panel can prefill supplier link.
+        getSourcingSession().then((s) => { if (s) postToPanel({ type: "SOURCING_SESSION", session: s }); });
+        break;
+      case "DRAG_BEGIN": beginDrag(d.sx, d.sy); break;
+      case "DRAG_END": endDrag(); break;
+      case "COLLAPSE_TOGGLE":
+        panelState.collapsed = !!d.collapsed;
+        applyPosition(); saveState();
+        break;
+      case "RESET_POS":
+        panelState.pos = { ...DEFAULT_POS };
+        applyPosition(); saveState();
+        break;
+      case "CLOSE":
+        panelState.hidden = true; unmountPanel(); ensureLauncher(); saveState();
+        break;
+      case "TOGGLE_VISIBILITY": togglePanel(); break;
+    }
+  });
+
+  function togglePanel() {
+    if (!iframe) {
+      panelState.hidden = false; hideLauncher(); mountPanel(); pushCurrentAsin(true);
+    } else if (iframe.style.display === "none") {
+      panelState.hidden = false; iframe.style.display = ""; hideLauncher();
+    } else {
+      panelState.hidden = true; iframe.style.display = "none"; ensureLauncher();
+    }
+    saveState();
+  }
+  // Alt+L (avoid clash with analyzer's Alt+A)
+  window.addEventListener("keydown", (e) => {
+    if (e.altKey && (e.key === "l" || e.key === "L")) {
+      e.preventDefault(); togglePanel();
+    }
+  });
+  window.addEventListener("resize", () => iframe && applyPosition());
+
+  let lastSent = null;
+  function pushCurrentAsin(force = false) {
+    const asin = detectAsin();
+    const marketplace = detectMarketplace();
+    const key = `${asin}|${marketplace}`;
+    if (!force && key === lastSent) return;
+    lastSent = key;
+    if (!panelState.hidden) mountPanel();
+    postToPanel({ type: "ASIN_CHANGED", asin, marketplace, url: location.href });
+  }
+
+  const _push = history.pushState, _replace = history.replaceState;
+  history.pushState = function () { _push.apply(this, arguments); setTimeout(pushCurrentAsin, 200); };
+  history.replaceState = function () { _replace.apply(this, arguments); setTimeout(pushCurrentAsin, 200); };
+  window.addEventListener("popstate", () => setTimeout(pushCurrentAsin, 200));
+
+  (async () => {
+    await loadState();
+    // Capture supplier referrer at first paint — must run before any pushState.
+    captureSourcingFromReferrer();
+    new MutationObserver(() => pushCurrentAsin()).observe(document.documentElement, { childList: true, subtree: true });
+    if (panelState.hidden) ensureLauncher();
+    pushCurrentAsin(true);
+  })();
+})();

@@ -1,0 +1,10 @@
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TITzxHbbOMAX8kOsJBiQxeh' WHERE id = 'tier_100';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU0DHbbOMAX8kOiV68552K' WHERE id = 'tier_250';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU0UHbbOMAX8kOCdRwS0Wc' WHERE id = 'tier_500';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU17HbbOMAX8kOGYOfL2wB' WHERE id = 'tier_1000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU1PHbbOMAX8kOpx1GOhoT' WHERE id = 'tier_2000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU1fHbbOMAX8kOfAPoeEL2' WHERE id = 'tier_3000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU21HbbOMAX8kO0ermulrL' WHERE id = 'tier_5000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU2GHbbOMAX8kOwejwBt59' WHERE id = 'tier_10000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU2XHbbOMAX8kOo2Rm9YMA' WHERE id = 'tier_20000';
+UPDATE subscription_plans SET stripe_annual_price_id = 'price_1TIU2rHbbOMAX8kOYFjLqXLZ' WHERE id = 'tier_50000';

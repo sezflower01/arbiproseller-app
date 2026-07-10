@@ -1,0 +1,1 @@
+ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS amount_overrides jsonb NOT NULL DEFAULT '{}'::jsonb;

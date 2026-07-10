@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_inventory_user_created_id ON public.inventory (user_id, created_at DESC, id DESC);

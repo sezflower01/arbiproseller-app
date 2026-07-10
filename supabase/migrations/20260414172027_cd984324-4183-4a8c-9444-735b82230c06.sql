@@ -1,0 +1,1 @@
+UPDATE public.repricer_assignments SET min_roi_override = NULL WHERE min_roi_override IS NOT NULL;

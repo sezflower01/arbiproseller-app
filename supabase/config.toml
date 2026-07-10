@@ -1,0 +1,375 @@
+project_id = "mstibdszibcheodvnprm"
+
+[auth.hook.send_email]
+enabled = true
+uri = "https://mstibdszibcheodvnprm.supabase.co/functions/v1/auth-email-hook"
+secrets = "env(LOVABLE_API_KEY)"
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.nightly-ghost-cleanup]
+verify_jwt = false
+
+[functions.register-with-hashed-password]
+verify_jwt = false
+
+[functions.insert_download_record]
+verify_jwt = false
+
+[functions.start-automation-run]
+verify_jwt = true
+
+[functions.process-automation-page]
+verify_jwt = true
+
+[functions.export-automation-results]
+verify_jwt = true
+
+[functions.admin-upload-keepa-xlsx]
+verify_jwt = true
+
+[functions.admin-process-keepa-batch]
+verify_jwt = true
+
+[functions.admin-export-keepa-batch]
+verify_jwt = true
+
+[functions.admin-upload-asin-xlsx]
+verify_jwt = true
+
+[functions.admin-process-asin-batch]
+verify_jwt = true
+
+[functions.admin-export-asin-batch]
+verify_jwt = true
+
+[functions.admin-scrape-selenium]
+verify_jwt = true
+
+[functions.calculate-roi]
+verify_jwt = false
+
+[functions.amazon-oauth-callback]
+verify_jwt = false
+
+[functions.amazon-oauth-start]
+verify_jwt = true
+
+[functions.google-scrape]
+verify_jwt = false
+
+[functions.personalhour-product-data]
+verify_jwt = true
+
+[functions.fetch-fnsku]
+verify_jwt = true
+
+[functions.get-fnsku]
+verify_jwt = true
+
+[functions.sync-fnsku-report]
+verify_jwt = false
+
+[functions.auto-sync-all-users]
+verify_jwt = false
+
+[functions.upload-created-listings-xlsx]
+verify_jwt = true
+
+[functions.create-amazon-listing]
+verify_jwt = true
+
+[functions.check-fba-listing-eligibility]
+verify_jwt = true
+
+[functions.sync-amazon-inventory]
+verify_jwt = true
+
+[functions.personalhour-upload-xlsx]
+verify_jwt = true
+
+[functions.save-repricer-rules]
+verify_jwt = true
+
+[functions.update-amazon-price]
+verify_jwt = true
+
+[functions.check-amazon-price]
+verify_jwt = true
+
+[functions.sync-sales-orders]
+verify_jwt = true
+
+[functions.update-date-created]
+verify_jwt = true
+
+[functions.debug-sales-day]
+verify_jwt = true
+
+[functions.fetch-profit-loss]
+verify_jwt = false
+
+[functions.fetch-settlements]
+verify_jwt = true
+
+[functions.sync-refunds]
+verify_jwt = true
+
+[functions.fetch-live-refunds]
+verify_jwt = true
+
+[functions.fetch-product-price]
+verify_jwt = true
+
+[functions.sync-fba-shipments]
+verify_jwt = true
+
+[functions.fetch-live-orders]
+verify_jwt = true
+
+[functions.sync-missing-refund-orders]
+verify_jwt = true
+
+[functions.sync-inbound-fees]
+verify_jwt = false
+
+[functions.sync-inventory-report]
+verify_jwt = true
+
+[functions.sync-fbm-cleanup]
+verify_jwt = false
+
+[functions.sync-fbm-cleanup-all]
+verify_jwt = false
+
+[functions.auto-inventory-sync]
+verify_jwt = false
+
+[functions.fetch-reimbursements]
+verify_jwt = true
+
+[functions.list-fulfillment-centers]
+verify_jwt = true
+
+[functions.create-inbound-plan]
+verify_jwt = true
+
+[functions.list-placement-options]
+verify_jwt = true
+
+[functions.confirm-placement]
+verify_jwt = true
+
+[functions.get-transportation-options]
+verify_jwt = true
+
+[functions.confirm-transportation]
+verify_jwt = true
+
+[functions.get-shipping-labels]
+verify_jwt = true
+
+[functions.get-box-labels]
+verify_jwt = true
+
+[functions.exchange-amazon-code]
+verify_jwt = true
+
+[functions.get-fx-rates]
+verify_jwt = false
+
+[functions.refresh-fx-rates]
+verify_jwt = false
+
+[functions.resolve-unmapped-orders]
+verify_jwt = true
+
+[functions.repair-pending-prices]
+verify_jwt = false
+
+[functions.fetch-bsr]
+verify_jwt = true
+
+[functions.sync-historical-settled]
+verify_jwt = true
+
+[functions.backfill-fee-cache]
+verify_jwt = false
+
+[functions.backfill-my-price-cache]
+verify_jwt = false
+
+[functions.enrich-pending-orders]
+verify_jwt = false
+
+[functions.get-order-items]
+verify_jwt = true
+
+[functions.capture-asin-price]
+verify_jwt = false
+
+[functions.backfill-order-snapshots]
+verify_jwt = false
+
+[functions.refresh-order-status]
+verify_jwt = true
+
+[functions.detect-cancelled-orders]
+verify_jwt = false
+
+[functions.fetch-listing-prices]
+verify_jwt = true
+
+[functions.repricer-fetch-offers]
+verify_jwt = true
+
+[functions.repricer-evaluate]
+verify_jwt = false
+
+[functions.repricer-ai-evaluate]
+verify_jwt = true
+
+[functions.repricer-scheduler]
+verify_jwt = false
+
+[functions.repricer-cron-trigger]
+verify_jwt = false
+
+[functions.repricer-sp-api-pricing]
+verify_jwt = true
+
+[functions.enrich-missing-titles]
+verify_jwt = false
+
+[functions.sync-amazon-bounds]
+verify_jwt = true
+
+[functions.calculate-roi-range]
+verify_jwt = true
+
+[functions.bulk-update-repricer-bounds]
+verify_jwt = true
+
+[functions.clear-inflated-prices]
+verify_jwt = false
+
+[functions.repricer-batch-update]
+verify_jwt = false
+
+[functions.repricer-priority-cron]
+verify_jwt = false
+
+[functions.repricer-auto-turbo]
+verify_jwt = false
+
+[functions.repricer-cleanup]
+verify_jwt = false
+
+[functions.repricer-reconcile]
+verify_jwt = false
+
+[functions.repricer-sequential-sweep]
+verify_jwt = false
+
+[functions.repricer-unified-dispatch]
+verify_jwt = false
+
+[functions.keepa-product-finder]
+verify_jwt = false
+
+[functions.import-amazon-categories]
+verify_jwt = false
+
+[functions.upload-keepa-products]
+verify_jwt = false
+
+[functions.admin-manage-account]
+verify_jwt = true
+
+[functions.admin-manage-roles]
+verify_jwt = true
+
+[functions.auto-onboard-asin]
+verify_jwt = true
+
+[functions.auto-assign-bulk]
+verify_jwt = true
+
+[functions.bulk-fetch-international-prices]
+verify_jwt = true
+
+[functions.check-subscription]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.customer-portal]
+verify_jwt = true
+
+[functions.enforce-subscription]
+verify_jwt = false
+
+[functions.auth-email-hook]
+verify_jwt = false
+
+[functions.smart-engine-ai-review]
+verify_jwt = false
+
+[functions.smart-engine-auto-review]
+verify_jwt = false
+
+[functions.smart-engine-outcome-snapshot]
+verify_jwt = false
+
+[functions.clean-ghost-listings]
+verify_jwt = false
+
+[functions.monitor-snapshot]
+verify_jwt = false
+
+[functions.monitor-spapi-health]
+verify_jwt = false
+
+[functions.extract-product-price]
+verify_jwt = false
+
+[functions.discover-source-candidates]
+verify_jwt = true
+
+[functions.auto-extract-top-candidates]
+verify_jwt = true
+
+[functions.sourcer-search-catalog]
+verify_jwt = true
+
+[functions.sourcer-fetch-offers]
+verify_jwt = true
+
+[functions.gmail-oauth-start]
+verify_jwt = true
+
+[functions.gmail-oauth-callback]
+verify_jwt = false
+
+[functions.gmail-search]
+verify_jwt = true
+
+[functions.gmail-disconnect]
+verify_jwt = true
+
+[functions.mobile-scan-price-stability]
+verify_jwt = false
+
+[functions.get-amazon-app-id]
+verify_jwt = false
+
+[functions.admin-vacuum-full]
+verify_jwt = true
+
+[functions.admin-backfill-fec-months]
+verify_jwt = true
+
+[functions.learn-intl-fee-multipliers]
+verify_jwt = false

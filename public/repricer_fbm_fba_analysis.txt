@@ -1,0 +1,123 @@
+REPRICER FBM vs FBA FULFILLMENT ANALYSIS REPORT
+Generated: 2026-04-08
+
+1. CURRENT ENGINE CAPABILITY (~60% FBM-aware)
+
+WHAT WORKS:
+- Engine detects seller fulfillment type (yourFulfillmentType) from inventory data
+- FBM listings anchor to lowest overall price (not just FBA)
+- Monopoly Mode is suppressed for FBM sellers
+- FBM-specific undercut amounts are applied
+- Competitor filtering respects FBM/FBA types
+
+WHAT IS MISSING:
+- No explicit fulfillment_mode_path logging
+- No differentiated BB recovery logic for FBM vs FBA Buy Box holders
+- No cluster-aware FBM behavior (FBM forced to match FBA clusters)
+- Smart raise thresholds identical for FBM and FBA
+- "Not BB eligible" hard-blocks FBM even though it is expected for FBM
+
+2. HOW EACH RULE ACTS FOR FBM LISTINGS
+
+AGGRESSIVE CAPTURE (VELOCITY_DOMINATOR):
+  FBA behavior: Undercut $0.02, no smart raise, 5min cooldown, BB eligibility bypass
+  FBM behavior: Same undercut $0.02, anchors to lowest overall (not just FBA)
+  GAP: FBM vs FBA BB recovery uses tiny $0.01 steps - insufficient for FBM to win BB from FBA
+  ISSUE: Should use larger recovery gap when FBM chasing FBA Buy Box
+
+MOMENTUM BUILDER (MOMENTUM_BUILDER):
+  FBA behavior: Undercut $0.01, smart raise enabled (1.5% trigger), 15min cooldown
+  FBM behavior: Same parameters, anchors to lowest overall
+  GAP: Smart raise at 1.5% is too aggressive for FBM - FBM loses sales faster when above BB
+  ISSUE: Should have wider raise trigger (e.g., 3-4%) for FBM
+
+BALANCED (BALANCED_PRO):
+  FBA behavior: Undercut $0.005, smart raise (2.0% trigger), 20min cooldown
+  FBM behavior: Same parameters
+  GAP: Small undercut ($0.005) is meaningless for FBM vs FBA competition
+  ISSUE: FBM should use larger undercut or switch to hold for profit mode
+
+MARGIN PROTECTION (MARGIN_BUILDER):
+  FBA behavior: Match-only ($0.00 undercut), smart raise (3.0% trigger), 35min cooldown
+  FBM behavior: Same match-only behavior
+  GAP: Match-only makes sense for FBA vs FBA, but for FBM vs FBA it means never winning BB
+  ISSUE: Should offer hold for profit, do not chase FBA BB explicit mode
+
+PROFIT EXTRACTOR (PROFIT_EXTRACTOR):
+  FBA behavior: Match-only ($0.00), aggressive raises ($1.50/6%), monopoly mode
+  FBM behavior: Monopoly mode correctly suppressed, but $0.01 undercut override applied
+  GAP: The $0.01 FBM override breaks the match-only identity
+  ISSUE: Profit Extractor for FBM should truly match, not force $0.01 undercut
+
+LIQUIDATION (LIQUIDATION):
+  FBA behavior: Undercut $0.03, no profit guard, no smart raise, BB bypass
+  FBM behavior: Same aggressive parameters, anchors to lowest overall
+  GAP: Least problematic - aggressive clearing works similarly for both
+  ISSUE: Minor - could benefit from larger FBM-specific undercut when chasing FBA BB
+
+3. CRITICAL LOGIC GAPS
+
+A. BUY BOX RECOVERY (FBM vs FBA holder):
+   Current: Uses $0.01 escalation steps regardless of fulfillment type
+   Problem: FBM cannot win BB from FBA with tiny undercuts - Amazon favors FBA
+   Fix needed: Larger recovery discount or do not chase mode for FBM vs FBA
+
+B. CLUSTER MATCHING:
+   Current: FBM sellers forced to match FBA price clusters
+   Problem: Matching an FBA cluster price does not give FBM the same rotation benefit
+   Fix needed: Allow FBM to price below FBA clusters or ignore cluster matching
+
+C. SMART RAISE THRESHOLDS:
+   Current: Same raise triggers for FBM and FBA
+   Problem: FBM loses sales faster when priced above market
+   Fix needed: Wider raise triggers for FBM (e.g., multiply by 1.5x)
+
+D. NOT BB ELIGIBLE BLOCKING:
+   Current: Hard-blocks pricing when not BB eligible
+   Problem: FBM is often not eligible by default - this should not stop repricing
+   Fix needed: Soft-block for FBM - continue repricing but log the status
+
+E. PROFIT EXTRACTOR FBM OVERRIDE:
+   Current: Forces $0.01 undercut for all FBM raises
+   Problem: Breaks match-only identity of Profit Extractor
+   Fix needed: Respect profile undercut_amount even for FBM
+
+4. RECOMMENDED LOGGING ADDITIONS
+
+Add these fields to every evaluation:
+
+  my_offer_type: FBA | FBM
+  buybox_offer_type: FBA | FBM | unknown
+  anchor_offer_type: FBA | FBM | mixed | unknown
+  fulfillment_mode_path: fba_vs_fba | fbm_vs_fba | fbm_vs_fbm | mixed_market
+  fbm_adjustment_applied: true | false
+  fbm_adjustment_reason: (description of what changed)
+
+5. RECOMMENDED BEHAVIORAL BRANCHES
+
+Branch 1: Me = FBA (no change needed)
+  - Normal FBA-first repricing
+  - Compete mainly against FBA
+  - Cluster matching works normally
+  - Smart raise works normally
+
+Branch 2: Me = FBM, Buy Box = FBA
+  - Small undercuts are meaningless - do not waste them
+  - Options by rule:
+    Conservative rules (Balanced, Margin, Profit): Hold for profit, do not chase FBA BB
+    Aggressive rules (Aggressive, Liquidation): Controlled descent with larger steps
+    Momentum: Moderate descent, slower than aggressive
+
+Branch 3: Me = FBM, Buy Box = FBM
+  - Normal FBM competition
+  - Regular price strategy runs
+  - Smaller undercuts matter again
+
+6. PRIORITY ORDER FOR IMPLEMENTATION
+
+Priority 1: Add fulfillment_mode_path logging (visibility first)
+Priority 2: Fix Not BB eligible soft-block for FBM
+Priority 3: FBM-specific BB recovery logic (larger steps or hold)
+Priority 4: Fix Profit Extractor $0.01 FBM override
+Priority 5: FBM cluster matching adjustment
+Priority 6: FBM-aware smart raise thresholds

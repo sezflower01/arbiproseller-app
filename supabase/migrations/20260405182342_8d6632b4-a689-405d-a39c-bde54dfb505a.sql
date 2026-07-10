@@ -1,0 +1,1 @@
+ALTER TABLE public.smart_engine_learning_signals ADD COLUMN IF NOT EXISTS metadata_json jsonb DEFAULT '{}'::jsonb;

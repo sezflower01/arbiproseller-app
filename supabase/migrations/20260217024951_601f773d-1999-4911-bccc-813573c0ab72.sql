@@ -1,0 +1,1 @@
+ALTER TABLE public.personalhour_orders ADD COLUMN cost numeric DEFAULT NULL;

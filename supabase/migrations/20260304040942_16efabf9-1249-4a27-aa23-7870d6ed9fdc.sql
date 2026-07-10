@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.get_authoritative_period_totals(timestamp with time zone, timestamp with time zone);

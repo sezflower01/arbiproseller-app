@@ -1,0 +1,223 @@
+// Deno port of src/lib/inventory-valuation.ts — bit-for-bit equivalent.
+// Used by refresh-inventory-valuation-summary to compute server-side totals.
+
+type CostEntry = {
+  unitCost: number | null;
+  totalCost: number | null;
+  units: number | null;
+};
+
+type InventoryRow = {
+  id: string;
+  available: number | null;
+  reserved: number | null;
+  inbound: number | null;
+  unfulfilled: number | null;
+  cost: number | null;
+  amount: number | null;
+  units: number | null;
+  unit_cost_manual: boolean | null;
+  last_summaries_at: string | null;
+  listing_status: string | null;
+  asin: string;
+  sku: string;
+  created_at: string;
+};
+
+type ListingRow = {
+  id: string;
+  asin: string | null;
+  sku: string | null;
+  cost: number | null;
+  amount: number | null;
+  units: number | null;
+  created_at: string | null;
+};
+
+export interface InventoryValuationTotals {
+  value: number;
+  units: number;
+  skus: number;
+  available: number;
+  reserved: number;
+  inbound: number;
+  unfulfilled: number;
+  availableValue: number;
+  reservedValue: number;
+  inboundValue: number;
+  unfulfilledValue: number;
+  lowStock: number;
+  totalRows: number;
+  rowsStale24h: number;
+  mostRecentSync: string | null;
+}
+
+const toNum = (n: unknown): number | null => {
+  if (n === null || n === undefined) return null;
+  const v = typeof n === "number" ? n : Number(n);
+  return Number.isFinite(v) ? v : null;
+};
+const pos = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
+
+function listingUnitCost(row: { cost: number | null; amount: number | null; units: number | null }): number | null {
+  const amount = toNum(row.amount);
+  if (amount !== null && amount > 0) return amount;
+  const cost = toNum(row.cost);
+  const units = toNum(row.units);
+  if (cost !== null && cost > 0 && pos(units)) return cost / units;
+  return null;
+}
+function listingTotalCost(row: { cost: number | null; amount: number | null; units: number | null }): number | null {
+  const cost = toNum(row.cost);
+  if (cost !== null && cost >= 0) return cost;
+  const amount = toNum(row.amount);
+  const units = toNum(row.units);
+  if (amount !== null && amount >= 0 && pos(units)) return amount * units;
+  return null;
+}
+function inventoryUnitCost(row: { cost: number | null; amount: number | null; units: number | null }): number | null {
+  const cost = toNum(row.cost);
+  if (cost !== null && cost >= 0) return cost;
+  const amount = toNum(row.amount);
+  const units = toNum(row.units);
+  if (amount !== null && amount >= 0 && pos(units)) return amount / units;
+  return null;
+}
+
+async function fetchAllKeyset<T extends { id: string; created_at: string | null }>(
+  supabase: any,
+  table: string,
+  columns: string,
+  userId: string,
+): Promise<T[]> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  const seen = new Set<string>();
+  let lastCreatedAt: string | null = null;
+  let lastId: string | null = null;
+
+  for (let p = 0; p < 50; p += 1) {
+    let q = supabase
+      .from(table)
+      .select(columns)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(PAGE);
+    if (lastCreatedAt && lastId) {
+      q = q.or(`created_at.lt.${lastCreatedAt},and(created_at.eq.${lastCreatedAt},id.lt.${lastId})`);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    const batch = data as unknown as T[];
+    for (const r of batch) {
+      if (r.id && !seen.has(r.id)) { seen.add(r.id); out.push(r); }
+    }
+    const last = batch[batch.length - 1];
+    lastCreatedAt = last.created_at;
+    lastId = last.id;
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+export async function computeInventoryValuation(supabase: any, userId: string): Promise<InventoryValuationTotals> {
+  const [inventoryRows, listingRows] = await Promise.all([
+    fetchAllKeyset<InventoryRow>(
+      supabase,
+      "inventory",
+      "id,available,reserved,inbound,unfulfilled,cost,amount,units,unit_cost_manual,last_summaries_at,listing_status,asin,sku,created_at",
+      userId,
+    ),
+    fetchAllKeyset<ListingRow>(
+      supabase,
+      "created_listings",
+      "id,asin,sku,cost,amount,units,created_at",
+      userId,
+    ),
+  ]);
+
+  const costBySku = new Map<string, CostEntry>();
+  const costByAsin = new Map<string, CostEntry>();
+  for (const row of listingRows) {
+    if (!row.asin) continue;
+    const entry: CostEntry = {
+      unitCost: listingUnitCost(row),
+      totalCost: listingTotalCost(row),
+      units: row.units !== null && row.units !== undefined ? Number(row.units) : null,
+    };
+    if (row.sku && !costBySku.has(row.sku)) costBySku.set(row.sku, entry);
+    const existing = costByAsin.get(row.asin);
+    if (!existing || existing.units === null || existing.units <= 0) {
+      costByAsin.set(row.asin, entry);
+    }
+  }
+
+  const grouped = new Map<string, InventoryRow & { _unitCost: number }>();
+  for (const row of inventoryRows) {
+    const status = String(row.listing_status || "").toUpperCase();
+    if (status === "NOT_IN_CATALOG" || status === "DELETED") continue;
+
+    const costEntry = costBySku.get(row.sku) ?? costByAsin.get(row.asin);
+    let unitCost: number;
+    if (row.unit_cost_manual && row.cost !== null && row.cost !== undefined) {
+      unitCost = Number(row.cost);
+    } else {
+      const fromEntry = costEntry?.unitCost;
+      if (fromEntry !== null && fromEntry !== undefined) {
+        unitCost = Number(fromEntry);
+      } else if (row.cost !== null && row.cost !== undefined) {
+        unitCost = Number(row.cost);
+      } else {
+        unitCost = inventoryUnitCost(row) ?? 0;
+      }
+    }
+
+    const key = `${row.asin}::${row.sku}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.available = (existing.available ?? 0) + (row.available ?? 0);
+      existing.reserved = (existing.reserved ?? 0) + (row.reserved ?? 0);
+      existing.inbound = (existing.inbound ?? 0) + (row.inbound ?? 0);
+      existing.unfulfilled = (existing.unfulfilled ?? 0) + (row.unfulfilled ?? 0);
+      if (!existing._unitCost && unitCost) existing._unitCost = unitCost;
+    } else {
+      grouped.set(key, { ...row, _unitCost: unitCost });
+    }
+  }
+
+  let available = 0, reserved = 0, inbound = 0, unfulfilled = 0;
+  let availableValue = 0, reservedValue = 0, inboundValue = 0, unfulfilledValue = 0;
+  let lowStock = 0, skus = 0, rowsStale24h = 0;
+  let mostRecentSync: string | null = null;
+  const staleCutoff = Date.now() - 24 * 3600 * 1000;
+
+  for (const row of grouped.values()) {
+    const av = Number(row.available || 0);
+    const rs = Number(row.reserved || 0);
+    const ib = Number(row.inbound || 0);
+    const uf = Number(row.unfulfilled || 0);
+    const unitCost = row._unitCost || 0;
+    if (av + rs + ib + uf > 0) skus += 1;
+    available += av; reserved += rs; inbound += ib; unfulfilled += uf;
+    availableValue += av * unitCost;
+    reservedValue += rs * unitCost;
+    inboundValue += ib * unitCost;
+    unfulfilledValue += uf * unitCost;
+    if (av > 0 && av <= 3) lowStock += 1;
+    if (row.last_summaries_at && (!mostRecentSync || row.last_summaries_at > mostRecentSync)) mostRecentSync = row.last_summaries_at;
+    if (av + rs > 0 && (!row.last_summaries_at || new Date(row.last_summaries_at).getTime() < staleCutoff)) rowsStale24h += 1;
+  }
+
+  return {
+    value: availableValue + reservedValue + inboundValue + unfulfilledValue,
+    units: available + reserved + inbound + unfulfilled,
+    skus, available, reserved, inbound, unfulfilled,
+    availableValue, reservedValue, inboundValue, unfulfilledValue,
+    lowStock,
+    totalRows: inventoryRows.length,
+    rowsStale24h,
+    mostRecentSync,
+  };
+}

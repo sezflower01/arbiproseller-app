@@ -1,0 +1,1 @@
+ALTER TABLE public.subscription_plans ADD COLUMN stripe_annual_price_id text;

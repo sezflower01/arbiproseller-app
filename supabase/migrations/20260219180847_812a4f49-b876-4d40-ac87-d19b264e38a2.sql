@@ -1,0 +1,1 @@
+UPDATE repricer_assignments SET is_priority = true WHERE is_manual_priority = true AND is_priority = false;

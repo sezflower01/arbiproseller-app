@@ -1,0 +1,33 @@
+
+# Allow all search engines to index the site
+User-agent: *
+Allow: /
+
+Sitemap: https://arbiproseller.com/sitemap.xml
+
+
+# Make sure key pages are explicitly allowed
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Allow: /contact
+Allow: /support
+Allow: /about
+
+# Prevent crawling of admin or private areas
+Disallow: /admin/
+Disallow: /private/
+Disallow: /account/
+Disallow: /tools/
+
+# Specific instructions for Googlebot
+User-agent: Googlebot
+Allow: /
+Disallow: /admin/
+Disallow: /private/
+Disallow: /account/
+Disallow: /tools/
+
+# Specific instructions for Googlebot-Image
+User-agent: Googlebot-Image
+Allow: /

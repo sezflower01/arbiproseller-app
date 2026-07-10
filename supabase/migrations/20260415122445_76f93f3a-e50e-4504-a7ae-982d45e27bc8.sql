@@ -1,0 +1,1 @@
+UPDATE user_subscriptions SET status = 'trial', trial_end_date = (created_at + interval '60 days'), cancel_at_period_end = false WHERE user_id = 'e697c7c7-b305-47ef-8427-2a72484b26c8' AND status = 'cancelled';

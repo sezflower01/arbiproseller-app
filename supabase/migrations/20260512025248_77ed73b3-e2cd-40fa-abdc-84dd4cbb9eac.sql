@@ -1,0 +1,1 @@
+DELETE FROM product_analyzer_snapshot_cache;

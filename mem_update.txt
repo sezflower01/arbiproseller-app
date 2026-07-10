@@ -1,0 +1,27 @@
+---
+name: Sales Data Sources and Metric Definitions
+description: Live Sales chart uses SO-primary (order_date) for all days. FEC is NOT used for chart. getLineRevenue multiplies sold_price × qty.
+type: feature
+---
+
+## Data Sources
+- `sales_orders`: Order placement date basis. 1 row per order-item. Has marketplace field. **PRIMARY for Live Sales chart.**
+- `financial_events_cache`: Settlement/shipment date basis. Used ONLY in Sales Dashboard / settled P&L views. NOT used in Live Sales chart.
+
+## Live Sales Chart Architecture (SO-primary, Apr 2026)
+- **All days**: sales_orders grouped by order_date — represents when customers placed orders
+- **Dedup**: Phase 1 exact (order_id+asin), Phase 2 ASIN/SKU pair detection
+- **Revenue**: getLineRevenue = total_sale_amount > sold_price×qty > estimated_price×qty
+- **Chart and top KPI use the SAME row set** (chartRowsByDayRef) — no divergence
+
+## Key Design Decision
+- Live Sales = "what customers bought that day" (operational)
+- Sales Dashboard = "what Amazon settled" (financial)
+- These are intentionally different views — do NOT mix them
+
+## Metric Definitions in UI
+- "Gross Sales" = Principal sales amount (before any deductions)
+- "Net Sales" = Gross Sales - Promotional Rebates
+- "Gross Profit" = Sales + Shipping - Promos - Fees - Refunds - COGS
+- "Net Profit" = Gross Profit - Expenses
+- "Est. Payout" = Sales + Shipping - Fees - Refunds

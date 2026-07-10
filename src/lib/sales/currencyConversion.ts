@@ -1,0 +1,240 @@
+/**
+ * Shared FX conversion helper for sales_orders rows.
+ *
+ * CONTRACT (mixed historical data):
+ *  - marketplace = 'US' → monetary fields are USD.
+ *  - marketplace != 'US' → confirmed sold_price / total_sale_amount may be USD
+ *    (settlement/new writers) OR native (older Orders API paths).
+ *  - Read paths must use source-aware guards before converting with fx_rates.
+ *
+ * fxRates map is keyed by quote currency code, value = USD→quote rate
+ * (e.g. fxRates['BRL'] = 5.37 means 1 USD = 5.37 BRL).
+ *
+ * DOUBLE-CONVERT GUARD:
+ *  - This function does nothing for US rows or for unknown marketplaces.
+ *  - Callers MUST pass the row's native amount; do not pre-convert.
+ */
+
+export const MARKETPLACE_CURRENCY: Record<string, string> = {
+  US: "USD",
+  CA: "CAD",
+  MX: "MXN",
+  BR: "BRL",
+  UK: "GBP",
+  DE: "EUR",
+  ES: "EUR",
+  FR: "EUR",
+  IT: "EUR",
+  JP: "JPY",
+  AU: "AUD",
+  IN: "INR",
+  SG: "SGD",
+  AE: "AED",
+  SA: "SAR",
+  NL: "EUR",
+  SE: "SEK",
+  PL: "PLN",
+  BE: "EUR",
+  TR: "TRY",
+};
+
+export function getMarketplaceCurrency(marketplace: string | null | undefined): string {
+  const mp = String(marketplace || "US").trim().toUpperCase();
+  return MARKETPLACE_CURRENCY[mp] || "USD";
+}
+
+/**
+ * Convert an amount stored in the row's NATIVE marketplace currency
+ * into the seller's home currency (default USD).
+ *
+ * Returns { amount, fxRate, fromCurrency, toCurrency } for UI display/debug.
+ */
+export function convertNativeToHome(
+  amount: number | null | undefined,
+  marketplace: string | null | undefined,
+  fxRates: Record<string, number>,
+  homeCurrency: string = "USD",
+): { amount: number; fxRate: number; fromCurrency: string; toCurrency: string } {
+  const safe = Number.isFinite(amount as number) ? Number(amount) : 0;
+  const fromCurrency = getMarketplaceCurrency(marketplace);
+  const toCurrency = (homeCurrency || "USD").toUpperCase();
+
+  if (fromCurrency === toCurrency) {
+    return { amount: safe, fxRate: 1, fromCurrency, toCurrency };
+  }
+
+  // Cross-rate via USD: amount × (USD→to) / (USD→from)
+  const usdToFrom = fromCurrency === "USD" ? 1 : fxRates[fromCurrency] || 0;
+  const usdToTo = toCurrency === "USD" ? 1 : fxRates[toCurrency] || 0;
+
+  if (!usdToFrom || !usdToTo) {
+    // FX missing — return raw to avoid silent zero
+    return { amount: safe, fxRate: 1, fromCurrency, toCurrency };
+  }
+
+  const fxRate = usdToTo / usdToFrom;
+  return { amount: safe * fxRate, fxRate, fromCurrency, toCurrency };
+}
+
+/**
+ * Convenience for the common case: native → USD (legacy "toUsd").
+ */
+export function convertNativeToUsd(
+  amount: number | null | undefined,
+  marketplace: string | null | undefined,
+  fxRates: Record<string, number>,
+): number {
+  return convertNativeToHome(amount, marketplace, fxRates, "USD").amount;
+}
+
+export type ConfirmedSalesRevenueRow = {
+  marketplace?: string | null;
+  quantity?: number | null;
+  sold_price?: number | null;
+  total_sale_amount?: number | null;
+  estimated_price?: number | null;
+  price_source?: string | null;
+  price_calc_mode?: string | null;
+};
+
+export type ToUsdConverter = (amount: number, marketplace?: string | null) => number;
+
+const TRUSTED_USD_PRICE_SOURCES = new Set([
+  "financial_events",
+  "reconciled_fec",
+  "settled",
+  "orders_api",
+  "orders_api_ca_reconciled",
+  "data_repair",
+  "orders_itemprice_usd",
+]);
+
+const SUSPECT_NATIVE_PRICE_SOURCES = [
+  "",
+  "orders_itemprice",
+  "order_items_api",
+  "order_total_pending",
+  "fees_api",
+  "listings_api",
+  "pricing_api",
+  "estimate",
+  "estimated:",
+];
+
+function nativeMagnitudeThreshold(marketplace: string, fxRate: number): number {
+  if (marketplace === "MX") return Math.max(120, fxRate * 7);
+  if (marketplace === "BR") return Math.max(75, fxRate * 14);
+  if (marketplace === "CA") return 150;
+  return 150;
+}
+
+function shouldTreatConfirmedRevenueAsNative(
+  row: ConfirmedSalesRevenueRow,
+  rawTotal: number,
+  qty: number,
+  marketplace: string,
+  fxRate: number,
+): boolean {
+  const priceSource = String(row.price_source || "").trim().toLowerCase();
+  const calcMode = String(row.price_calc_mode || "").trim().toLowerCase();
+  const hasTrustedUsdMarker =
+    TRUSTED_USD_PRICE_SOURCES.has(priceSource) ||
+    TRUSTED_USD_PRICE_SOURCES.has(calcMode) ||
+    priceSource.endsWith("_usd") ||
+    calcMode.endsWith("_usd") ||
+    priceSource.includes("_reconciled") ||
+    calcMode.includes("_reconciled");
+  if (hasTrustedUsdMarker) return false;
+
+  const suspectSource = SUSPECT_NATIVE_PRICE_SOURCES.some((prefix) => (
+    prefix === "" ? priceSource === "" : priceSource.startsWith(prefix) || calcMode.startsWith(prefix)
+  ));
+  if (!suspectSource) return false;
+
+  const estimatedTotal = Number(row.estimated_price || 0) * qty;
+  if (estimatedTotal > 0) {
+    const usdLikeRatio = rawTotal / estimatedTotal;
+    // If raw is already roughly native/fx while estimate is native, do not convert again.
+    if (usdLikeRatio >= (1 / fxRate) * 0.75 && usdLikeRatio <= (1 / fxRate) * 1.35) return false;
+  }
+
+  // AUDIT §14 (BR confirmed revenue): the previous startsWith branch hard-coded
+  // every `orders_itemprice` / `order_items_api` / `order_total_pending` row as
+  // native marketplace currency. Production scan (BR YTD 2026) proved the
+  // writer (`sync-sales-orders`) already stores USD on these paths — see the
+  // [Sales Currency Contract] memory. Treating them as native caused the
+  // reader to divide by FX again, understating BR revenue ~5.4× (CA ~1.4×).
+  // The branch is intentionally removed. Genuine legacy native rows are still
+  // caught by the estimated-ratio guard below and the magnitude threshold.
+
+
+  if (estimatedTotal > 0) {
+    const ratio = rawTotal / estimatedTotal;
+    // AUDIT §14c (BR order 702-6403753-5454661): the previous `ratio ≈ 1.0`
+    // branch caused false positives. The new USD writer path stores
+    // sold_price = estimated_price (both USD), so ratio=1.0 no longer means
+    // "both native" — it also matches healthy USD rows. Dividing those by FX
+    // again under-reported BR ~5.4× ($32.86 → $6.11). Removed.
+    // The fxRate-band detector (raw=native vs est=USD) still fires for the
+    // genuine half-converted legacy shape, and the magnitude threshold catches
+    // large pure-native rows. Small pure-native legacy rows fall through and
+    // display close to their (already small) native magnitude — preferable to
+    // the previous double-conversion regression.
+    if (ratio >= fxRate * 0.65 && ratio <= fxRate * 1.45) return true;
+  }
+
+  return rawTotal >= nativeMagnitudeThreshold(marketplace, fxRate);
+}
+
+/**
+ * Return confirmed sales_order revenue in USD for all marketplaces.
+ *
+ * Historical data is mixed: settlement/FEC writers stored USD, while older
+ * Orders API paths sometimes stored native CA/MX/BR amounts in sold_price or
+ * total_sale_amount. This source-aware guard converts only rows with a native
+ * signature and leaves known-USD settlement rows alone.
+ */
+export function getConfirmedSalesOrderRevenueUsd(
+  row: ConfirmedSalesRevenueRow,
+  toUsd: ToUsdConverter,
+): number {
+  const qty = Math.max(1, Number(row.quantity || 0));
+  const raw = Number(row.total_sale_amount || 0) || (Number(row.sold_price || 0) * qty) || 0;
+  if (raw <= 0) return 0;
+
+  const marketplace = String(row.marketplace || "US").trim().toUpperCase() || "US";
+  if (marketplace === "US") return raw;
+
+  const oneUsd = toUsd(1, marketplace);
+  if (!(oneUsd > 0) || Math.abs(oneUsd - 1) < 0.0001) return raw;
+  const fxRate = 1 / oneUsd; // fx_rates stores 1 USD = X native currency
+  if (!(fxRate > 1.05)) return raw;
+
+  if (shouldTreatConfirmedRevenueAsNative(row, raw, qty, marketplace, fxRate)) return toUsd(raw, marketplace);
+
+  return raw;
+}
+
+export function getConfirmedSalesOrderUnitRevenueUsd(
+  row: ConfirmedSalesRevenueRow,
+  toUsd: ToUsdConverter,
+): number {
+  const qty = Math.max(1, Number(row.quantity || 0));
+  const total = getConfirmedSalesOrderRevenueUsd(row, toUsd);
+  return total > 0 ? total / qty : 0;
+}
+
+/**
+ * Price-source legacy detector. Some historical rows stored estimated_price
+ * already in USD (pre-fix). After repair migration this should always be false
+ * for new rows, but the detector lets us reason about legacy data if needed.
+ */
+export function isLegacyUsdEstimatedPriceSource(priceSource: string | null | undefined): boolean {
+  if (!priceSource) return false;
+  return (
+    priceSource.startsWith("listings_api_") ||
+    priceSource.startsWith("pricing_api_") ||
+    priceSource.startsWith("seller_derived:") ||
+    priceSource.startsWith("hint:")
+  );
+}

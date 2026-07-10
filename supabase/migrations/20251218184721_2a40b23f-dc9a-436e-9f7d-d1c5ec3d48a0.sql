@@ -1,0 +1,1 @@
+DELETE FROM sales_orders WHERE order_id = '701-6613435-3082665';

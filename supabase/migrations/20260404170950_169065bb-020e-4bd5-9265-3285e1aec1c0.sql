@@ -1,0 +1,1 @@
+ALTER TABLE public.repricer_settings ALTER COLUMN scheduler_enabled SET DEFAULT true;
