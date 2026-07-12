@@ -554,8 +554,20 @@ Deno.serve(async (req) => {
     let dbWriteSucceeded = false;
     const isGhostTombstone = currentDb?.listing_status === 'NOT_IN_CATALOG' || currentDb?.listing_status === 'DELETED';
 
+    // Defense-in-depth: public.inventory has no marketplace column (one row per
+    // user_id+sku, CA/MX/BR are remote-fulfillment extensions of the US catalog
+    // with no separately tracked stock -- see enqueue_full_inventory_refresh's
+    // migration comment). Only a US-sourced summary may ever write
+    // available/reserved/inbound/listing_status here. Without this guard, a
+    // non-US marketplace attempt (however it got requested -- queue, manual
+    // call, future code) would silently overwrite the shared row with
+    // marketplace-scoped numbers that may differ from US's view, and whichever
+    // marketplace happens to be requested last would "win" the shared value.
+    // Confirmed this was happening in practice before this fix (see chat).
     if (!successfulAttempt) {
       skippedUpdateReason = receivedEmptyResponse ? 'no_summary_any_marketplace' : 'no_exact_seller_sku_match';
+    } else if (successfulAttempt.marketplace !== 'US') {
+      skippedUpdateReason = `non_us_marketplace_skipped:${successfulAttempt.marketplace}`;
     } else if (currentDb && isGhostTombstone) {
       skippedUpdateReason = `tombstoned:${currentDb.listing_status}`;
     } else if (currentDb && suspiciousZero) {

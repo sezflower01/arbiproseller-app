@@ -376,3 +376,6 @@ verify_jwt = true
 
 [functions.learn-intl-fee-multipliers]
 verify_jwt = false
+
+[functions.rescue-inventory-asin]
+verify_jwt = false
