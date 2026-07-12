@@ -3,11 +3,13 @@ import { Helmet } from "react-helmet-async";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, CheckCircle2, Sparkles, Users, Workflow, ExternalLink, ChevronRight } from "lucide-react";
 import { MODULE_CATEGORIES, type ModuleItem, type ModuleCategory } from "@/config/moduleCategories";
 import { getModuleCopy, slugify } from "@/config/moduleCopy";
+import RequireAuthLink from "@/components/RequireAuthLink";
+import { cn } from "@/lib/utils";
 
 type Found = { module: ModuleItem; category: ModuleCategory } | null;
 
@@ -65,7 +67,7 @@ const ModuleExplainer: React.FC = () => {
             <div className="flex items-center gap-2 text-xs text-white/60 mb-6">
               <Link to="/" className="hover:text-primary">Home</Link>
               <ChevronRight className="w-3 h-3" />
-              <Link to="/tools" className="hover:text-primary">Modules</Link>
+              <RequireAuthLink to="/tools" className="hover:text-primary">Modules</RequireAuthLink>
               <ChevronRight className="w-3 h-3" />
               <span className="text-white/80">{category.label}</span>
             </div>
@@ -95,15 +97,16 @@ const ModuleExplainer: React.FC = () => {
                     <ArrowRight className="ml-2 w-4 h-4" />
                   </Button>
                   {module.path && (
-                    <Button
-                      size="lg"
-                      variant="outline"
-                      onClick={() => navigate(module.path!)}
-                      className="bg-white text-[#0f1c3f] border-white hover:bg-white/90 hover:text-[#0f1c3f] font-semibold"
+                    <RequireAuthLink
+                      to={module.path}
+                      className={cn(
+                        buttonVariants({ size: "lg", variant: "outline" }),
+                        "bg-white text-[#0f1c3f] border-white hover:bg-white/90 hover:text-[#0f1c3f] font-semibold"
+                      )}
                     >
                       Open {module.label}
                       <ExternalLink className="ml-2 w-4 h-4" />
-                    </Button>
+                    </RequireAuthLink>
                   )}
                 </div>
               </div>
@@ -243,14 +246,15 @@ const ModuleExplainer: React.FC = () => {
                   Start free trial
                   <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate("/")}
-                  className="border-white/20 text-white hover:bg-white/10"
+                <RequireAuthLink
+                  to="/tools"
+                  className={cn(
+                    buttonVariants({ size: "lg", variant: "outline" }),
+                    "border-white/20 text-white hover:bg-white/10"
+                  )}
                 >
                   Back to overview
-                </Button>
+                </RequireAuthLink>
               </div>
             </div>
           </div>

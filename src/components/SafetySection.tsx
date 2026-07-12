@@ -2,7 +2,7 @@
 import { Shield, TrendingDown, AlertTriangle, Lock } from 'lucide-react';
 
 const safeguards = [
-  { icon: Shield, text: 'Never goes below your cost' },
+  { icon: Shield, text: 'Never goes below the minimum price you set' },
   { icon: TrendingDown, text: 'Prevents sudden price drops' },
   { icon: AlertTriangle, text: 'Limits risky price changes' },
   { icon: Lock, text: 'Keeps your account safe' },

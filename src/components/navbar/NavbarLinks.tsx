@@ -19,6 +19,8 @@ import { ExpenseDialog } from "@/components/sales/ExpenseDialog";
 import SalesSyncButton from "./SalesSyncButton";
 import PlatformModulesMenu from "./PlatformModulesMenu";
 import ProductsMegaMenu from "./ProductsMegaMenu";
+import BbPriceAlerts from "./BbPriceAlerts";
+import HijackerAlerts from "./HijackerAlerts";
 
 
 export interface NavbarLinksProps {
@@ -185,6 +187,13 @@ const NavbarLinks: React.FC<NavbarLinksProps> = ({
 
       {user && (
         <PlatformModulesMenu isAdmin={isAdmin} />
+      )}
+
+      {user && (
+        <>
+          <BbPriceAlerts />
+          <HijackerAlerts />
+        </>
       )}
 
       <SalesSyncButton />

@@ -158,21 +158,20 @@ export const MODULE_COPY: Record<string, Partial<ModuleCopy>> = {
   },
   "fba-shipment-builder": {
     tagline: "Build your Amazon shipment plan in minutes",
-    hero: "No spreadsheets. No extra tools. Six guided steps take you from product list to a ready-to-ship Amazon inbound plan — without re-typing ASINs in Seller Central.",
+    hero: "Search your synced inventory and we build a ready-to-ship Amazon inbound plan instantly — no re-typing ASINs in Seller Central. From there, confirm your box split, quantities, dimensions and weight directly in Amazon.",
     bullets: [
       "Pick products straight from your synced inventory",
-      "Set quantities & prep (polybag, fragile, liquid…) in one screen",
-      "Box setup with dimensions & weight per box",
-      "One click sends the inbound plan to Amazon and resumes you in Seller Central",
+      "Set prep requirements (polybag, fragile, liquid…) in one screen",
+      "We build your ready-to-ship inbound plan instantly",
+      "Confirm box split, quantities, dimensions & weight directly in Seller Central",
       "Save drafts and continue any shipment later",
     ],
     how: [
       { title: "Name your shipment", desc: "Pick the marketplace and where it ships from." },
       { title: "Pick products", desc: "Search your synced inventory and tick the items you're sending." },
-      { title: "Quantities & prep", desc: "Type how many of each, choose prep (polybag, fragile, liquid…)." },
-      { title: "Box setup", desc: "Tell us how many boxes and what goes in each one." },
-      { title: "Dimensions & weight", desc: "Quick entry per box — all in one screen." },
-      { title: "Send to Amazon", desc: "We create the inbound plan, then one click opens Seller Central right where you left off." },
+      { title: "Prep requirements", desc: "Choose prep (polybag, fragile, liquid…) for what you're sending." },
+      { title: "We build your plan", desc: "Instantly generates your ready-to-ship Amazon inbound plan." },
+      { title: "Confirm in Seller Central", desc: "Confirm your box split — one box, five, or more — set quantities, and enter dimensions & weight directly in Amazon." },
     ],
   },
   "shipment-tracking": {
@@ -215,7 +214,7 @@ export const MODULE_COPY: Record<string, Partial<ModuleCopy>> = {
     tagline: "AI repricing that protects your margin first",
     hero: "Not just undercutting. ROI-aware floors, Buy Box optimization, fulfillment-aware lanes, and a Gemini AI review layer that learns from real outcomes.",
     bullets: [
-      "Dual-floor: max(manual_min_price, ROI floor) — never sells below cost",
+      "Respects the minimum price you set — never sells below it",
       "FBA & FBM lane selection per ASIN",
       "Self-learning engine reviewed by Gemini",
       "Inventory-aware: pre-positioning, oscillation relief, restock snap-back",

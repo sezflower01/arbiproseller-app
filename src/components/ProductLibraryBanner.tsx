@@ -154,16 +154,15 @@ const subCards = [
     iconColor: "text-sky-300",
     title: "Build your Amazon shipment plan in minutes",
     subtitle: "No spreadsheets. No extra tools.",
-    description: "Six guided steps from product list to Amazon — no re-typing ASINs in Seller Central.",
+    description: "Search your synced inventory and we build your inbound plan instantly — no re-typing ASINs in Seller Central.",
     features: [
       { icon: ClipboardCopy, text: "1. Name your shipment & pick the marketplace" },
-      { icon: Search, text: "2. Pick products from your synced inventory" },
-      { icon: ShieldCheck, text: "3. Set quantities & prep (polybag, fragile, liquid…)" },
-      { icon: Package, text: "4. Set up your boxes" },
-      { icon: PackageCheck, text: "5. Add dimensions & weight per box" },
-      { icon: Zap, text: "6. Send to Amazon — one click resumes in Seller Central" },
+      { icon: Search, text: "2. Search your synced inventory for products to send" },
+      { icon: ShieldCheck, text: "3. Set prep requirements (polybag, fragile, liquid…)" },
+      { icon: Package, text: "4. We build your ready-to-ship inbound plan" },
+      { icon: Zap, text: "5. Confirm box split, quantities, dimensions & weight directly in Seller Central" },
     ],
-    supportingLine: "From product list → Amazon shipment in minutes. Resume any draft anytime.",
+    supportingLine: "From product list → Amazon shipment in minutes. Box split, quantities, dimensions and weight are confirmed directly in Seller Central.",
   },
 ];
 
