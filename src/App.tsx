@@ -95,6 +95,8 @@ class LazyErrorBoundary extends Component<{ children: ReactNode; fallback?: Reac
 
 // Basic pages (always loaded)
 import Index from "./pages/Index";
+import PreviewModulesShowcase from "./pages/_PreviewModulesShowcase";
+import New from "./pages/New";
 import BlogAiRepricer from "./pages/BlogAiRepricer";
 import BlogRealAiDecisions from "./pages/BlogRealAiDecisions";
 import BlogAiRepricerLooksAt from "./pages/BlogAiRepricerLooksAt";
@@ -135,6 +137,7 @@ import ModuleUsageRouteTracker from "./components/ModuleUsageRouteTracker";
 
 // Lazy load tools pages with retry wrapper to handle stale chunks
 const ToolsHub = lazyWithRetry(() => import("./pages/tools/ToolsHub"));
+const ToolsHubThemed = lazyWithRetry(() => import("./pages/tools/ToolsHubThemed"));
 const Dashboard = lazyWithRetry(() => import("./pages/tools/Dashboard"));
 const RoiCalculator = lazyWithRetry(() => import("./pages/tools/RoiCalculator"));
 const FbaFeeCalculator = lazyWithRetry(() => import("./pages/tools/FbaFeeCalculator"));
@@ -151,6 +154,7 @@ const PrintingWithoutPDF = lazyWithRetry(() => import("./pages/tools/PrintingWit
 const CreateListing = lazyWithRetry(() => import("./pages/tools/CreateListing"));
 const Inventory = lazyWithRetry(() => import("./pages/tools/Inventory"));
 const SyncedInventory = lazyWithRetry(() => import("./pages/tools/SyncedInventory"));
+const SyncedInventoryThemed = lazyWithRetry(() => import("./pages/tools/SyncedInventoryThemed"));
 const InventoryReview = lazyWithRetry(() => import("./pages/tools/InventoryReview"));
 const InventoryRestoration = lazyWithRetry(() => import("./pages/tools/InventoryRestoration"));
 const CreatedListings = lazyWithRetry(() => import("./pages/tools/CreatedListings"));
@@ -170,6 +174,7 @@ const PurchaseVsShipmentReport = lazyWithRetry(() => import("./pages/tools/Purch
 const ShipmentTracking = lazyWithRetry(() => import("./pages/tools/ShipmentTracking"));
 const ShipmentAccounting = lazyWithRetry(() => import("./pages/tools/ShipmentAccounting"));
 const Repricer = lazyWithRetry(() => import("./pages/tools/Repricer"));
+const RepricerThemed = lazyWithRetry(() => import("./pages/tools/RepricerThemed"));
 const RepricerMonitor = lazyWithRetry(() => import("./pages/tools/RepricerMonitor"));
 const OperatorQueue = lazyWithRetry(() => import("./pages/tools/OperatorQueue"));
 const CommercialTimeline = lazyWithRetry(() => import("./pages/tools/CommercialTimeline"));
@@ -243,6 +248,8 @@ function App() {
                 <Suspense fallback={<LoadingFallback />}>
                   <Routes>
                   <Route path="/" element={<Index />} />
+                  <Route path="/_preview-modules-showcase" element={<PreviewModulesShowcase />} />
+                  <Route path="/new" element={<New />} />
                   <Route path="/blog/ai-repricer-behind-the-scenes" element={<BlogAiRepricer />} />
                   <Route path="/blog/real-ai-decisions-live-asins" element={<BlogRealAiDecisions />} />
                   <Route path="/blog/what-ai-repricer-looks-at" element={<BlogAiRepricerLooksAt />} />
@@ -274,6 +281,7 @@ function App() {
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                   
                   <Route path="/tools" element={<ProtectedRoute><ToolsHub /></ProtectedRoute>} />
+                  <Route path="/new/tools" element={<ToolsHubThemed />} />
                   <Route path="/tools/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                   <Route path="/tools/roi" element={<ProtectedRoute><RoiCalculator /></ProtectedRoute>} />
                   <Route path="/tools/target-roi-price" element={<ProtectedRoute><TargetRoiPrice /></ProtectedRoute>} />
@@ -287,6 +295,7 @@ function App() {
                   <Route path="/tools/create-listing" element={<ProtectedRoute><CreateListing /></ProtectedRoute>} />
                   <Route path="/tools/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
                   <Route path="/tools/synced-inventory" element={<ProtectedRoute><SyncedInventory /></ProtectedRoute>} />
+                  <Route path="/new/inventory" element={<SyncedInventoryThemed />} />
                   <Route path="/tools/inventory-review" element={<ProtectedRoute><InventoryReview /></ProtectedRoute>} />
                   <Route path="/tools/inventory-restoration" element={<ProtectedRoute><InventoryRestoration /></ProtectedRoute>} />
                   <Route path="/tools/created-listings" element={<ProtectedRoute><CreatedListings /></ProtectedRoute>} />
@@ -308,6 +317,7 @@ function App() {
                   <Route path="/tools/shipment-tracking" element={<ProtectedRoute><ShipmentTracking /></ProtectedRoute>} />
                   <Route path="/tools/shipment-accounting" element={<ProtectedRoute><ShipmentAccounting /></ProtectedRoute>} />
                   <Route path="/tools/repricer" element={<ProtectedRoute><Repricer /></ProtectedRoute>} />
+                  <Route path="/new/repricer" element={<RepricerThemed />} />
                   <Route path="/tools/repricer/monitor" element={<ProtectedRoute><RepricerMonitor /></ProtectedRoute>} />
                   <Route path="/tools/repricer/operator-queue" element={<ProtectedRoute><OperatorQueue /></ProtectedRoute>} />
                   <Route path="/tools/repricer/timeline/:asin" element={<ProtectedRoute><CommercialTimeline /></ProtectedRoute>} />

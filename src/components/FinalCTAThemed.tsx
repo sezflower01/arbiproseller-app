@@ -1,0 +1,22 @@
+// Re-themed copy of FinalCTA.tsx. Copy is untouched — only classNames
+// changed. Same background reasoning as SmartPricingSectionThemed; the
+// ambient blur was already a token color (bg-primary/10) and is reused as-is.
+
+const FinalCTAThemed = () => {
+  return (
+    <section className="py-24 bg-background relative overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[200px]" />
+      <div className="container mx-auto px-4 relative z-10 text-center">
+        <div className="space-y-3 text-muted-foreground text-base max-w-md mx-auto">
+          <p>Organize and store your proven Amazon products</p>
+          <p>Track supplier links and product history in one place</p>
+          <p>Reorder faster with direct supplier access</p>
+          <p>Know what to reorder before you run out</p>
+          <p>Automate pricing with AI reviewed by Gemini to improve performance over time</p>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+export default FinalCTAThemed;

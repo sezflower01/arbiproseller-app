@@ -62,6 +62,11 @@ export default {
 					alt: 'hsl(var(--table-row-alt))',
 					hover: 'hsl(var(--table-row-hover))'
 				},
+				'row-tint': {
+					DEFAULT: 'hsl(var(--row-tint))',
+					alt: 'hsl(var(--row-tint-alt))',
+					hover: 'hsl(var(--row-tint-hover))'
+				},
 				shipment: {
 					surface: 'hsl(var(--shipment-surface))',
 					'elevated': 'hsl(var(--shipment-surface-elevated))',
@@ -111,6 +116,10 @@ export default {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',
 				sm: 'calc(var(--radius) - 4px)'
+			},
+			fontFamily: {
+				'ih-sans': ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+				'ih-display': ['var(--font-display)', 'ui-sans-serif', 'system-ui', 'sans-serif']
 			},
 			keyframes: {
 				'accordion-down': {

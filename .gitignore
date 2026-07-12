@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 public/*.zip
+
+# Supabase CLI local state (project ref, pooler URL, etc.)
+supabase/.temp/
