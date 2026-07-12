@@ -3615,6 +3615,51 @@ export type Database = {
         }
         Relationships: []
       }
+      hijacker_alerts: {
+        Row: {
+          asin: string
+          created_at: string
+          dismissed: boolean
+          id: string
+          marketplace: string
+          new_seller_count: number | null
+          new_seller_id: string
+          new_seller_name: string | null
+          previous_seller_count: number | null
+          seen: boolean
+          sku: string | null
+          user_id: string
+        }
+        Insert: {
+          asin: string
+          created_at?: string
+          dismissed?: boolean
+          id?: string
+          marketplace?: string
+          new_seller_count?: number | null
+          new_seller_id: string
+          new_seller_name?: string | null
+          previous_seller_count?: number | null
+          seen?: boolean
+          sku?: string | null
+          user_id: string
+        }
+        Update: {
+          asin?: string
+          created_at?: string
+          dismissed?: boolean
+          id?: string
+          marketplace?: string
+          new_seller_count?: number | null
+          new_seller_id?: string
+          new_seller_name?: string | null
+          previous_seller_count?: number | null
+          seen?: boolean
+          sku?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       historical_sync_checkpoints: {
         Row: {
           completed_at: string | null

@@ -1,0 +1,1 @@
+ALTER FUNCTION public.fn_enforce_assignment_audit() SET search_path = public;
