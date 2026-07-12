@@ -11,7 +11,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const INTERNAL_SECRET = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
 
-const DEFAULT_BATCH = 25;
+const DEFAULT_BATCH = 60;
 const CONCURRENCY = 4;
 const PER_ITEM_TIMEOUT_MS = 25_000;
 

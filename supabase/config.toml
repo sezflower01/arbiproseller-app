@@ -137,6 +137,9 @@ verify_jwt = false
 [functions.sync-inventory-report]
 verify_jwt = true
 
+[functions.inventory-refresh-worker]
+verify_jwt = true
+
 [functions.sync-fbm-cleanup]
 verify_jwt = false
 
