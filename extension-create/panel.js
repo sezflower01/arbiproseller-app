@@ -1,5 +1,5 @@
 // Panel logic — mirrors src/pages/tools/CreateListing.tsx
-const APP_URL = "https://arbiproseller.com";
+const APP_URL = "https://inventorysprint.com";
 
 const MARKETPLACES = {
   US: { id: "ATVPDKIKX0DER", name: "United States", flag: "🇺🇸", currency: "USD", symbol: "$", domain: "amazon.com" },
@@ -514,7 +514,7 @@ function renderNewFbaGate() {
         const ok = confirm(
           "Bypass FBA approval gate?\n\n" +
           "Only continue if you have verified in Seller Central that you can create this listing as New.\n\n" +
-          "ArbiProSeller will allow you to Create the listing, but Amazon may still reject the submission if you are not actually approved."
+          "InventorySprint will allow you to Create the listing, but Amazon may still reject the submission if you are not actually approved."
         );
         if (!ok) return;
         newListing.bypass = true;
@@ -683,7 +683,7 @@ $("apx-create").addEventListener("click", async () => {
       if (!r?.ok) throw new Error(r?.error || "Amazon create failed");
       renderIssues(r.data);
     }
-    setStatus("apx-action-status", blocked ? "FBM-only listing saved to ArbiProSeller ✓" : "Saved to ArbiProSeller ✓", "ok");
+    setStatus("apx-action-status", blocked ? "FBM-only listing saved to InventorySprint ✓" : "Saved to InventorySprint ✓", "ok");
     resetForm();
   } catch (e) {
     setStatus("apx-action-status", String(e.message || e), "err");
@@ -738,7 +738,7 @@ $("apx-thinking")?.addEventListener("click", async () => {
       "apx-action-status",
       r.already
         ? "Already in Still Thinking ✓ (refreshed)"
-        : "Saved to Still Thinking ✓ — view in ArbiProSeller › Still Thinking",
+        : "Saved to Still Thinking ✓ — view in InventorySprint › Still Thinking",
       "ok",
     );
   } catch (e) {
@@ -748,8 +748,8 @@ $("apx-thinking")?.addEventListener("click", async () => {
   }
 });
 
-/* ─── Open records pages in ArbiProSeller ─── */
-const APP_BASE = (self.ARBIPRO_CFG?.APP_URL || "https://arbiproseller.com").replace(/\/+$/, "");
+/* ─── Open records pages in InventorySprint ─── */
+const APP_BASE = (self.ARBIPRO_CFG?.APP_URL || "https://inventorysprint.com").replace(/\/+$/, "");
 $("apx-open-thinking")?.addEventListener("click", () => {
   chrome.tabs.create({ url: `${APP_BASE}/tools/still-thinking` });
 });

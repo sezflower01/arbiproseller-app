@@ -15,9 +15,9 @@ async function setSession(s) {
 }
 
 // Explicit logout — only called when:
-//   1. The user clicks "Log out" in ArbiProSeller web app (LOGOUT broadcast), or
+//   1. The user clicks "Log out" in InventorySprint web app (LOGOUT broadcast), or
 //   2. Supabase confirms invalid_grant / refresh_token_not_found.
-// Sets a sticky flag so panels can show "Please log in to ArbiProSeller again"
+// Sets a sticky flag so panels can show "Please log in to InventorySprint again"
 // instead of silently retrying with no token.
 async function clearSessionExplicit(reason) {
   await chrome.storage.local.remove("arbipro_session");
@@ -232,7 +232,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         case "ARBIPRO_EXPLICIT_SIGN_OUT":
-          // Broadcast from arbiproseller.com web app — user clicked Log out.
+          // Broadcast from inventorysprint.com web app — user clicked Log out.
           await clearSessionExplicit("web_app_logout");
           sendResponse({ ok: true });
           break;

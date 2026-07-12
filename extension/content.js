@@ -76,7 +76,7 @@
     launcher = document.createElement("button");
     launcher.id = "arbipro-launcher";
     launcher.type = "button";
-    launcher.title = "Open ArbiProSeller (Alt+A)";
+    launcher.title = "Open InventorySprint (Alt+A)";
     launcher.textContent = "⚡";
     Object.assign(launcher.style, {
       position: "fixed", right: "16px", bottom: "16px", zIndex: "2147483647",

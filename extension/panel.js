@@ -1288,8 +1288,8 @@
 
   let __saMounted = false;
   function renderSellerAmpSummary() {
-    if (!__saMounted) { console.log("[ArbiPro] Analyzer summary mounted"); __saMounted = true; }
-    console.log("[ArbiPro] Analyzer summary data loaded", { asin: state.asin, hasIntel: !!state.stability?.intel, hasOffers: !!state.history?.offers?.list?.length, hasDims: !!state.dims });
+    if (!__saMounted) { console.log("[InventorySprint] Analyzer summary mounted"); __saMounted = true; }
+    console.log("[InventorySprint] Analyzer summary data loaded", { asin: state.asin, hasIntel: !!state.stability?.intel, hasOffers: !!state.history?.offers?.list?.length, hasDims: !!state.dims });
     const intel = state.stability?.intel || {};
     const totalCost = parseFloat($("apx-cost").value) || 0;
     const units = Math.max(1, parseInt($("apx-units").value || "1", 10));
@@ -1658,7 +1658,7 @@
     const why = $("apx-dm-why");
     if (why) why.textContent = buildHumanExplanation(final, ctx, profit, trend, comp);
 
-    console.log("[ArbiPro] Final Decision", {
+    console.log("[InventorySprint] Final Decision", {
       action: final.action, confidence: conf?.textContent,
       profit: profit.text, trend: trend.text, comp: comp.text,
     });
@@ -2090,7 +2090,7 @@
     if (area === "local" && changes.arbipro_session) checkSession();
   });
 
-  // ── Save to ArbiProSeller ──────────────────────────────────────────
+  // ── Save to InventorySprint ──────────────────────────────────────────
   $("apx-save").addEventListener("click", async () => {
     const btn = $("apx-save"), status = $("apx-save-status");
     if (!state.asin) return;
@@ -2163,7 +2163,7 @@
         ),
       );
       status.className = "apx-save-status ok";
-      status.textContent = "Saved to ArbiProSeller ✓";
+      status.textContent = "Saved to InventorySprint ✓";
     } catch (e) {
       status.className = "apx-save-status err";
       status.textContent = `Save failed: ${e.message}`;

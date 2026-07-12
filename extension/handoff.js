@@ -1,4 +1,4 @@
-// Runs on arbiproseller.com. Bridges postMessage events from the web app
+// Runs on inventorysprint.com. Bridges postMessage events from the web app
 // (page-context) into the extension service worker.
 //
 // Two events are accepted:
