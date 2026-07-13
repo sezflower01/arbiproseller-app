@@ -5680,18 +5680,54 @@ async function computeAndPersistEstimatedPrices(
   // 3) inventory.price (Listings-API refresh) — the *featured* price the
   //    customer actually pays. Now promoted from last-resort to first-class
   //    seller-derived signal.
+  //
+  //    BUG FIX: a single ASIN can have multiple `inventory` rows (one per
+  //    SKU — e.g. a real active listing plus a stale/ghost NOT_IN_CATALOG
+  //    row left over from a prior SKU). This query had no listing_status
+  //    filter and no ORDER BY, so which row "won" for a given ASIN was
+  //    whatever order Postgres happened to return them in — not
+  //    necessarily the active one. Confirmed in production: ASIN
+  //    B0G6TFFF2M had an ACTIVE row (sku 11H-Y2V-XYYP, price $18.25) and a
+  //    NOT_IN_CATALOG ghost row (sku 42P-MBK-PY8L, price $21.98) — picking
+  //    the ghost row doubled to $43.96 instead of the correct $36.50 across
+  //    two pending orders.
+  //    Fix: prefer ACTIVE listing_status over any other status, and track
+  //    price per (asin, sku) as well as per asin alone, so the per-order
+  //    write-back below can prefer the row matching the order's own SKU.
   const { data: invRows } = await supabase
     .from('inventory')
-    .select('asin, price, amazon_price, my_price, updated_at')
+    .select('asin, sku, price, amazon_price, my_price, updated_at, listing_status')
     .eq('user_id', userId)
     .in('asin', uniqueAsins)
     .limit(2000);
+
+  const invPriceBySku = new Map<string, Candidate>();
+  const isBetterInvCandidate = (active: boolean, ts: number, existingActive?: boolean, existingTs?: number) => {
+    if (existingActive === undefined) return true;
+    if (active !== existingActive) return active; // ACTIVE always beats non-ACTIVE
+    return ts > (existingTs ?? 0);
+  };
+  const invActiveByAsin = new Map<string, boolean>();
+  const invActiveBySku = new Map<string, boolean>();
 
   for (const row of (invRows || [])) {
     const price = Number(row.price || 0) || Number(row.amazon_price || 0) || Number(row.my_price || 0);
     if (!(price > 0)) continue;
     const ts = row.updated_at ? new Date(row.updated_at).getTime() : 0;
-    invPrice.set(row.asin, { price, ts });
+    const active = String(row.listing_status || '').trim().toUpperCase() === 'ACTIVE';
+    const sku = String(row.sku || '').trim();
+
+    if (isBetterInvCandidate(active, ts, invActiveByAsin.get(row.asin), invPrice.get(row.asin)?.ts)) {
+      invPrice.set(row.asin, { price, ts });
+      invActiveByAsin.set(row.asin, active);
+    }
+    if (sku) {
+      const key = `${row.asin}::${sku}`;
+      if (isBetterInvCandidate(active, ts, invActiveBySku.get(key), invPriceBySku.get(key)?.ts)) {
+        invPriceBySku.set(key, { price, ts });
+        invActiveBySku.set(key, active);
+      }
+    }
   }
 
   // ─── Resolve per ASIN ──────────────────────────────────────────────────
@@ -5752,12 +5788,32 @@ async function computeAndPersistEstimatedPrices(
   // Intl markets are priced separately by sync-intl-marketplace / listings_api_mx.
   const { data: ordersToPrice } = await supabase
     .from('sales_orders')
-    .select('id, asin, sold_price, estimated_price, order_status, marketplace, price_source')
+    .select('id, asin, sku, seller_sku, sold_price, estimated_price, order_status, marketplace, price_source')
     .eq('user_id', userId)
     .eq('fees_missing', true)
     .in('marketplace', ['US', 'ATVPDKIKX0DER'])
     .in('asin', candidates)
     .limit(maxOrdersToUpdate);
+
+  // BUG FIX (cont'd): the per-ASIN `result` map above is a reasonable default,
+  // but when the winning candidate for an ASIN came from `inventory.price`
+  // and this specific order's own SKU has its OWN inventory row (a different
+  // price than whichever SKU happened to win the per-ASIN aggregation),
+  // prefer the order's own SKU. Only overrides inventory-sourced estimates —
+  // repricer_action / my_price_cache signals are already ASIN-scoped with no
+  // multi-SKU ambiguity, so they're left untouched.
+  const resolveEstimateForOrder = (asin: string, orderSku: string | null | undefined) => {
+    const base = result.get(asin);
+    if (!base) return base;
+    const isInventorySourced = base.source === 'inventory.price' || base.source === 'inventory.price_over_mypricecache' || base.source === 'seller_derived:repricer+inventory';
+    const sku = String(orderSku || '').trim();
+    if (!isInventorySourced || !sku) return base;
+    const bySku = invPriceBySku.get(`${asin}::${sku}`);
+    if (bySku && bySku.price > 0 && bySku.price !== base.price) {
+      return { price: bySku.price, source: base.source, ts: bySku.ts };
+    }
+    return base;
+  };
 
   // Allow refresh when:
   //  - no price yet (original behavior), OR
@@ -5779,7 +5835,7 @@ async function computeAndPersistEstimatedPrices(
 
   const updates: any[] = [];
   for (const row of (ordersToPrice || [])) {
-    const est = result.get(row.asin);
+    const est = resolveEstimateForOrder(row.asin, row.sku || row.seller_sku);
     if (!est) continue;
     if (!needsEstimate(row, est)) continue;
     updates.push({
