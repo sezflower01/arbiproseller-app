@@ -1765,103 +1765,20 @@ const MobileLiveSales = () => {
         roi: Math.round(totalRoi * 10) / 10,
       };
 
-      // ── Authoritative sales/units — match desktop Sales Report exactly ──
-      // Estimated = LiveSales chartMode "order_date": sum deduped sales_orders rows.
-      // Smart = Sales Report Smart: canonical per-day coverage RPC for ALL,
-      // marketplace-filtered fallback uses the same 70% per-day coverage rule.
+      // ── Authoritative sales/units — match the row table exactly ──
+      // Estimated and Smart both keep the parity totals computed above
+      // (parityRevenue/parityUnits/parityFees/parityCost -- the same
+      // SO-based source that builds finalRows/asinMap), so the header can
+      // never diverge from the sum of the visible row profits. Smart mode
+      // previously swapped the header's revenue/units for a separate
+      // FEC-blended per-day calculation (smartRevenue/smartUnits) while the
+      // table rows stayed SO-based -- the same class of bug fixed on
+      // desktop LiveSales.tsx this morning, except unconditional here since
+      // Mobile has no mode toggle and is locked to "smart".
+      // Reconciled remains its own explicit FEC/settlement-grade view below
+      // (matches P&L) and is unaffected by this change.
       try {
-        if (salesMode === "smart") {
-          // NOTE: the "canonical" get_smart_fallback_daily_totals RPC path was
-          // removed — it was over-counting (returning ~$130k vs the correct
-          // ~$117k), inflating both revenue and profit on mobile. We fall back
-          // to the same per-day loop used before, which matches Sales Report.
-          {
-            const fecMap = new Map<string, { units: number; revenue: number }>();
-            const { data: fecAgg, error: fecErr } = await (supabase as any).rpc(
-              "get_fec_daily_shipment_totals",
-              {
-                p_start: rangeStart,
-                p_end: rangeEnd,
-                p_marketplace: marketplaceFilter && marketplaceFilter !== "ALL" ? marketplaceFilter : null,
-              },
-            );
-            if (isStale()) return;
-            if (fecErr) {
-              console.warn("[MobileLiveSales] FEC daily-totals RPC error:", fecErr.message);
-            } else if (Array.isArray(fecAgg)) {
-              for (const r of fecAgg as any[]) {
-                const day = String(r.event_day || "").slice(0, 10);
-                if (!day) continue;
-                const bucket = fecMap.get(day) || { units: 0, revenue: 0 };
-                bucket.units += Number(r.units || 0);
-                bucket.revenue += toUsd(Math.abs(Number(r.sales || 0)), r.marketplace);
-                fecMap.set(day, bucket);
-              }
-            }
-
-            const rowsByDay = new Map<string, any[]>();
-            for (const row of deduped) {
-              const day = String(row.order_date || "").slice(0, 10);
-              if (!day || day < rangeStart || day > rangeEnd) continue;
-              if (!rowsByDay.has(day)) rowsByDay.set(day, []);
-              rowsByDay.get(day)!.push(row);
-            }
-
-            const soByDay = new Map<string, { units: number; revenue: number }>();
-            for (const [day, dayRows] of rowsByDay) {
-              const bucket = soByDay.get(day) || { units: 0, revenue: 0 };
-              for (const row of dayRows) {
-                const qty = Math.max(1, Number(row.quantity || 0));
-                const asin = String(row.asin || "").trim();
-                bucket.units += qty;
-                bucket.revenue += getRevenueUsdWithFallback(row, asin);
-              }
-              soByDay.set(day, bucket);
-            }
-
-            let smartUnits = 0;
-            let smartRevenue = 0;
-            let daysFEC = 0;
-            const COVERAGE_THRESHOLD = 0.7;
-            const FEC_MIN_ORDERS_FOR_FALLBACK = 3;
-            const todayLocal = getLocalDateStr();
-            for (let cursor = new Date(`${rangeStart}T12:00:00`); getLocalDateStr(cursor) <= rangeEnd; cursor.setDate(cursor.getDate() + 1)) {
-              const day = getLocalDateStr(cursor);
-              const so = soByDay.get(day);
-              const fec = fecMap.get(day);
-              const soUnits = so ? Math.max(0, Number(so.units || 0)) : 0;
-              const soRevenue = so ? Number(so.revenue || 0) : 0;
-              const fecUnits = fec?.units ?? 0;
-              const fecRevenue = fec?.revenue ?? 0;
-              const isToday = day === todayLocal;
-              const orderCoverage = fecUnits > 0 ? soUnits / fecUnits : 1;
-              const revenueCoverage = fecRevenue > 0 ? soRevenue / fecRevenue : 1;
-              const useFecForDay =
-                !isToday &&
-                fecUnits >= FEC_MIN_ORDERS_FOR_FALLBACK &&
-                (orderCoverage < COVERAGE_THRESHOLD || revenueCoverage < COVERAGE_THRESHOLD);
-              if (useFecForDay) {
-                smartUnits += fecUnits;
-                smartRevenue += fecRevenue;
-                daysFEC += 1;
-              } else {
-                smartUnits += soUnits;
-                smartRevenue += soRevenue;
-              }
-            }
-
-            const profit = smartRevenue - nextSummary.fees - nextSummary.cost;
-            const roi = nextSummary.cost > 0 ? (profit / nextSummary.cost) * 100 : 0;
-            nextSummary = {
-              ...nextSummary,
-              units: Math.round(smartUnits),
-              revenue: Math.round(smartRevenue * 100) / 100,
-              profit: Math.round(profit * 100) / 100,
-              roi: Math.round(roi * 10) / 10,
-            };
-            console.log(`[MobileLiveSales] smart totals matched to Sales Report chart: ${daysFEC} FEC day(s), sales=$${smartRevenue.toFixed(2)}`);
-          }
-        } else if (salesMode === "reconciled") {
+        if (salesMode === "reconciled") {
           // Reconciled = FEC settlement-grade totals (matches Sales Report Reconciled / P&L).
           // Revenue + units from get_fec_daily_shipment_totals; fees from get_authoritative_period_totals.
           let recUnits = 0;
