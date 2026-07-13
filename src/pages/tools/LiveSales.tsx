@@ -1776,16 +1776,32 @@ const LiveSales = ({
       }
 
       if (isStale()) return;
-      // The KPI cards (Units/Revenue/Net Profit/ROI) must always be derived
-      // from the SAME rows the user sees in the table below (asinMap/rows),
-      // never from a different data source. Previously, chartMode !== "order_date"
-      // ("Smart Fallback" and "Shipped/Settled") swapped this in for the
-      // FEC-blended per-day chart totals (`plotted`) while the table rows
-      // stayed SO-based -- so Net Profit could never equal the sum of the
-      // visible row profits. The chart itself (dailyArr) may still blend in
-      // FEC fallback data per-day for trend purposes; the summary tiles must
-      // not.
-      setTodaySummary({ units: totalUnits, revenue: Math.round(totalRevenue * 100) / 100 });
+      // "Smart Fallback" and "Estimated (Order Date)" are both operational,
+      // order-placed views: their KPI cards must be derived from the SAME
+      // rows the user sees in the table below (asinMap/rows), never from a
+      // different data source. Smart Fallback previously swapped the header
+      // for the FEC-blended per-day chart totals (`plotted`) on ANY day it
+      // used FEC fallback, while the table rows stayed SO-based -- so Net
+      // Profit could never equal the sum of the visible row profits. Per its
+      // tooltip ("falls back... on days with missing or priceless placement
+      // rows. Display only"), Smart is only supposed to patch chart gaps,
+      // not become a different accounting basis for the summary tiles.
+      //
+      // "Reconciled (Shipped/Settled)" is intentionally a different
+      // accounting basis -- its tooltip promises "Matches P&L exactly" --
+      // so its header is SUPPOSED to diverge from the SO-based row table.
+      // dailyArr is 100% FEC-sourced for every day when chartMode==="shipped"
+      // (see the chartMode==="shipped" branch above), so summing it gives
+      // the correct settlement-authoritative total.
+      if (chartMode === "shipped") {
+        const plotted = dailyArr.reduce(
+          (acc, d) => { acc.units += d.units; acc.revenue += d.revenue; return acc; },
+          { units: 0, revenue: 0 },
+        );
+        setTodaySummary({ units: plotted.units, revenue: Math.round(plotted.revenue * 100) / 100 });
+      } else {
+        setTodaySummary({ units: totalUnits, revenue: Math.round(totalRevenue * 100) / 100 });
+      }
       setPendingEstimateRevenue({
         usd: Math.round(pendingUsdSum * 100) / 100,
         orders: pendingOrderIdSet.size,
