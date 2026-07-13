@@ -3,7 +3,7 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://arbiproseller.com/sitemap.xml
+Sitemap: https://inventorysprint.com/sitemap.xml
 
 
 # Make sure key pages are explicitly allowed
