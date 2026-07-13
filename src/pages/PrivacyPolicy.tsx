@@ -13,12 +13,13 @@ const PrivacyPolicy = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Privacy Policy | ArbiProSeller</title>
-        <meta name="description" content="How ArbiProSeller collects, uses, and protects data for Amazon sellers using our arbitrage and repricing tools." />
-        <link rel="canonical" href="https://arbiproseller.com/privacy" />
-        <meta property="og:title" content="Privacy Policy | ArbiProSeller" />
-        <meta property="og:description" content="How ArbiProSeller collects, uses, and protects your data." />
-        <meta property="og:url" content="https://arbiproseller.com/privacy" />
+        <title>Privacy Policy | InventorySprint</title>
+        <meta name="description" content="How InventorySprint collects, uses, and protects data for Amazon sellers using our arbitrage and repricing tools." />
+        <meta name="keywords" content="InventorySprint privacy policy, amazon seller software privacy, data protection amazon sellers" />
+        <link rel="canonical" href="https://inventorysprint.com/privacy" />
+        <meta property="og:title" content="Privacy Policy | InventorySprint" />
+        <meta property="og:description" content="How InventorySprint collects, uses, and protects your data." />
+        <meta property="og:url" content="https://inventorysprint.com/privacy" />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-24 pb-16">

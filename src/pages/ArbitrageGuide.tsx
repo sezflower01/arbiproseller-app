@@ -11,7 +11,7 @@ const ArbitrageGuide = () => {
         <title>Complete Online Arbitrage Guide 2024 | Amazon FBA OA Strategy</title>
         <meta name="description" content="Learn online arbitrage for Amazon FBA with our complete OA guide. Discover profitable arbitrage strategies, tools, and techniques to scale your Amazon business." />
         <meta name="keywords" content="online arbitrage guide, Amazon arbitrage tutorial, OA strategy, retail arbitrage guide, Amazon FBA arbitrage, online arbitrage for beginners, arbitrage business model, Amazon seller guide, OA tools, arbitrage software" />
-        <link rel="canonical" href="https://arbiproseller.com/online-arbitrage-guide" />
+        <link rel="canonical" href="https://inventorysprint.com/online-arbitrage-guide" />
         <script type="application/ld+json">{`
           {
             "@context": "https://schema.org",
@@ -20,11 +20,11 @@ const ArbitrageGuide = () => {
             "description": "Comprehensive guide to online arbitrage including strategies, tools, and techniques for Amazon FBA success",
             "author": {
               "@type": "Organization",
-              "name": "ArbiProSeller"
+              "name": "InventorySprint"
             },
             "publisher": {
               "@type": "Organization",
-              "name": "ArbiProSeller",
+              "name": "InventorySprint",
               "logo": {
                 "@type": "ImageObject",
                 "url": "https://arbiproseller.com/lovable-uploads/730b8167-471d-4034-a4db-41a9eaa3a4af.png"
@@ -34,7 +34,7 @@ const ArbitrageGuide = () => {
             "dateModified": "2024-01-01",
             "mainEntityOfPage": {
               "@type": "WebPage",
-              "@id": "https://arbiproseller.com/online-arbitrage-guide"
+              "@id": "https://inventorysprint.com/online-arbitrage-guide"
             }
           }
         `}</script>

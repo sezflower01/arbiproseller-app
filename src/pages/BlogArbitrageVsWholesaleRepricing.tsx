@@ -50,16 +50,16 @@ const BlogArbitrageVsWholesaleRepricing = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Why Arbitrage Sellers Need Smarter Repricing Than Wholesale | ArbiProSeller</title>
+        <title>Why Arbitrage Sellers Need Smarter Repricing Than Wholesale | InventorySprint</title>
         <meta
           name="description"
           content="Online Arbitrage and Wholesale are different games. See why arbitrage sellers need volatility-aware, defensive repricing — not the slow, stable logic built for wholesale."
         />
         <meta
           name="keywords"
-          content="online arbitrage repricer, wholesale repricer, Amazon repricing strategy, arbitrage vs wholesale, volatility repricing, ArbiProSeller"
+          content="online arbitrage repricer, wholesale repricer, Amazon repricing strategy, arbitrage vs wholesale, volatility repricing, InventorySprint, inventory sprint, amazon inventory, inventory management amazon"
         />
-        <link rel="canonical" href="https://arbiproseller.com/blog/arbitrage-vs-wholesale-repricing" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/arbitrage-vs-wholesale-repricing" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Why Online Arbitrage Sellers Need Smarter Repricing Than Wholesale" />
         <meta

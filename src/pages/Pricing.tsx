@@ -54,15 +54,16 @@ const Pricing = () => {
   return (
     <div className="min-h-screen bg-[hsl(222,84%,4.9%)]">
       <Helmet>
-        <title>Pricing — ArbiProSeller Amazon Arbitrage Suite</title>
+        <title>Pricing — InventorySprint Amazon Arbitrage Suite</title>
         <meta
           name="description"
           content="Repricer, sourcing, inventory, listings and analytics in one plan. 60-day free autopilot trial. Cancel anytime."
         />
-        <link rel="canonical" href="https://arbiproseller.com/pricing" />
-        <meta property="og:title" content="Pricing — ArbiProSeller Amazon Arbitrage Suite" />
+        <meta name="keywords" content="amazon repricer pricing, amazon inventory software pricing, FBA seller software plans, inventory sprint pricing, amazon seller software subscription" />
+        <link rel="canonical" href="https://inventorysprint.com/pricing" />
+        <meta property="og:title" content="Pricing — InventorySprint Amazon Arbitrage Suite" />
         <meta property="og:description" content="Repricer, sourcing, inventory and analytics in one plan. 60-day free trial." />
-        <meta property="og:url" content="https://arbiproseller.com/pricing" />
+        <meta property="og:url" content="https://inventorysprint.com/pricing" />
       </Helmet>
       <Navbar />
 

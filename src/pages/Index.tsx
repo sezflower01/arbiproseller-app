@@ -16,7 +16,7 @@ const Index = () => {
 
   return (
     <IndexPageLayout
-      metaTitle="Amazon Arbitrage & Repricer Software | ArbiProSeller"
+      metaTitle="Amazon Arbitrage & Repricer Software | InventorySprint"
       metaDescription="Find deals, track suppliers, and auto-price Amazon FBA listings. Free 60-day trial — no credit card."
     >
       <IndexPageSections />

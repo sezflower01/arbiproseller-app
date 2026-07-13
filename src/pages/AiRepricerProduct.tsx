@@ -91,7 +91,8 @@ const AiRepricerProduct: React.FC = () => {
           name="description"
           content="Fully automatic AI repricer that reacts in real time. Win the Buy Box, protect your ROI, and start with a 60-day free trial — no credit card required."
         />
-        <link rel="canonical" href="https://arbiproseller.com/products/ai-repricer" />
+        <meta name="keywords" content="amazon AI repricer, buy box repricer, automated amazon pricing software, amazon repricing tool, inventory sprint repricer" />
+        <link rel="canonical" href="https://inventorysprint.com/products/ai-repricer" />
       </Helmet>
 
       <Navbar />

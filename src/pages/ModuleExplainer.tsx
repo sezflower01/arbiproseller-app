@@ -52,9 +52,9 @@ const ModuleExplainer: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>{module.label} — ArbiProSeller</title>
+        <title>{module.label} — InventorySprint</title>
         <meta name="description" content={copy.tagline} />
-        <link rel="canonical" href={`https://arbiproseller.com/products/modules/${slug}`} />
+        <link rel="canonical" href={`https://inventorysprint.com/products/modules/${slug}`} />
       </Helmet>
       <Navbar />
 

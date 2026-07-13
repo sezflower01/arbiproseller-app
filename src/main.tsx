@@ -2,17 +2,17 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
-const PRIMARY_HOST = 'arbiproseller.com';
+const PRIMARY_HOST = 'inventorysprint.com';
 const LOVABLE_HOSTS = ['repricer.lovable.app'];
 
 // Hard-redirect lovable.app traffic to the primary domain so Google
-// consolidates indexing on arbiproseller.com.
+// consolidates indexing on inventorysprint.com.
 if (typeof window !== 'undefined' && LOVABLE_HOSTS.includes(window.location.hostname)) {
   const target = `https://${PRIMARY_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`;
   window.location.replace(target);
 }
 
-// Ensure a per-route canonical pointing at arbiproseller.com is always present
+// Ensure a per-route canonical pointing at inventorysprint.com is always present
 // (overrides any stale or hard-coded canonical injected elsewhere).
 const ensureCanonical = () => {
   if (typeof window === 'undefined') return;
@@ -29,7 +29,7 @@ const addSearchEngineMetaTag = () => {
   const onLovable = LOVABLE_HOSTS.includes(window.location.hostname);
 
   // On lovable.app: tell crawlers to drop it from the index but follow
-  // links (which carry the canonical to arbiproseller.com). Elsewhere:
+  // links (which carry the canonical to inventorysprint.com). Elsewhere:
   // index normally.
   const robotsContent = onLovable ? 'noindex,follow' : 'index,follow,noarchive';
 

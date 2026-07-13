@@ -12,25 +12,26 @@ const Contact = () => {
   return (
     <>
       <Helmet>
-        <title>Contact ArbiProSeller - Get in Touch</title>
-        <meta name="description" content="Contact ArbiProSeller support team. We're here to help you with any questions about our Amazon seller database software." />
-        <link rel="canonical" href="https://arbiproseller.com/contact" />
-        <meta property="og:title" content="Contact ArbiProSeller" />
-        <meta property="og:description" content="Get in touch with the ArbiProSeller team." />
-        <meta property="og:url" content="https://arbiproseller.com/contact" />
-        <meta name="twitter:title" content="Contact ArbiProSeller" />
-        <meta name="twitter:description" content="Get in touch with the ArbiProSeller team." />
+        <title>Contact InventorySprint - Get in Touch</title>
+        <meta name="description" content="Contact InventorySprint support team. We're here to help you with any questions about our Amazon seller database software." />
+        <meta name="keywords" content="contact InventorySprint, amazon seller software support, amazon FBA tools contact" />
+        <link rel="canonical" href="https://inventorysprint.com/contact" />
+        <meta property="og:title" content="Contact InventorySprint" />
+        <meta property="og:description" content="Get in touch with the InventorySprint team." />
+        <meta property="og:url" content="https://inventorysprint.com/contact" />
+        <meta name="twitter:title" content="Contact InventorySprint" />
+        <meta name="twitter:description" content="Get in touch with the InventorySprint team." />
         <script type="application/ld+json">{`
           {
             "@context": "https://schema.org",
             "@type": "ContactPage",
-            "url": "https://arbiproseller.com/contact",
-            "name": "Contact ArbiProSeller",
-            "description": "Get in touch with ArbiProSeller for support or inquiries about our Amazon seller database software.",
+            "url": "https://inventorysprint.com/contact",
+            "name": "Contact InventorySprint",
+            "description": "Get in touch with InventorySprint for support or inquiries about our Amazon seller database software.",
             "isPartOf": {
               "@type": "WebSite",
-              "name": "ArbiProSeller",
-              "url": "https://arbiproseller.com/"
+              "name": "InventorySprint",
+              "url": "https://inventorysprint.com/"
             }
           }
         `}</script>

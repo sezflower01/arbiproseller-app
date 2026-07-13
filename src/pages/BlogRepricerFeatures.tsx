@@ -230,10 +230,10 @@ const BlogRepricerFeatures = () => {
   return (
     <>
       <Helmet>
-        <title>Every Feature Inside Our Amazon AI Repricer | ArbiProSeller</title>
+        <title>Every Feature Inside Our Amazon AI Repricer | InventorySprint</title>
         <meta name="description" content="Discover every feature of our AI Amazon repricer — from live sales tracking and Buy Box intelligence to profit protection, multi-marketplace support, and smart engine learning." />
-        <meta name="keywords" content="Amazon AI repricer features, Amazon repricing tool, Buy Box repricer, Amazon profit protection, live sales tracking Amazon, multi-marketplace repricer, Amazon FBA repricer, best Amazon repricer 2025, automated pricing Amazon" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/repricer-features" />
+        <meta name="keywords" content="Amazon AI repricer features, Amazon repricing tool, Buy Box repricer, Amazon profit protection, live sales tracking Amazon, multi-marketplace repricer, Amazon FBA repricer, best Amazon repricer 2025, automated pricing Amazon, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/repricer-features" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Every Feature Inside Our Amazon AI Repricer" />
         <meta property="og:description" content="Live sales tracking, Buy Box intelligence, profit protection, multi-marketplace support, and smart engine learning." />

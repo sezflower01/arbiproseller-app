@@ -26,7 +26,7 @@ const IndexPageLayout = ({ children, metaTitle, metaDescription }: IndexPageLayo
       <Helmet>
         <title>{metaTitle}</title>
         <meta name="description" content={metaDescription} />
-        <link rel="canonical" href="https://arbiproseller.com/" />
+        <link rel="canonical" href="https://inventorysprint.com/" />
         
         {/* Google Analytics 4 */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
@@ -47,12 +47,12 @@ const IndexPageLayout = ({ children, metaTitle, metaDescription }: IndexPageLayo
           {
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            "name": "ArbiProSeller",
+            "name": "InventorySprint",
             "applicationCategory": "BusinessApplication",
             "operatingSystem": "Windows",
             "description": "Database software for Amazon sellers to track and manage product sourcing decisions",
-            "url": "https://arbiproseller.com/",
-            "downloadUrl": "https://arbiproseller.com/download",
+            "url": "https://inventorysprint.com/",
+            "downloadUrl": "https://inventorysprint.com/download",
             "softwareVersion": "2.0",
             "offers": {
               "@type": "Offer",
@@ -62,7 +62,7 @@ const IndexPageLayout = ({ children, metaTitle, metaDescription }: IndexPageLayo
             },
             "author": {
               "@type": "Organization",
-              "name": "ArbiProSeller"
+              "name": "InventorySprint"
             },
             "screenshot": "https://arbiproseller.com/lovable-uploads/b8ba423b-b572-442e-9aea-856f91ca576d.png"
           }

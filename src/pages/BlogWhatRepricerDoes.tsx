@@ -9,10 +9,10 @@ const BlogWhatRepricerDoes = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>What Really Happens When ArbiPro Repricer Is Running | ArbiProSeller</title>
+        <title>What Really Happens When ArbiPro Repricer Is Running | InventorySprint</title>
         <meta name="description" content="See what ArbiPro Repricer actually does behind the scenes. Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning explained." />
-        <meta name="keywords" content="Amazon repricer, ArbiPro Repricer, AI repricer Amazon, automated pricing, Buy Box strategy, Amazon FBA repricer, profit protection repricer" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/what-repricer-does" />
+        <meta name="keywords" content="Amazon repricer, ArbiPro Repricer, AI repricer Amazon, automated pricing, Buy Box strategy, Amazon FBA repricer, profit protection repricer, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/what-repricer-does" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="What Really Happens When ArbiPro Repricer Is Running" />
         <meta property="og:description" content="Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning explained." />

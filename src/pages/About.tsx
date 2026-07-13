@@ -13,10 +13,11 @@ const About = () => {
       <Helmet>
         <title>{t('about.title')}</title>
         <meta name="description" content={t('about.subtitle')} />
-        <link rel="canonical" href="https://arbiproseller.com/about" />
+        <meta name="keywords" content="InventorySprint, amazon seller software company, amazon FBA tools, amazon inventory management software" />
+        <link rel="canonical" href="https://inventorysprint.com/about" />
         <meta property="og:title" content={t('about.title')} />
         <meta property="og:description" content={t('about.subtitle')} />
-        <meta property="og:url" content="https://arbiproseller.com/about" />
+        <meta property="og:url" content="https://inventorysprint.com/about" />
       </Helmet>
       
       <Navbar />

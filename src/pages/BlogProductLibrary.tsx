@@ -105,10 +105,10 @@ const BlogProductLibrary = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Why Amazon Sellers Keep Starting Over — Product Library Fix | ArbiProSeller</title>
+        <title>Why Amazon Sellers Keep Starting Over — Product Library Fix | InventorySprint</title>
         <meta name="description" content="Stop sourcing from scratch. Learn how a Product Library helps Amazon FBA sellers track costs, suppliers, and reorder profitably. Built for online arbitrage." />
-        <meta name="keywords" content="Amazon product library, Amazon FBA sourcing tool, online arbitrage software, Amazon seller tools, reorder Amazon products, supplier management Amazon, Amazon sourcing database, FBA product tracker" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/product-library-amazon-sellers" />
+        <meta name="keywords" content="Amazon product library, Amazon FBA sourcing tool, online arbitrage software, Amazon seller tools, reorder Amazon products, supplier management Amazon, Amazon sourcing database, FBA product tracker, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/product-library-amazon-sellers" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Why Amazon Sellers Keep Starting Over — Product Library Fix" />
         <meta property="og:description" content="How a Product Library helps Amazon FBA sellers track costs, suppliers, and reorder profitably." />

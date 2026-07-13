@@ -9,14 +9,15 @@ const Support = () => {
   return (
     <>
       <Helmet>
-        <title>Support | ArbiProSeller</title>
-        <meta name="description" content="Get support for ArbiProSeller. Contact our team for inquiries about our Amazon arbitrage and repricer tools." />
-        <link rel="canonical" href="https://arbiproseller.com/support" />
-        <meta property="og:title" content="Support | ArbiProSeller" />
-        <meta property="og:description" content="Help and support for ArbiProSeller users." />
-        <meta property="og:url" content="https://arbiproseller.com/support" />
-        <meta name="twitter:title" content="Support | ArbiProSeller" />
-        <meta name="twitter:description" content="Help and support for ArbiProSeller users." />
+        <title>Support | InventorySprint</title>
+        <meta name="description" content="Get support for InventorySprint. Contact our team for inquiries about our Amazon arbitrage and repricer tools." />
+        <meta name="keywords" content="InventorySprint support, amazon FBA software help, amazon seller tools support, amazon inventory software support" />
+        <link rel="canonical" href="https://inventorysprint.com/support" />
+        <meta property="og:title" content="Support | InventorySprint" />
+        <meta property="og:description" content="Help and support for InventorySprint users." />
+        <meta property="og:url" content="https://inventorysprint.com/support" />
+        <meta name="twitter:title" content="Support | InventorySprint" />
+        <meta name="twitter:description" content="Help and support for InventorySprint users." />
       </Helmet>
       
       <div className="min-h-screen flex flex-col">

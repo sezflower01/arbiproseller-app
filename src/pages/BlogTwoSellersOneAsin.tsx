@@ -19,16 +19,16 @@ const BlogTwoSellersOneAsin = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Two Amazon Sellers, One ASIN — Two Right Decisions | ArbiProSeller</title>
+        <title>Two Amazon Sellers, One ASIN — Two Right Decisions | InventorySprint</title>
         <meta
           name="description"
           content="Same ASIN, same Buy Box, same profit — but an Online Arbitrage seller and a Wholesale seller make completely opposite decisions. Here's why both are right, and why product analysis must understand the seller's strategy."
         />
         <meta
           name="keywords"
-          content="Amazon arbitrage vs wholesale, Amazon sourcing strategy, Buy Box volatility, Amazon product analysis, online arbitrage, Amazon wholesale, ArbiProSeller"
+          content="Amazon arbitrage vs wholesale, Amazon sourcing strategy, Buy Box volatility, Amazon product analysis, online arbitrage, Amazon wholesale, InventorySprint, inventory sprint, amazon inventory, inventory management amazon"
         />
-        <link rel="canonical" href="https://arbiproseller.com/blog/two-sellers-one-asin" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/two-sellers-one-asin" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Two Amazon Sellers, One ASIN — And Completely Different Decisions" />
         <meta

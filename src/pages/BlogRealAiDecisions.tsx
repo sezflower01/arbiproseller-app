@@ -8,10 +8,10 @@ const BlogRealAiDecisions = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Real AI Pricing Decisions from Live Amazon ASINs | ArbiProSeller</title>
+        <title>Real AI Pricing Decisions from Live Amazon ASINs | InventorySprint</title>
         <meta name="description" content="See real AI repricing decisions from live Amazon ASINs. Buy Box lost but no price drop? Price raised while winning? See exactly what an AI Amazon repricer does and why." />
-        <meta name="keywords" content="Amazon repricer AI, AI repricer Amazon, Amazon Buy Box repricer, automated pricing Amazon, best Amazon repricer, AI pricing tool for Amazon sellers, Amazon repricing examples" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/real-ai-decisions-live-asins" />
+        <meta name="keywords" content="Amazon repricer AI, AI repricer Amazon, Amazon Buy Box repricer, automated pricing Amazon, best Amazon repricer, AI pricing tool for Amazon sellers, Amazon repricing examples, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/real-ai-decisions-live-asins" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Real AI Pricing Decisions from Live Amazon ASINs" />
         <meta property="og:description" content="Transparency into what an AI Amazon repricer does on live ASINs and why." />

@@ -13,12 +13,13 @@ const TermsOfService = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Terms of Service | ArbiProSeller</title>
-        <meta name="description" content="Terms governing use of ArbiProSeller's Amazon arbitrage software, repricer, and seller tools." />
-        <link rel="canonical" href="https://arbiproseller.com/terms" />
-        <meta property="og:title" content="Terms of Service | ArbiProSeller" />
-        <meta property="og:description" content="Terms governing use of ArbiProSeller's seller tools." />
-        <meta property="og:url" content="https://arbiproseller.com/terms" />
+        <title>Terms of Service | InventorySprint</title>
+        <meta name="description" content="Terms governing use of InventorySprint's Amazon arbitrage software, repricer, and seller tools." />
+        <meta name="keywords" content="InventorySprint terms of service, amazon seller software terms, amazon repricer terms of use" />
+        <link rel="canonical" href="https://inventorysprint.com/terms" />
+        <meta property="og:title" content="Terms of Service | InventorySprint" />
+        <meta property="og:description" content="Terms governing use of InventorySprint's seller tools." />
+        <meta property="og:url" content="https://inventorysprint.com/terms" />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-24 pb-16">

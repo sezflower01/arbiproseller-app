@@ -35,10 +35,10 @@ const BlogAiRepricerLooksAt = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>What an AI Amazon Repricer Checks Before Changing Price | ArbiProSeller</title>
+        <title>What an AI Amazon Repricer Checks Before Changing Price | InventorySprint</title>
         <meta name="description" content="Discover the 10 signals an AI Amazon repricer analyzes before every price change — Buy Box, profit, inventory, competition, timing, and more. Full transparency." />
-        <meta name="keywords" content="AI repricer signals, Amazon repricer how it works, Buy Box repricing strategy, automated pricing Amazon FBA, best AI repricer Amazon, repricer profit protection, Amazon repricing tool" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/what-ai-repricer-looks-at" />
+        <meta name="keywords" content="AI repricer signals, Amazon repricer how it works, Buy Box repricing strategy, automated pricing Amazon FBA, best AI repricer Amazon, repricer profit protection, Amazon repricing tool, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/what-ai-repricer-looks-at" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="What an AI Amazon Repricer Checks Before Changing Price" />
         <meta property="og:description" content="The 10 signals an AI Amazon repricer analyzes before every price change — Buy Box, profit, inventory, competition, timing, and more." />

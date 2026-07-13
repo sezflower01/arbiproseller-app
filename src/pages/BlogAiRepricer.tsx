@@ -8,10 +8,10 @@ const BlogAiRepricer = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>How an AI Amazon Repricer Works (Real Examples) | ArbiProSeller</title>
+        <title>How an AI Amazon Repricer Works (Real Examples) | InventorySprint</title>
         <meta name="description" content="Learn how an AI Amazon repricer actually works. See real pricing decisions, Buy Box strategies, and how AI improves profit automatically. Best Amazon repricer explained." />
-        <meta name="keywords" content="Amazon repricer AI, AI repricer Amazon, Amazon Buy Box repricer, automated pricing Amazon, best Amazon repricer, AI pricing tool for Amazon sellers, how Amazon repricer works" />
-        <link rel="canonical" href="https://arbiproseller.com/blog/ai-repricer-behind-the-scenes" />
+        <meta name="keywords" content="Amazon repricer AI, AI repricer Amazon, Amazon Buy Box repricer, automated pricing Amazon, best Amazon repricer, AI pricing tool for Amazon sellers, how Amazon repricer works, inventory sprint, amazon inventory, inventory management amazon" />
+        <link rel="canonical" href="https://inventorysprint.com/blog/ai-repricer-behind-the-scenes" />
         <meta property="og:type" content="article" />
         <meta property="og:title" content="How an AI Amazon Repricer Works (Real Examples)" />
         <meta property="og:description" content="See real pricing decisions, Buy Box strategies, and how AI improves profit automatically." />

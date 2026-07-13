@@ -63,9 +63,10 @@ const ProductLibraryProduct: React.FC = () => {
           name="description"
           content="Organize proven Amazon products, track suppliers, and reorder faster. Stop losing time searching — keep everything in one place and act faster."
         />
+        <meta name="keywords" content="amazon product library, FBA sourcing database, amazon supplier tracking, amazon inventory management, inventory sprint product library" />
         <link
           rel="canonical"
-          href="https://arbiproseller.com/products/product-library"
+          href="https://inventorysprint.com/products/product-library"
         />
       </Helmet>
 

@@ -140,14 +140,15 @@ const BuyLicense = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Buy License | ArbiProSeller</title>
-        <meta name="description" content="Purchase your ArbiProSeller license and unlock the full Amazon arbitrage and repricing suite." />
-        <link rel="canonical" href="https://arbiproseller.com/buy-license" />
-        <meta property="og:title" content="Buy License | ArbiProSeller" />
-        <meta property="og:description" content="Purchase your ArbiProSeller license." />
-        <meta property="og:url" content="https://arbiproseller.com/buy-license" />
-        <meta name="twitter:title" content="Buy License | ArbiProSeller" />
-        <meta name="twitter:description" content="Purchase your ArbiProSeller license." />
+        <title>Buy License | InventorySprint</title>
+        <meta name="description" content="Purchase your InventorySprint license and unlock the full Amazon arbitrage and repricing suite." />
+        <meta name="keywords" content="buy InventorySprint license, amazon seller software license, FBA software purchase, amazon repricer license" />
+        <link rel="canonical" href="https://inventorysprint.com/buy-license" />
+        <meta property="og:title" content="Buy License | InventorySprint" />
+        <meta property="og:description" content="Purchase your InventorySprint license." />
+        <meta property="og:url" content="https://inventorysprint.com/buy-license" />
+        <meta name="twitter:title" content="Buy License | InventorySprint" />
+        <meta name="twitter:description" content="Purchase your InventorySprint license." />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-24 pb-16">
