@@ -73,7 +73,7 @@ const AutomaticSupplierDetection = () => {
                   <AspectRatio ratio={16/9} className="w-full">
                     <img 
                       src="/lovable-uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
-                      alt="Automatic Supplier Name Detection in ArbiProSeller"
+                      alt="Automatic Supplier Name Detection in Inventory S.P.R.I.N.T."
                       className="w-full h-full object-contain rounded"
                     />
                   </AspectRatio>
@@ -84,7 +84,7 @@ const AutomaticSupplierDetection = () => {
               <AspectRatio ratio={16/9} className="w-full">
                 <img 
                   src="/lovable-uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
-                  alt="Automatic Supplier Name Detection in ArbiProSeller"
+                  alt="Automatic Supplier Name Detection in Inventory S.P.R.I.N.T."
                   className="w-full h-full object-contain rounded"
                 />
               </AspectRatio>

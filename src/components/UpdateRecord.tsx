@@ -70,7 +70,7 @@ const UpdateRecord = () => {
                   <AspectRatio ratio={16/9}>
                     <img 
                       src="/lovable-uploads/141a2bae-1550-4250-a70d-eb45c63c8786.png"
-                      alt="Update Record Feature in ArbiProSeller"
+                      alt="Update Record Feature in Inventory S.P.R.I.N.T."
                       className="w-full h-full object-contain rounded"
                     />
                   </AspectRatio>
@@ -81,7 +81,7 @@ const UpdateRecord = () => {
               <AspectRatio ratio={16/9}>
                 <img 
                   src="/lovable-uploads/141a2bae-1550-4250-a70d-eb45c63c8786.png"
-                  alt="Update Record Feature in ArbiProSeller"
+                  alt="Update Record Feature in Inventory S.P.R.I.N.T."
                   className="w-full h-full object-contain rounded"
                 />
               </AspectRatio>

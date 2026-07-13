@@ -84,7 +84,7 @@ const InsertForm = () => {
               <CardContent className="p-4">
                 <img 
                   src="/lovable-uploads/feab416c-eeba-4ac0-a628-36a52142fe5c.png" 
-                  alt="ArbiProSeller Insert Form Interface" 
+                  alt="Inventory S.P.R.I.N.T. Insert Form Interface"
                   className="w-full h-auto rounded"
                 />
               </CardContent>

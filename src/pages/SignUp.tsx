@@ -107,7 +107,7 @@ export default function SignUp() {
               <p className="text-gray-400">
                 We've received your request for <strong className="text-white">{email}</strong>.
                 Our team reviews every new account before activation — we'll send you an email
-                showing how to log in and start using <strong className="text-white">ArbiProSeller</strong>
+                showing how to log in and start using <strong className="text-white">Inventory S.P.R.I.N.T.</strong>
                 as soon as your account is approved.
               </p>
               <Link to="/">

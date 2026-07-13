@@ -149,7 +149,7 @@ const ArbitrageGuide = () => {
                 <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                   <h3 className="text-xl font-semibold mb-3 text-gray-900">Arbitrage Database Software</h3>
                   <p className="text-gray-700 mb-4">
-                    A comprehensive arbitrage tracker like <strong>ArbiProSeller</strong> helps you organize product research, track suppliers, and make data-driven reordering decisions. This type of OA software is essential for scaling your business.
+                    A comprehensive arbitrage tracker like <strong>Inventory S.P.R.I.N.T.</strong> helps you organize product research, track suppliers, and make data-driven reordering decisions. This type of OA software is essential for scaling your business.
                   </p>
                   <ul className="space-y-2 text-gray-600">
                     <li className="flex items-start gap-2">
@@ -214,7 +214,7 @@ const ArbitrageGuide = () => {
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-8 text-center text-white">
               <h2 className="text-3xl font-bold mb-4">Ready to Start Your Online Arbitrage Journey?</h2>
               <p className="text-xl mb-6 text-blue-100">
-                Get the tools you need to build a successful arbitrage business with ArbiProSeller's comprehensive OA software.
+                Get the tools you need to build a successful arbitrage business with Inventory S.P.R.I.N.T.'s comprehensive OA software.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                 <a 
@@ -227,7 +227,7 @@ const ArbitrageGuide = () => {
                   href="/" 
                   className="border border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
                 >
-                  Learn More About ArbiProSeller
+                  Learn More About Inventory S.P.R.I.N.T.
                 </a>
               </div>
               <p className="text-blue-200 text-sm mt-4">60-day free autopilot trial • Pay only for active ASINs</p>

@@ -2496,7 +2496,7 @@ export default function ShipmentBuilder() {
     const updated: ShipmentDraftState = {
       ...entry,
       status: "completed",
-      syncStatusNote: "Marked completed in ArbiProSeller.",
+      syncStatusNote: "Marked completed in Inventory S.P.R.I.N.T.",
       updatedAt: new Date().toISOString(),
     };
     setShipmentLibrary((current) => upsertShipmentRecord(current, updated, user?.id));
@@ -4323,7 +4323,7 @@ export default function ShipmentBuilder() {
   } else if (hasAmazonPlanAccepted) {
     workflowHeading = "Amazon accepted the first step";
     workflowBody =
-      "ArbiProSeller successfully submitted the initial shipment plan to Amazon, but the automatic transfer was not fully completed.";
+      "Inventory S.P.R.I.N.T. successfully submitted the initial shipment plan to Amazon, but the automatic transfer was not fully completed.";
     workflowHint =
       "Finish the remaining process in Seller Central, or complete the missing Amazon API steps later when supported.";
   } else if (isInvalidMskuFailure) {
@@ -5084,7 +5084,7 @@ export default function ShipmentBuilder() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Shipment history</CardTitle>
-                    <CardDescription>Internal visibility for what was drafted, synced, and completed in ArbiProSeller.</CardDescription>
+                    <CardDescription>Internal visibility for what was drafted, synced, and completed in Inventory S.P.R.I.N.T.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {syncedShipments.length === 0 ? (
@@ -5152,7 +5152,7 @@ export default function ShipmentBuilder() {
                           </div>
                           <div className="rounded-md border border-white/10 bg-shipment-control text-white p-3">
                             <p className="text-white/70">Sync status</p>
-                            <p className="mt-1 font-medium">{focusedShipment.syncStatusNote ?? "Tracked inside ArbiProSeller"}</p>
+                            <p className="mt-1 font-medium">{focusedShipment.syncStatusNote ?? "Tracked inside Inventory S.P.R.I.N.T."}</p>
                           </div>
                         </div>
                         <div className="rounded-md border border-white/10 bg-shipment-row-alt text-white p-3">

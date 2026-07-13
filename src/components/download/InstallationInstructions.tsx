@@ -13,7 +13,7 @@ const InstallationInstructions = () => {
         <li>Download the Setup_ArbiProSellerNoAPI.exe installer</li>
         <li>Run the installer as Administrator</li>
         <li>Follow the installation wizard steps</li>
-        <li>Launch ArbiProSeller from your desktop or start menu</li>
+        <li>Launch Inventory S.P.R.I.N.T. from your desktop or start menu</li>
       </ol>
       <div className="mt-4 pt-4 border-t border-blue-200">
         <p className="text-blue-800">

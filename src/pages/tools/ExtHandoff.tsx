@@ -86,7 +86,7 @@ export default function ExtHandoff() {
       <main className="max-w-md w-full bg-[#15224a] border border-white/10 rounded-2xl p-8 shadow-2xl">
         <h1 className="text-2xl font-semibold mb-2">Connect Chrome Extension</h1>
         <p className="text-sm text-white/70 mb-6">
-          This page hands your ArbiProSeller session to the Chrome extension so
+          This page hands your Inventory S.P.R.I.N.T. session to the Chrome extension so
           it can show scanner data on Amazon product pages.
         </p>
 
@@ -137,7 +137,7 @@ export default function ExtHandoff() {
                 : `Sending session to extension… (attempt ${attempts})`}
             </div>
             <p className="text-xs text-white/50">
-              If nothing happens within 10 seconds, make sure the ArbiProSeller
+              If nothing happens within 10 seconds, make sure the Inventory S.P.R.I.N.T.
               extension is installed and enabled in <code>chrome://extensions</code>.
             </p>
           </div>

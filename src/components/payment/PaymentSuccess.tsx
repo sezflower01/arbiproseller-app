@@ -17,7 +17,7 @@ const PaymentSuccess = () => {
       </h1>
       <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
         <p className="text-lg mb-4">
-          Your ArbiProSeller license key will be sent to your email within 24 hours.
+          Your Inventory S.P.R.I.N.T. license key will be sent to your email within 24 hours.
         </p>
         <p className="text-gray-600">
           If you don't receive your license key, please check your spam folder or contact our support team.

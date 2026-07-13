@@ -86,7 +86,7 @@ export default function ChoosePlanDialog({ open, onOpenChange }: ChoosePlanDialo
         <DialogHeader>
           <DialogTitle className="text-2xl">Choose your subscription plan</DialogTitle>
           <DialogDescription className="text-gray-400">
-            Every plan unlocks the full ArbiProSeller platform — pick the size that fits your catalog.
+            Every plan unlocks the full Inventory S.P.R.I.N.T. platform — pick the size that fits your catalog.
           </DialogDescription>
         </DialogHeader>
 

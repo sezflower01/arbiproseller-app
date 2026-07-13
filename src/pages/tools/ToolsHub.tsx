@@ -321,10 +321,10 @@ const ToolsHub = () => {
           <div className="hidden md:block text-center mb-12">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 text-primary text-sm font-medium mb-6">
               <Warehouse className="h-4 w-4" />
-              <span>ArbiProSeller Platform</span>
+              <span>Inventory S.P.R.I.N.T. Platform</span>
             </div>
             <h1 className="text-5xl md:text-6xl font-bold mb-6">
-              <span className="text-white">ArbiProSeller </span>
+              <span className="text-white">Inventory S.P.R.I.N.T. </span>
               <span className="bg-gradient-to-r from-primary via-blue-400 to-purple-400 bg-clip-text text-transparent">
                 Platform Modules
               </span>

@@ -81,7 +81,7 @@ const Pricing = () => {
             </span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-            <span className="font-semibold text-white">ArbiProSeller Suite</span>{" "}
+            <span className="font-semibold text-white">Inventory S.P.R.I.N.T. Suite</span>{" "}
             combines repricing, sourcing, inventory, listings, shipments and
             analytics into one powerful platform — one login, one workflow.
           </p>
@@ -211,7 +211,7 @@ const Pricing = () => {
               Everything Included
             </Badge>
             <h2 className="text-3xl font-bold text-white mb-2">
-              The Full ArbiProSeller Suite
+              The Full Inventory S.P.R.I.N.T. Suite
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Every plan unlocks the complete platform — no feature gating, no
@@ -258,7 +258,7 @@ const Pricing = () => {
                     Try Everything Free for 60 Days — No Credit Card
                   </h3>
                   <p className="text-[#0f1c3f] mb-2">
-                    Sign up today and get full access to the entire ArbiProSeller
+                    Sign up today and get full access to the entire Inventory S.P.R.I.N.T.
                     Suite — repricer, sourcing, inventory, listings, shipments
                     and analytics — for <span className="font-semibold">60 days, completely free</span>.
                   </p>

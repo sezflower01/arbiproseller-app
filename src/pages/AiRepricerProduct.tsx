@@ -204,7 +204,7 @@ const AiRepricerProduct: React.FC = () => {
               Powered by Google Gemini 2.5
             </h2>
             <p className="text-blue-100/80 max-w-2xl mx-auto leading-relaxed">
-              ArbiProSeller uses <span className="font-semibold text-white">Gemini 2.5 Flash</span> for fast,
+              Inventory S.P.R.I.N.T. uses <span className="font-semibold text-white">Gemini 2.5 Flash</span> for fast,
               large-scale AI review and <span className="font-semibold text-white">Gemini 2.5 Pro</span> for
               deeper analysis on high-impact pricing decisions. Every recommendation is logged, explainable, and
               measurable.

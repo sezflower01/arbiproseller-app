@@ -82,14 +82,14 @@ const FlagOrder = () => {
                   <DialogTrigger asChild>
                     <img 
                       src="/lovable-uploads/dbe47511-e68c-4c73-b11f-029f79b9ff31.png" 
-                      alt="ArbiProSeller Flag Order Feature Interface" 
+                      alt="Inventory S.P.R.I.N.T. Flag Order Feature Interface"
                       className="w-full h-auto rounded cursor-zoom-in"
                     />
                   </DialogTrigger>
                   <DialogContent className="max-w-[90vw] w-full p-0 bg-transparent border-none">
                     <img 
                       src="/lovable-uploads/dbe47511-e68c-4c73-b11f-029f79b9ff31.png" 
-                      alt="ArbiProSeller Flag Order Feature Interface (Zoomed)" 
+                      alt="Inventory S.P.R.I.N.T. Flag Order Feature Interface (Zoomed)"
                       className="w-full h-auto max-h-[95vh] object-contain"
                     />
                   </DialogContent>

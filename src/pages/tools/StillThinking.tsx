@@ -297,7 +297,7 @@ export default function StillThinking() {
             <div className="p-12 text-center text-muted-foreground">
               <Lightbulb className="w-10 h-10 mx-auto mb-3 opacity-40" />
               <p className="font-medium">No Still Thinking items yet.</p>
-              <p className="text-sm mt-1">Open any Amazon product page and click <b>💭 Save as Still Thinking</b> in the ArbiProSeller extension.</p>
+              <p className="text-sm mt-1">Open any Amazon product page and click <b>💭 Save as Still Thinking</b> in the Inventory S.P.R.I.N.T. extension.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

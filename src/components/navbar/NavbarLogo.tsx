@@ -11,10 +11,10 @@ const NavbarLogo: React.FC<NavbarLogoProps> = ({ onClick }) => (
   <a onClick={onClick} className="flex items-center cursor-pointer">
     <img
       src={ICON_SRC}
-      alt="ArbiProSeller Logo"
+      alt="Inventory S.P.R.I.N.T. Logo"
       className="h-9 w-auto mr-3"
     />
-    <span className="text-2xl font-bold text-blue-600">ArbiProSeller</span>
+    <span className="text-2xl font-bold text-blue-600">Inventory S.P.R.I.N.T.</span>
   </a>
 );
 

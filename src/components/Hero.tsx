@@ -36,7 +36,7 @@ const Hero = () => {
             </h1>
 
             <p className="text-base md:text-lg text-muted-foreground mb-6 animate-slide-up leading-relaxed" style={{ animationDelay: '0.15s' }}>
-              ArbiProSeller helps you organize proven Amazon products, track suppliers, and automate pricing with AI that protects your margins — and gets smarter over time.
+              Inventory S.P.R.I.N.T. helps you organize proven Amazon products, track suppliers, and automate pricing with AI that protects your margins — and gets smarter over time.
             </p>
 
             <div className="mb-7 animate-slide-up text-left w-full" style={{ animationDelay: '0.25s' }}>

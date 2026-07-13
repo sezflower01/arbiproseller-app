@@ -347,7 +347,7 @@ export default function EmailCenter() {
             <CardHeader><CardTitle>Connect your Gmail</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                We'll request <strong>read-only</strong> access to your Gmail so you can search emails directly inside ArbiProSeller. We never send or modify emails.
+                We'll request <strong>read-only</strong> access to your Gmail so you can search emails directly inside Inventory S.P.R.I.N.T. We never send or modify emails.
               </p>
               <Button onClick={handleConnect} disabled={connecting} className="bg-[#0f1c3f] hover:bg-[#1a2a55]">
                 {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}

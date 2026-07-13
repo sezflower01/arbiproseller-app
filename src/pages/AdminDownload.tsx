@@ -63,7 +63,7 @@ const AdminDownload = () => {
           <ShieldCheck className="mx-auto h-16 w-16 text-primary" />
           <h1 className="text-3xl font-bold">Admin Download</h1>
           <p className="text-muted-foreground">
-            Download the full ArbiProSeller installer with SP-API integration.
+            Download the full Inventory S.P.R.I.N.T. installer with SP-API integration.
           </p>
           <Button
             size="lg"

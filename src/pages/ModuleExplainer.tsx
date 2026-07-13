@@ -235,7 +235,7 @@ const ModuleExplainer: React.FC = () => {
                 Get {module.label} — and every other module
               </h2>
               <p className="text-white/75 max-w-2xl mx-auto mb-8">
-                One subscription unlocks the full ArbiProSeller platform. 60-day free trial. No credit card required.
+                One subscription unlocks the full Inventory S.P.R.I.N.T. platform. 60-day free trial. No credit card required.
               </p>
               <div className="flex flex-wrap gap-3 justify-center">
                 <Button

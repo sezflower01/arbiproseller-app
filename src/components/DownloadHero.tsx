@@ -42,7 +42,7 @@ const DownloadHero = () => {
         <div className="flex flex-col md:flex-row items-center gap-12">
           <div className="md:w-1/2 space-y-6 animate-fade-in">
             <h1 className="text-5xl md:text-6xl font-bold leading-tight">
-              {t('download.title')} <span className="bg-gradient-to-r from-blue-800 to-blue-600 bg-clip-text text-transparent">ArbiProSeller</span> {t('download.title_today')}
+              {t('download.title')} <span className="bg-gradient-to-r from-blue-800 to-blue-600 bg-clip-text text-transparent">Inventory S.P.R.I.N.T.</span> {t('download.title_today')}
             </h1>
             <p className="text-lg md:text-xl text-gray-600">
               {t('download.subtitle')}
@@ -73,7 +73,7 @@ const DownloadHero = () => {
                       <Download className="text-purple-600" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-xl">ArbiProSeller</h3>
+                      <h3 className="font-bold text-xl">Inventory S.P.R.I.N.T.</h3>
                       <p className="text-gray-500">Windows Installer</p>
                     </div>
                   </div>

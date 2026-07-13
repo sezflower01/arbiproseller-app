@@ -63,7 +63,7 @@ const DraftFeature = () => {
               <CardContent className="p-4">
                 <img 
                   src="/lovable-uploads/9a09276d-7903-4434-a295-973afdb7ff96.png" 
-                  alt="ArbiProSeller Draft Feature Interface" 
+                  alt="Inventory S.P.R.I.N.T. Draft Feature Interface"
                   className="w-full h-auto rounded"
                 />
               </CardContent>
