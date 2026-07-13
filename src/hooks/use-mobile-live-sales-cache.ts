@@ -16,6 +16,13 @@ const MAX_CACHED_ROWS = 300;
 // and comes back. Manual Refresh / explicit fetches still revalidate, but the
 // UI must not blank to skeleton for heavy YTD/reconciled views.
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
+// "Today" is where order_status="Pending" rows actually transition from a
+// locked_est_price/estimated_price estimate to a confirmed sold_price/
+// total_sale_amount -- settled/historical periods don't have this risk.
+// Cap today's cold-open paint to a much shorter age so any pre-confirmation
+// snapshot self-heals quickly even if riskyAsins filtering (in
+// MobileLiveSales.tsx) ever misses a case.
+export const TODAY_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 
 export interface MobileLiveSalesSnapshot {
   rows: any[];
@@ -46,7 +53,8 @@ function keyFor(userId: string, dateStr: string): string {
 
 export function loadMobileLiveSalesCache(
   userId: string | undefined,
-  dateStr: string
+  dateStr: string,
+  maxAgeMs: number = MAX_AGE_MS
 ): MobileLiveSalesSnapshot | null {
   if (!userId || typeof window === "undefined") return null;
   try {
@@ -54,7 +62,7 @@ export function loadMobileLiveSalesCache(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredSnapshot;
     if (parsed.v !== 1) return null;
-    if (Date.now() - parsed.savedAt > MAX_AGE_MS) {
+    if (Date.now() - parsed.savedAt > maxAgeMs) {
       localStorage.removeItem(keyFor(userId, dateStr));
       return null;
     }

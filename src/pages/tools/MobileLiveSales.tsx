@@ -28,6 +28,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import {
   loadMobileLiveSalesCache,
   saveMobileLiveSalesCache,
+  TODAY_CACHE_MAX_AGE_MS,
 } from "@/hooks/use-mobile-live-sales-cache";
 import FeeBreakdownSections from "@/components/sales/FeeBreakdownSections";
 import PromotionsDeductedSection from "@/components/sales/PromotionsDeductedSection";
@@ -1025,7 +1026,14 @@ const MobileLiveSales = () => {
 
   useEffect(() => {
     if (!user?.id) return;
-    const snap = loadMobileLiveSalesCache(user.id, cacheKeyForPeriod(period));
+    // "Today" is where a Pending order's price can still transition from
+    // estimate to confirmed, so its cached cold-open paint gets a much
+    // shorter max age than settled historical periods.
+    const snap = loadMobileLiveSalesCache(
+      user.id,
+      cacheKeyForPeriod(period),
+      period === "today" ? TODAY_CACHE_MAX_AGE_MS : undefined,
+    );
     const cacheHasContent =
       !!snap && ((snap.rows && snap.rows.length > 0) || snap.todaySummary.units > 0 || snap.todaySummary.revenue > 0);
     // Reconciled YTD takes minutes on first fetch. If any prior snapshot exists
@@ -1495,12 +1503,25 @@ const MobileLiveSales = () => {
       // (today / very recent) where FEC settlement data has not yet posted.
       const estByDay = new Map<string, { units: number; revenue: number; fees: number; cost: number }>();
 
+      // ASINs with at least one order still order_status="Pending" whose price
+      // resolved via the locked_est_price/estimated_price fallback tier rather
+      // than a confirmed source (total_sale_amount/sold_price). These orders can
+      // still transition to a confirmed price at any time, so their row is a
+      // snapshot-caching risk: excluded from the persisted localStorage cache
+      // below (never from the live on-screen state) so a cold-open paint can
+      // never show a stale pre-confirmation number after it has settled.
+      const riskyAsins = new Set<string>();
+
       for (const row of deduped) {
         const asin = (row.asin || "").trim();
         if (!asin) continue;
         const qty = Math.max(1, Number(row.quantity || 0));
         const lineRevenue = getRevenueUsdWithFallback(row, asin);
         const pendingUnits = lineRevenue <= 0 ? qty : 0;
+        const isConfirmedRevenue = getConfirmedSalesOrderRevenueUsd(row, toUsd) > 0;
+        if (String((row as any).order_status || "").trim() === "Pending" && !isConfirmedRevenue) {
+          riskyAsins.add(asin);
+        }
 
         const feeBasisUsd = lineRevenue > 0 ? lineRevenue : 0;
 
@@ -1928,9 +1949,16 @@ const MobileLiveSales = () => {
         setProfitTraceSnapshot(nextProfitTraceSnapshot);
       }
       hasDataRef.current = finalRows.length > 0 || nextSummary.units > 0 || nextSummary.revenue > 0;
-      // Persist snapshot for instant paint on next cold open / tab resume.
+      // Persist snapshot for instant paint on next cold open / tab resume --
+      // but never persist a row whose price could still transition (see
+      // riskyAsins above). Omitting it here just means that ASIN repaints
+      // from a fresh fetch next time instead of an instantly-stale cache hit;
+      // it's still shown live on THIS load via setRows(finalRows) above.
+      const cacheableRows = riskyAsins.size > 0
+        ? finalRows.filter((r) => !riskyAsins.has(r.asin))
+        : finalRows;
       saveMobileLiveSalesCache(user.id, cacheKeyForPeriod(period), {
-        rows: finalRows,
+        rows: cacheableRows,
         todaySummary: nextSummary,
         todayRefunds: nextRefundSummary,
         periodAdjustments: salesMode === "reconciled" ? (nextPeriodAdjustments || undefined) : undefined,
