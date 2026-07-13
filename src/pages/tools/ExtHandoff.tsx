@@ -13,7 +13,7 @@ import { Link } from "react-router-dom";
  * Flow:
  *   1. Extension popup opens this page (?ext=1).
  *   2. If signed in, we postMessage the session to window — the extension's
- *      content script (handoff.js) listens on arbiproseller.com and forwards
+ *      content script (handoff.js) listens on inventorysprint.com and forwards
  *      it to chrome.storage.local via background.js.
  *   3. We retry every 3s in case the extension is slow to acknowledge.
  *

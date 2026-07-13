@@ -174,7 +174,7 @@ const Subscriptions = () => {
       // Send feedback email
       await supabase.functions.invoke('send-email', {
         body: {
-          to: 'support@arbiproseller.com',
+          to: 'support@inventorysprint.com',
           name: 'Subscriber',
           emailType: 'contact-form',
           inquiry: `Cancellation Reason: ${cancelReason}\n\nAdditional details: ${cancelDetails || 'None provided'}`,
