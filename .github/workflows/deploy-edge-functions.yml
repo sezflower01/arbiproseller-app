@@ -1,0 +1,125 @@
+name: Deploy Edge Functions
+
+# Auto-deploys Supabase Edge Functions on push to main, mirroring how Vercel
+# auto-deploys the frontend. Before this workflow existed, a function fix
+# committed to supabase/functions/** would sit undeployed until someone ran
+# `supabase functions deploy <name>` by hand (see the sync-sales-orders
+# pricing fix that needed a manual deploy).
+#
+# Only functions that actually changed in the pushed commits are deployed
+# (detected via git diff), not the whole ~150-function fleet every time.
+# Exception: a change under supabase/functions/_shared/** redeploys every
+# function, since any of them may import shared code and there's no cheap
+# way to compute which ones without parsing imports.
+#
+# Deletions are NOT synced here on purpose -- `supabase functions deploy`
+# only pushes new/changed code. Removing a function from Supabase is a
+# separate, deliberate action and stays manual.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+
+concurrency:
+  group: deploy-edge-functions-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy changed Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history to diff github.event.before...github.sha
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Determine changed functions and deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: mstibdszibcheodvnprm
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping deploy. Add it in repo Settings → Secrets to enable this workflow."
+            exit 0
+          fi
+
+          # BEFORE_SHA is the all-zero SHA on a new branch / first push, and
+          # can also point at a commit this shallow-fetched history doesn't
+          # have in rare force-push cases. Fall back to the immediate parent
+          # of AFTER_SHA so we still diff *something* sane instead of failing
+          # or silently deploying nothing.
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+            echo "No usable previous SHA (new branch or force-push) — diffing against the immediate parent commit instead."
+            BEFORE_SHA=$(git rev-parse "${AFTER_SHA}~1" 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$BEFORE_SHA" ]; then
+            echo "No parent commit available (first commit on the repo?) — nothing to diff, skipping."
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" -- supabase/functions/)
+          echo "Changed files under supabase/functions/:"
+          echo "$CHANGED_FILES"
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changes under supabase/functions/ — nothing to deploy."
+            exit 0
+          fi
+
+          SHARED_CHANGED=false
+          if echo "$CHANGED_FILES" | grep -q '^supabase/functions/_shared/'; then
+            SHARED_CHANGED=true
+          fi
+
+          if [ "$SHARED_CHANGED" = "true" ]; then
+            echo "supabase/functions/_shared/** changed — redeploying every function (can't cheaply tell which ones import it)."
+            FUNCS_TO_DEPLOY=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d \
+              ! -name '_shared' ! -name '_tests' -printf '%f\n' | sort)
+          else
+            FUNCS_TO_DEPLOY=$(echo "$CHANGED_FILES" \
+              | sed -E 's#^supabase/functions/([^/]+)/.*#\1#' \
+              | sort -u \
+              | grep -v -E '^(_shared|_tests)$' || true)
+          fi
+
+          if [ -z "$FUNCS_TO_DEPLOY" ]; then
+            echo "No deployable function directories in the changed set — nothing to deploy."
+            exit 0
+          fi
+
+          echo "Functions to deploy:"
+          echo "$FUNCS_TO_DEPLOY"
+
+          supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+          FAILED=""
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            if [ ! -f "supabase/functions/$fn/index.ts" ]; then
+              echo "Skipping '$fn' — no index.ts (not a deployable function, or was deleted)."
+              continue
+            fi
+            echo "::group::Deploying $fn"
+            if ! supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_ID"; then
+              echo "::error::Failed to deploy $fn"
+              FAILED="$FAILED $fn"
+            fi
+            echo "::endgroup::"
+          done <<< "$FUNCS_TO_DEPLOY"
+
+          if [ -n "$FAILED" ]; then
+            echo "::error::One or more functions failed to deploy:$FAILED"
+            exit 1
+          fi
