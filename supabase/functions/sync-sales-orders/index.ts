@@ -1162,7 +1162,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       // UPDATED: Include marketplace in select for marketplace-specific fees
       let ordersQuery = supabase
         .from('sales_orders')
-        .select('id, order_id, asin, sold_price, quantity, referral_fee, fba_fee, closing_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, roi, status, fees_source, fees_missing, order_status, order_date, price_source, marketplace, estimated_price, fulfillment_channel, seller_sku, sku')
+        .select('id, order_id, asin, sold_price, quantity, referral_fee, fba_fee, closing_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, roi, status, fees_source, fees_missing, order_status, order_date, price_source, marketplace, estimated_price, fulfillment_channel, seller_sku, sku, created_at')
         .eq('user_id', userId)
         .eq('asin', targetAsin)
         .neq('asin', 'PENDING')
@@ -1200,7 +1200,30 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       }
       
       console.log(`💰 ENRICH_BY_ASIN: Found ${ordersForAsin.length} orders for ${targetAsin} to process (forcePriceUpdate=${forcePriceUpdate})`);
-      
+
+      // AUTHORITATIVE FIX (2026-07-14): get an access token so we can fetch each
+      // order's REAL Amazon PurchaseDate (GetOrder — basic order metadata, always
+      // available even while Pending) to anchor the repricer_price_actions lookup
+      // below. This is NOT used to fetch price — Amazon's GetOrderItems does not
+      // return pricing for Pending orders, so PurchaseDate is the only thing worth
+      // fetching live here. If auth is unavailable, we degrade gracefully to using
+      // order.created_at (discovery time) as the anchor instead.
+      let enrichAccessToken: string | null = null;
+      if (forcePriceUpdate) {
+        try {
+          const { data: enrichAuths } = await supabase
+            .from('seller_authorizations')
+            .select('refresh_token, marketplace_id')
+            .eq('user_id', userId);
+          const enrichAuth = enrichAuths?.find((a: any) => a.marketplace_id === 'ATVPDKIKX0DER') || enrichAuths?.[0];
+          if (enrichAuth?.refresh_token) {
+            enrichAccessToken = await getLWAAccessToken(enrichAuth.refresh_token);
+          }
+        } catch (authErr) {
+          console.warn(`⚠️ ENRICH_BY_ASIN: Could not get access token for PurchaseDate lookup: ${(authErr as Error).message}`);
+        }
+      }
+
       // Build cost data map so we can resolve unit_cost if missing
       const enrichCostDataMap = await buildCostDataMap(supabase, userId, [targetAsin]);
       const resolvedUnitCost = resolveUnitCostForAsin(targetAsin, enrichCostDataMap);
@@ -1746,7 +1769,75 @@ async function handleSyncRequest(req: Request): Promise<Response> {
         'seller_derived:',
         'listings_api',
       ];
-      
+
+      // ═══════════════════════════════════════════════════════════════
+      // GRACE PERIOD (2026-07-14 fix): orders younger than this are never
+      // force/stale-price-overwritten with "current live price". A brand-new
+      // Pending order's own discovery-time estimate (seller_derived resolver
+      // in fetch-live-orders) is a far better guess than whatever the
+      // repricer has since bounced the ASIN to. Real orders_api/FEC prices
+      // are unaffected — this only gates the "no confirmed price yet" paths.
+      // ═══════════════════════════════════════════════════════════════
+      const PRICE_UPDATE_GRACE_PERIOD_MINUTES = 30;
+
+      // Fetch the REAL Amazon PurchaseDate for one order via GetOrder — basic
+      // order metadata, unlike GetOrderItems it's returned regardless of
+      // Pending status. Used only to anchor the lookup below, never for price.
+      const fetchOrderPurchaseDate = async (orderId: string, accessToken: string): Promise<string | null> => {
+        try {
+          const url = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}`;
+          const headers = await signRequest('GET', url, '', accessToken);
+          const res = await fetch(url, { method: 'GET', headers: { ...headers, 'Content-Type': 'application/json' } });
+          if (!res.ok) {
+            console.warn(`⚠️ PURCHASE_DATE_LOOKUP: ${orderId} failed: ${res.status}`);
+            return null;
+          }
+          const data = await res.json();
+          return data?.payload?.PurchaseDate || null;
+        } catch (err) {
+          console.warn(`⚠️ PURCHASE_DATE_LOOKUP: ${orderId} exception: ${(err as Error).message}`);
+          return null;
+        }
+      };
+
+      // AUTHORITATIVE TIME-ANCHORED RESOLVER (2026-07-14 fix): mirrors the
+      // Tier A lookup fetch-live-orders already does at discovery time —
+      // the latest successful repricer_price_actions row at/before the
+      // order's REAL purchase moment. This is the actual price Amazon had
+      // live when the order was placed, regardless of how many times the
+      // repricer has since moved it. Prefers the true Amazon PurchaseDate
+      // (fetched fresh via GetOrder) over order.created_at (our own discovery
+      // timestamp), since Pending orders can take significant time to appear
+      // in our system after the real purchase — created_at alone can anchor
+      // to the wrong repricer cycle for fast-oscillating ASINs.
+      const resolveTimeAnchoredPrice = async (
+        orderId: string,
+        asin: string,
+        marketplace: string,
+        createdAtFallback: string,
+        accessToken: string | null,
+      ): Promise<number> => {
+        let purchaseTs = createdAtFallback;
+        if (accessToken) {
+          const realPurchaseDate = await fetchOrderPurchaseDate(orderId, accessToken);
+          if (realPurchaseDate) {
+            purchaseTs = realPurchaseDate;
+          }
+        }
+        const { data: rpaRow } = await supabase
+          .from('repricer_price_actions')
+          .select('new_price, amazon_accepted_price')
+          .eq('user_id', userId)
+          .eq('asin', asin)
+          .eq('marketplace', marketplace || 'US')
+          .eq('success', true)
+          .lte('created_at', purchaseTs)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return Number(rpaRow?.amazon_accepted_price || rpaRow?.new_price || 0);
+      };
+
       for (const order of ordersForAsin) {
         try {
           const orderMarketplace = order.marketplace || 'US';
@@ -1794,6 +1885,11 @@ async function handleSyncRequest(req: Request): Promise<Response> {
               .maybeSingle();
             
             const snap = orderSnapshot as any;
+            const orderAgeMinutes = order.created_at
+              ? (Date.now() - new Date(order.created_at).getTime()) / 60000
+              : Infinity;
+            const pastGracePeriod = orderAgeMinutes >= PRICE_UPDATE_GRACE_PERIOD_MINUTES;
+
             if (snap?.snapshot_item_price > 0) {
               // Use the snapshot price captured at order discovery time
               if (orderPrice !== snap.snapshot_item_price) {
@@ -1802,22 +1898,46 @@ async function handleSyncRequest(req: Request): Promise<Response> {
                 priceWasUpdated = true;
                 newPriceSource = 'snapshot_price';
               }
+            } else if (forcePriceUpdate && !pastGracePeriod) {
+              console.log(`⏳ PRICE_GRACE_PERIOD: ${order.order_id} | order is ${orderAgeMinutes.toFixed(1)}min old (<${PRICE_UPDATE_GRACE_PERIOD_MINUTES}min) — skipping force price overwrite, keeping discovery-time estimate`);
             } else if (forcePriceUpdate) {
-              // MULTI-SKU FIX: Use SKU-specific inventory price
-              const skuSpecificPrice = getInventoryPriceForSku(order.seller_sku || order.sku);
-              if (skuSpecificPrice > 0 && orderPrice !== skuSpecificPrice) {
-                console.log(`💰 PRICE_SYNC: ${order.order_id} | FORCE updating price from $${orderPrice} to $${skuSpecificPrice} (sku=${order.seller_sku || order.sku})`);
+              // AUTHORITATIVE FIX: try the time-anchored repricer price first —
+              // the actual price Amazon had live at/before this order's creation,
+              // not whatever the repricer has since bounced the ASIN to.
+              const anchoredPrice = await resolveTimeAnchoredPrice(order.order_id, order.asin, orderMarketplace, order.created_at, enrichAccessToken);
+              if (anchoredPrice > 0 && orderPrice !== anchoredPrice) {
+                console.log(`💰 PRICE_SYNC: ${order.order_id} | Using TIME-ANCHORED repricer price $${anchoredPrice} (was $${orderPrice} from ${orderPriceSource})`);
+                orderPrice = anchoredPrice;
+                priceWasUpdated = true;
+                newPriceSource = 'repricer_action_time_anchored';
+              } else {
+                // MULTI-SKU FIX: Use SKU-specific inventory price
+                const skuSpecificPrice = getInventoryPriceForSku(order.seller_sku || order.sku);
+                if (skuSpecificPrice > 0 && orderPrice !== skuSpecificPrice) {
+                  console.log(`💰 PRICE_SYNC: ${order.order_id} | FORCE updating price from $${orderPrice} to $${skuSpecificPrice} (sku=${order.seller_sku || order.sku})`);
+                  orderPrice = skuSpecificPrice;
+                  priceWasUpdated = true;
+                  newPriceSource = 'inventory_refresh_forced';
+                }
+              }
+            } else if (isStaleSource && !pastGracePeriod) {
+              console.log(`⏳ PRICE_GRACE_PERIOD: ${order.order_id} | order is ${orderAgeMinutes.toFixed(1)}min old (<${PRICE_UPDATE_GRACE_PERIOD_MINUTES}min) — skipping stale-source overwrite, keeping discovery-time estimate`);
+            } else if (isStaleSource && freshInventoryPrice > 0 && Math.abs(orderPrice - freshInventoryPrice) > 1) {
+              // Stale source with significant price difference — try the
+              // time-anchored repricer price first, same as the forced path above.
+              const anchoredPrice = await resolveTimeAnchoredPrice(order.order_id, order.asin, orderMarketplace, order.created_at, enrichAccessToken);
+              if (anchoredPrice > 0 && orderPrice !== anchoredPrice) {
+                console.log(`💰 PRICE_SYNC: ${order.order_id} | Stale ${orderPriceSource} price $${orderPrice} — using TIME-ANCHORED repricer price $${anchoredPrice}`);
+                orderPrice = anchoredPrice;
+                priceWasUpdated = true;
+                newPriceSource = 'repricer_action_time_anchored';
+              } else {
+                const skuSpecificPrice = getInventoryPriceForSku(order.seller_sku || order.sku);
+                console.log(`💰 PRICE_SYNC: ${order.order_id} | Stale ${orderPriceSource} price $${orderPrice} differs from inventory $${skuSpecificPrice}, updating`);
                 orderPrice = skuSpecificPrice;
                 priceWasUpdated = true;
-                newPriceSource = 'inventory_refresh_forced';
+                newPriceSource = 'inventory_refresh';
               }
-            } else if (isStaleSource && freshInventoryPrice > 0 && Math.abs(orderPrice - freshInventoryPrice) > 1) {
-              // Stale source with significant price difference - use fresh inventory price
-              const skuSpecificPrice = getInventoryPriceForSku(order.seller_sku || order.sku);
-              console.log(`💰 PRICE_SYNC: ${order.order_id} | Stale ${orderPriceSource} price $${orderPrice} differs from inventory $${skuSpecificPrice}, updating`);
-              orderPrice = skuSpecificPrice;
-              priceWasUpdated = true;
-              newPriceSource = 'inventory_refresh';
             } else if (!orderPrice || orderPrice <= 0) {
               const skuSpecificPrice = getInventoryPriceForSku(order.seller_sku || order.sku);
               orderPrice = skuSpecificPrice;
