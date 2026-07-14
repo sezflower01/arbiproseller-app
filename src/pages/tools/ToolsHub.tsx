@@ -314,7 +314,7 @@ const ToolsHub = () => {
         />
       </Helmet>
 
-      <Navbar />
+      <Navbar hideMobileMenuButton />
 
       <main className="flex-grow pt-28 pb-16 relative z-10">
         <div className="container mx-auto px-4">

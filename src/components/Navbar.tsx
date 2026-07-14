@@ -10,7 +10,12 @@ import NavbarLinks from "./navbar/NavbarLinks";
 import NavbarMobileMenu from "./navbar/NavbarMobileMenu";
 
 
-const Navbar = () => {
+interface NavbarProps {
+  /** Hides the mobile hamburger menu button (and its dropdown). Desktop nav is unaffected. */
+  hideMobileMenuButton?: boolean;
+}
+
+const Navbar = ({ hideMobileMenuButton = false }: NavbarProps = {}) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -103,19 +108,21 @@ const Navbar = () => {
               Login
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleMobileMenu}
-            aria-label="Toggle Menu"
-            className="text-white"
-          >
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </Button>
+          {!hideMobileMenuButton && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleMobileMenu}
+              aria-label="Toggle Menu"
+              className="text-white"
+            >
+              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </Button>
+          )}
         </div>
       </div>
 
-      {mobileMenuOpen && (
+      {!hideMobileMenuButton && mobileMenuOpen && (
         <NavbarMobileMenu
           goToHome={goToHome}
           handleNavigation={handleNavigation}
