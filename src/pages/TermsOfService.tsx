@@ -104,7 +104,7 @@ const TermsOfService = () => {
             </p>
             <p className="flex items-center mb-3">
               <span className="mr-2">📧</span>
-              <a href="mailto:support@arbiproseller.com" className="text-blue-600 hover:underline">{t('terms_of_service.contact_email')}</a>
+              <a href="mailto:support@inventorysprint.com" className="text-blue-600 hover:underline">{t('terms_of_service.contact_email')}</a>
             </p>
           </section>
         </div>
