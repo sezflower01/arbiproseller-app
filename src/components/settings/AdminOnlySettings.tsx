@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -107,6 +107,106 @@ const STANDALONE_CARDS: StandaloneCard[] = [
   },
 ];
 
+// The entire former "Sourcing & Product Research" category, moved as a group.
+const SOURCING_CARDS: StandaloneCard[] = [
+  {
+    title: "Product Finder",
+    desc: "Search Amazon products with Keepa filters for OA & wholesale sourcing.",
+    path: "/tools/product-finder",
+    Icon: Search,
+    accent: "from-violet-500/15 to-fuchsia-500/5 border-violet-400/30 text-violet-300",
+  },
+  {
+    title: "Sourcer",
+    desc: "Scout ASINs/UPCs/keywords with live offers, profit calculator, sales history & price trend.",
+    path: "/tools/sourcer",
+    Icon: Target,
+    accent: "from-indigo-500/15 to-purple-500/5 border-indigo-400/30 text-indigo-300",
+  },
+  {
+    title: "Scan History",
+    desc: "Every UPC/EAN you scanned from the mobile scanner — with ASIN, price & profit.",
+    path: "/tools/scan-history",
+    Icon: ScanLine,
+    accent: "from-blue-500/15 to-cyan-500/5 border-blue-400/30 text-blue-300",
+  },
+  {
+    title: "Replenish Search",
+    desc: "Find products to replenish stock.",
+    path: "/tools/replenish-search",
+    Icon: RefreshCw,
+    accent: "from-purple-500/15 to-violet-500/5 border-purple-400/30 text-purple-300",
+  },
+  {
+    title: "Need to Buy Again",
+    desc: "Profitable past purchases worth restocking based on sales velocity.",
+    path: "/tools/need-buy-again",
+    Icon: RefreshCw,
+    accent: "from-pink-500/15 to-rose-500/5 border-pink-400/30 text-pink-300",
+  },
+  {
+    title: "Research Leads",
+    desc: "Private research database — log past FBA Lead List ASINs & retail links. Isolated from your live library.",
+    path: "/tools/research-leads",
+    Icon: FlaskConical,
+    accent: "from-violet-500/15 to-fuchsia-500/5 border-violet-400/30 text-violet-300",
+  },
+  {
+    title: "Google Product Search",
+    desc: "Search Google Shopping by ASIN for images and prices.",
+    path: "/tools/google-product-search",
+    Icon: Search,
+    accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
+  },
+  {
+    title: "Store Scan",
+    desc: "Browse pre-scanned profitable supplier-to-Amazon matches. No API credits used.",
+    path: "/tools/user-store-scan",
+    Icon: Store,
+    accent: "from-emerald-500/15 to-green-500/5 border-emerald-400/30 text-emerald-300",
+    badge: "Free",
+  },
+  {
+    title: "Supplier Discovery",
+    desc: "Look up supplier candidates already discovered for any ASIN. No API credits used.",
+    path: "/tools/user-supplier-discovery",
+    Icon: Search,
+    accent: "from-cyan-500/15 to-blue-500/5 border-cyan-400/30 text-cyan-300",
+    badge: "Free",
+  },
+];
+
+function CardGrid({ cards }: { cards: StandaloneCard[] }) {
+  return (
+    <div className="grid gap-5 sm:grid-cols-2">
+      {cards.map((c) => (
+        <Link
+          key={c.path}
+          to={c.path}
+          className={`group relative flex items-center gap-4 overflow-hidden rounded-2xl border bg-gradient-to-br ${c.accent} p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg`}
+        >
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-white/10 border border-white/10 shrink-0">
+            <c.Icon className="h-6 w-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-bold text-white">{c.title}</h3>
+              {c.badge ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 border border-white/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                  {c.badge}
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-white/60 mt-0.5">{c.desc}</p>
+          </div>
+          <div className="text-sm font-medium shrink-0">Open →</div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 const DAILY_FLOW_STEPS = [
   {
     step: "1",
@@ -160,32 +260,15 @@ export default function AdminOnlySettings() {
       </div>
 
       <section>
-        <div className="grid gap-5 sm:grid-cols-2">
-          {STANDALONE_CARDS.map((c) => (
-            <Link
-              key={c.path}
-              to={c.path}
-              className={`group relative flex items-center gap-4 overflow-hidden rounded-2xl border bg-gradient-to-br ${c.accent} p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg`}
-            >
-              <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-white/10 border border-white/10 shrink-0">
-                <c.Icon className="h-6 w-6" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base font-bold text-white">{c.title}</h3>
-                  {c.badge ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 border border-white/20">
-                      <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                      {c.badge}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-xs text-white/60 mt-0.5">{c.desc}</p>
-              </div>
-              <div className="text-sm font-medium shrink-0">Open →</div>
-            </Link>
-          ))}
-        </div>
+        <CardGrid cards={STANDALONE_CARDS} />
+      </section>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white">Sourcing & Product Research</h3>
+          <p className="text-sm text-gray-400">Where the money is made.</p>
+        </header>
+        <CardGrid cards={SOURCING_CARDS} />
       </section>
 
       <section>

@@ -40,7 +40,7 @@ export const TOOLS: ToolLink[] = [
   { path: '/tools/shipment-tracking', label: 'Shipment Tracking', ga: 'tool_menu_shipment_tracking', adminOnly: true },
   { path: '/tools/shipment-accounting', label: 'Reports Profit & Loss', ga: 'tool_menu_shipment_accounting', adminOnly: true },
   { path: '/tools/replenish-search', label: 'Replenish Search', ga: 'tool_menu_replenish_search', adminOnly: true },
-  { path: '/tools/need-buy-again', label: 'Need to Buy Again', ga: 'tool_menu_need_buy_again' },
+  { path: '/tools/need-buy-again', label: 'Need to Buy Again', ga: 'tool_menu_need_buy_again', adminOnly: true },
   { path: '/tools/fetch-listing-price', label: 'Fetch Listing Price', ga: 'tool_menu_fetch_listing_price', adminOnly: true },
   { path: '/tools/asin-lookup', label: 'ASIN Title & Image', ga: 'tool_menu_asin_lookup', adminOnly: true },
   { path: '/tools/upc-to-asin', label: 'UPC/EAN → ASIN', ga: 'tool_menu_upc_to_asin', adminOnly: true },
