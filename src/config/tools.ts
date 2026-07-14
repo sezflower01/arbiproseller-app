@@ -18,7 +18,7 @@ export const TOOLS: ToolLink[] = [
   { path: '/tools/tracking', label: 'Worldwide Tracking', ga: 'tool_menu_tracking', adminOnly: true },
   { path: '/tools/label-printing', label: 'Label Printing', ga: 'tool_menu_label_printing', adminOnly: true },
   { path: '/tools/printing-without-pdf', label: 'Printing Without PDF', ga: 'tool_menu_printing_without_pdf', adminOnly: true },
-  { path: '/tools/create-listing', label: 'Create Listing', ga: 'tool_menu_create_listing' },
+  { path: '/tools/create-listing', label: 'Create Listing', ga: 'tool_menu_create_listing', adminOnly: true },
   { path: '/tools/sourcer', label: 'Sourcer', ga: 'tool_menu_sourcer', adminOnly: true },
   { path: '/tools/inventory', label: 'Inventory Management', ga: 'tool_menu_inventory', adminOnly: true },
   { path: '/tools/synced-inventory', label: 'Inventory', ga: 'tool_menu_synced_inventory' },

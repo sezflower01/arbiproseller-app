@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -27,6 +27,27 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     path: "/tools/dashboard",
     Icon: LayoutDashboard,
     accent: "from-slate-500/15 to-slate-500/5 border-slate-400/30 text-slate-300",
+  },
+  {
+    title: "Inventory Restoration",
+    desc: "One-click guided reconcile: Summaries (available + reserved) + FBA report (inbound) in safe order.",
+    path: "/tools/inventory-restoration",
+    Icon: ShieldCheck,
+    accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
+  },
+  {
+    title: "Inventory Review Queue",
+    desc: "SKUs missing from FBA reports — review and decide. No stock is changed automatically.",
+    path: "/tools/inventory-review",
+    Icon: ListChecks,
+    accent: "from-amber-500/15 to-orange-500/5 border-amber-400/30 text-amber-300",
+  },
+  {
+    title: "Create Listing",
+    desc: "Create a new Amazon listing from scratch with guided fields and validation.",
+    path: "/tools/create-listing",
+    Icon: FilePlus,
+    accent: "from-indigo-500/15 to-blue-500/5 border-indigo-400/30 text-indigo-300",
   },
 ];
 

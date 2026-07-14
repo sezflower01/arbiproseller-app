@@ -110,26 +110,6 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
         ga: "tool_menu_synced_inventory",
       },
       {
-        path: "/tools/inventory-restoration",
-        label: "Inventory Restoration",
-        description:
-          "One-click guided reconcile: Summaries (available + reserved) + FBA report (inbound) in safe order.",
-        icon: ShieldCheck,
-        color: "from-emerald-500 to-teal-600",
-        adminOnly: true,
-        ga: "tool_menu_inventory_restoration",
-      },
-      {
-        path: "/tools/inventory-review",
-        label: "Inventory Review Queue",
-        description:
-          "SKUs missing from FBA reports — review and decide. No stock is changed automatically.",
-        icon: ListChecks,
-        color: "from-amber-500 to-orange-600",
-        adminOnly: true,
-        ga: "tool_menu_inventory_review",
-      },
-      {
         path: "/tools/inventory-writeoff",
         label: "Inventory Write-Off",
         description: "Record warehouse losses (restricted, dead, expired). Flows into P&L as Business Loss.",
@@ -161,14 +141,6 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
         icon: ListChecks,
         color: "from-violet-500 to-purple-600",
         ga: "tool_menu_still_thinking",
-      },
-      {
-        path: "/tools/create-listing",
-        label: "Create Listing",
-        description: "Create a new Amazon listing from scratch with guided fields and validation.",
-        icon: FilePlus,
-        color: "from-indigo-500 to-blue-600",
-        ga: "tool_menu_create_listing",
       },
       {
         path: "/tools/fba-eligibility-issues",
