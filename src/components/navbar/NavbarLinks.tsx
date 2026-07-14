@@ -21,6 +21,8 @@ import PlatformModulesMenu from "./PlatformModulesMenu";
 import ProductsMegaMenu from "./ProductsMegaMenu";
 import BbPriceAlerts from "./BbPriceAlerts";
 import HijackerAlerts from "./HijackerAlerts";
+import AdminChatNotification from "@/components/chat/AdminChatNotification";
+import AdminErrorNotification from "@/components/chat/AdminErrorNotification";
 
 
 export interface NavbarLinksProps {
@@ -193,6 +195,12 @@ const NavbarLinks: React.FC<NavbarLinksProps> = ({
         <>
           <BbPriceAlerts />
           <HijackerAlerts />
+          {isAdmin && (
+            <>
+              <AdminChatNotification />
+              <AdminErrorNotification />
+            </>
+          )}
         </>
       )}
 

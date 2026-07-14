@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ChevronDown, Check, Clock, ExternalLink, User, Server, RefreshCw, Trash2, Activity, Database, Users, TrendingUp, Gauge, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Check, Clock, ExternalLink, User, Server, RefreshCw, Trash2, Activity, Database, Users, TrendingUp, Gauge, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -374,10 +374,10 @@ const AdminErrorNotification = () => {
   const appErrors = errors.filter(e => !e.isInfrastructure && !e.isAmazonThrottle);
 
   return (
-    <div className="fixed top-4 left-40 z-[60]">
+    <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <button className="relative flex items-center gap-1.5 rounded-full bg-card border border-border shadow-md px-3 py-1.5 hover:bg-accent transition-colors">
+          <Button variant="ghost" size="sm" className="relative" title="System health & errors">
             {infraMetrics.severity === 'critical' ? (
               <Activity className="h-4 w-4 text-red-500 animate-pulse" />
             ) : infraMetrics.severity === 'elevated' ? (
@@ -386,17 +386,18 @@ const AdminErrorNotification = () => {
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             )}
             {errors.length > 0 && (
-              <span className={`absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                infraMetrics.severity === 'critical' ? 'bg-red-500 text-white animate-pulse' : 'bg-destructive text-destructive-foreground'
-              }`}>
-                {errors.length}
-              </span>
+              <Badge
+                variant="destructive"
+                className={`absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs ${
+                  infraMetrics.severity === 'critical' ? 'bg-red-500 animate-pulse' : ''
+                }`}
+              >
+                {errors.length > 9 ? "9+" : errors.length}
+              </Badge>
             )}
-            <span className="text-xs font-medium text-foreground">System</span>
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          </button>
+          </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[480px] p-0" align="start" sideOffset={8}>
+        <PopoverContent className="w-[480px] p-0" align="end" sideOffset={8}>
           {/* Header */}
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <div>
@@ -535,7 +536,7 @@ const AdminErrorNotification = () => {
           )}
         </PopoverContent>
       </Popover>
-    </div>
+    </>
   );
 };
 

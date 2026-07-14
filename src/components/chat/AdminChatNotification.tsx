@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { MessageCircle, ChevronDown, Clock } from 'lucide-react';
+import { MessageCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
@@ -126,50 +127,49 @@ const AdminChatNotification = () => {
 
   return (
     <>
-      <div className="fixed top-4 left-4 z-[60]">
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button className="relative flex items-center gap-1.5 rounded-full bg-card border border-border shadow-md px-3 py-1.5 hover:bg-accent transition-colors">
-              <MessageCircle className="h-4 w-4 text-primary" />
-              {pendingSessions.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center animate-pulse">
-                  {pendingSessions.length}
-                </span>
-              )}
-              <span className="text-xs font-medium text-foreground">Chats</span>
-              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 p-0" align="start" sideOffset={8}>
-            <div className="px-4 py-3 border-b border-border">
-              <h4 className="font-semibold text-sm text-foreground">Chat Requests</h4>
-              <p className="text-xs text-muted-foreground">{pendingSessions.length} waiting</p>
-            </div>
-            {pendingSessions.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">No pending requests</div>
-            ) : (
-              <ScrollArea className="max-h-72">
-                <div className="divide-y divide-border">
-                  {pendingSessions.map((s) => (
-                    <div key={s.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-accent/50 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{s.user_name || s.user_email || 'User'}</p>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {timeAgo(s.created_at)}
-                        </div>
-                      </div>
-                      <Button size="sm" className="h-7 text-xs shrink-0" onClick={() => joinChat(s.id)}>
-                        Join
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="relative" title="Chat requests">
+            <MessageCircle className="h-4 w-4 text-primary" />
+            {pendingSessions.length > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs animate-pulse"
+              >
+                {pendingSessions.length > 9 ? "9+" : pendingSessions.length}
+              </Badge>
             )}
-          </PopoverContent>
-        </Popover>
-      </div>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="end" sideOffset={8}>
+          <div className="px-4 py-3 border-b border-border">
+            <h4 className="font-semibold text-sm text-foreground">Chat Requests</h4>
+            <p className="text-xs text-muted-foreground">{pendingSessions.length} waiting</p>
+          </div>
+          {pendingSessions.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">No pending requests</div>
+          ) : (
+            <ScrollArea className="max-h-72">
+              <div className="divide-y divide-border">
+                {pendingSessions.map((s) => (
+                  <div key={s.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-accent/50 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{s.user_name || s.user_email || 'User'}</p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo(s.created_at)}
+                      </div>
+                    </div>
+                    <Button size="sm" className="h-7 text-xs shrink-0" onClick={() => joinChat(s.id)}>
+                      Join
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </PopoverContent>
+      </Popover>
 
       {activeSessionId && (
         <AdminChatPanel
