@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -176,6 +176,53 @@ const SOURCING_CARDS: StandaloneCard[] = [
   },
 ];
 
+// The entire former "Supplier Intelligence" category, moved as a group.
+const SUPPLIER_INTEL_CARDS: StandaloneCard[] = [
+  {
+    title: "Supplier Discovery (Live)",
+    desc: "Find retail source candidates for an ASIN — auto-ranked, auto-extracted prices.",
+    path: "/tools/supplier-discovery",
+    Icon: Search,
+    accent: "from-orange-500/15 to-red-500/5 border-orange-400/30 text-orange-300",
+    badge: "Admin · Live",
+  },
+  {
+    title: "Price Extractor",
+    desc: "Universal product price extractor — pulls price, currency, image and title from any URL.",
+    path: "/tools/price-extractor",
+    Icon: Link2,
+    accent: "from-amber-500/15 to-orange-500/5 border-amber-400/30 text-amber-300",
+    badge: "Admin · Live",
+  },
+  {
+    title: "Scan Categories",
+    desc: "Curate named categories (e.g. Books) with supplier URLs that users can browse.",
+    path: "/tools/scan-categories",
+    Icon: FolderTree,
+    accent: "from-violet-500/15 to-purple-500/5 border-violet-400/30 text-violet-300",
+    badge: "Admin · Live",
+  },
+];
+
+// The entire former "Tools & Calculators" category, moved as a group.
+const CALCULATOR_CARDS: StandaloneCard[] = [
+  {
+    title: "ROI Calculator",
+    desc: "Calculate profit margins and return on investment.",
+    path: "/tools/roi",
+    Icon: TrendingUp,
+    accent: "from-emerald-500/15 to-green-500/5 border-emerald-400/30 text-emerald-300",
+    badge: "Free",
+  },
+  {
+    title: "Target ROI Price",
+    desc: "Calculate required selling price for target ROI across currencies.",
+    path: "/tools/target-roi-price",
+    Icon: Target,
+    accent: "from-amber-500/15 to-yellow-500/5 border-amber-400/30 text-amber-300",
+  },
+];
+
 function CardGrid({ cards }: { cards: StandaloneCard[] }) {
   return (
     <div className="grid gap-5 sm:grid-cols-2">
@@ -269,6 +316,22 @@ export default function AdminOnlySettings() {
           <p className="text-sm text-gray-400">Where the money is made.</p>
         </header>
         <CardGrid cards={SOURCING_CARDS} />
+      </section>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white">Supplier Intelligence</h3>
+          <p className="text-sm text-gray-400">Advanced AI sourcing layer.</p>
+        </header>
+        <CardGrid cards={SUPPLIER_INTEL_CARDS} />
+      </section>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white">Tools & Calculators</h3>
+          <p className="text-sm text-gray-400">Quick math utilities.</p>
+        </header>
+        <CardGrid cards={CALCULATOR_CARDS} />
       </section>
 
       <section>
