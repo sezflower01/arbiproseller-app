@@ -1,14 +1,35 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
   desc: string;
-  path: string;
+  path?: string;
+  downloadUrl?: string;
+  downloadFilename?: string;
   Icon: LucideIcon;
   accent: string;
   badge?: string;
 };
+
+async function triggerDownload(url: string, filename: string) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    toast.success(`Downloading ${filename}…`);
+  } catch (err: any) {
+    toast.error(`Download failed: ${err.message || err}`);
+  }
+}
 
 // Cards moved out of the main Tools Hub so they're only reachable from here.
 // Add more entries to this list as additional cards get moved in.
@@ -223,33 +244,110 @@ const CALCULATOR_CARDS: StandaloneCard[] = [
   },
 ];
 
+// The entire former "Admin & Settings" category, moved as a group.
+const ADMIN_SETTINGS_CARDS: StandaloneCard[] = [
+  {
+    title: "User Management",
+    desc: "Assign roles and control module access for every user.",
+    path: "/tools/admin-users",
+    Icon: Users,
+    accent: "from-rose-500/15 to-pink-500/5 border-rose-400/30 text-rose-300",
+    badge: "Admin",
+  },
+  {
+    title: "Admin Management",
+    desc: "Manage admin profiles, names, and avatars.",
+    path: "/tools/admin-management",
+    Icon: ShieldCheck,
+    accent: "from-violet-500/15 to-purple-500/5 border-violet-400/30 text-violet-300",
+    badge: "Admin",
+  },
+  {
+    title: "Amazon SP-API Connection",
+    desc: "Manage encrypted LWA credentials and test the Amazon connection.",
+    path: "/tools/amazon-connection",
+    Icon: Plug,
+    accent: "from-amber-500/15 to-orange-500/5 border-amber-400/30 text-amber-300",
+    badge: "Admin",
+  },
+  {
+    title: "Chrome Extension — Amazon Analyzer",
+    desc: "Floating ASIN scanner for Amazon pages: Buy Box, ROI, sellers, Keepa stability. Click to download the .zip.",
+    downloadUrl: "/arbiproseller-extension.zip",
+    downloadFilename: "arbiproseller-extension.zip",
+    Icon: ScanLine,
+    accent: "from-blue-500/15 to-indigo-500/5 border-blue-400/30 text-blue-300",
+    badge: "Admin",
+  },
+  {
+    title: "Chrome Extension — Create Listing",
+    desc: "Floating Create Listing form on Amazon pages: fetch product, validate, create on Amazon, save to Product Library.",
+    downloadUrl: "/arbiproseller-create-listing-extension.zip",
+    downloadFilename: "arbiproseller-create-listing-extension.zip",
+    Icon: FilePlus,
+    accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
+    badge: "Admin",
+  },
+  {
+    title: "Database Maintenance",
+    desc: "Cleanup retention, health alerts, performance snapshot, and VACUUM controls.",
+    path: "/tools/database-maintenance",
+    Icon: Database,
+    accent: "from-cyan-500/15 to-blue-500/5 border-cyan-400/30 text-cyan-300",
+    badge: "Admin",
+  },
+];
+
 function CardGrid({ cards }: { cards: StandaloneCard[] }) {
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      {cards.map((c) => (
-        <Link
-          key={c.path}
-          to={c.path}
-          className={`group relative flex items-center gap-4 overflow-hidden rounded-2xl border bg-gradient-to-br ${c.accent} p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg`}
-        >
-          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-white/10 border border-white/10 shrink-0">
-            <c.Icon className="h-6 w-6" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-bold text-white">{c.title}</h3>
-              {c.badge ? (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 border border-white/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                  {c.badge}
-                </span>
-              ) : null}
+      {cards.map((c) => {
+        const isDownload = !!c.downloadUrl;
+        const inner = (
+          <>
+            <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-white/10 border border-white/10 shrink-0">
+              <c.Icon className="h-6 w-6" />
             </div>
-            <p className="text-xs text-white/60 mt-0.5">{c.desc}</p>
-          </div>
-          <div className="text-sm font-medium shrink-0">Open →</div>
-        </Link>
-      ))}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-white">{c.title}</h3>
+                {c.badge ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/10 border border-white/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                    {c.badge}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-xs text-white/60 mt-0.5">{c.desc}</p>
+            </div>
+            <div className="text-sm font-medium shrink-0">{isDownload ? "↓ Download .zip" : "Open →"}</div>
+          </>
+        );
+        const className = `group relative flex items-center gap-4 overflow-hidden rounded-2xl border bg-gradient-to-br ${c.accent} p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg`;
+
+        if (isDownload) {
+          const download = () => triggerDownload(c.downloadUrl!, c.downloadFilename || "download.zip");
+          return (
+            <div
+              key={c.downloadUrl}
+              role="button"
+              tabIndex={0}
+              onClick={download}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") download(); }}
+              className={className}
+              aria-label={`Download ${c.title}`}
+            >
+              {inner}
+            </div>
+          );
+        }
+
+        return (
+          <Link key={c.path} to={c.path!} className={className}>
+            {inner}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -332,6 +430,14 @@ export default function AdminOnlySettings() {
           <p className="text-sm text-gray-400">Quick math utilities.</p>
         </header>
         <CardGrid cards={CALCULATOR_CARDS} />
+      </section>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white">Admin & Settings</h3>
+          <p className="text-sm text-gray-400">Restricted access.</p>
+        </header>
+        <CardGrid cards={ADMIN_SETTINGS_CARDS} />
       </section>
 
       <section>
