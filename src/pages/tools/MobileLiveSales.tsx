@@ -37,7 +37,6 @@ import ReplacementCogsSection from "@/components/sales/ReplacementCogsSection";
 import ReplacementCogsChip from "@/components/sales/ReplacementCogsChip";
 import { fetchPromotionDeductions } from "@/lib/sales/promotionDeductions";
 import { computeNetRefundFromFecRows } from "@/lib/sales/refundMath";
-import { CustomerInsightsCard } from "@/components/customers/CustomerInsightsCard";
 
 
 /* ─────────── helpers (mirrors LiveSales.tsx contracts) ─────────── */
@@ -2278,14 +2277,6 @@ const MobileLiveSales = () => {
             ))}
           </div>
         )}
-
-        {/* Customer Intelligence — period-scoped counts of buyer segments */}
-        <div className="mb-3">
-          <CustomerInsightsCard
-            startDate={new Date(periodInfo.start + "T00:00:00").toISOString()}
-            endDate={new Date(periodInfo.end + "T23:59:59").toISOString()}
-          />
-        </div>
 
         {/* Hero stat */}
         <section className="rounded-2xl bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-400/20 p-5 shadow-lg shadow-emerald-500/5">

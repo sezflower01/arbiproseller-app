@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -125,6 +125,13 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     path: "/tools/price-history",
     Icon: LineChart,
     accent: "from-purple-500/15 to-indigo-500/5 border-purple-400/30 text-purple-300",
+  },
+  {
+    title: "Health Center",
+    desc: "System Error Log — review flagged customer patterns (refunds, replacements, high volume + returns).",
+    path: "/tools/error-log",
+    Icon: HeartPulse,
+    accent: "from-red-500/15 to-rose-500/5 border-red-400/30 text-red-300",
   },
 ];
 
