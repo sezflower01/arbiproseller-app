@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -90,6 +90,20 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     path: "/tools/tracking",
     Icon: Globe,
     accent: "from-cyan-500/15 to-teal-500/5 border-cyan-400/30 text-cyan-300",
+  },
+  {
+    title: "Fetch Listing Price",
+    desc: "Compare listing prices across US, CA, MX, BR.",
+    path: "/tools/fetch-listing-price",
+    Icon: Search,
+    accent: "from-blue-500/15 to-cyan-500/5 border-blue-400/30 text-blue-300",
+  },
+  {
+    title: "Price History",
+    desc: "Track ASIN price changes over time with charts.",
+    path: "/tools/price-history",
+    Icon: LineChart,
+    accent: "from-purple-500/15 to-indigo-500/5 border-purple-400/30 text-purple-300",
   },
 ];
 
