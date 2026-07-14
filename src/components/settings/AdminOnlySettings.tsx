@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -69,6 +69,27 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     path: "/tools/price-discrepancy-audit",
     Icon: AlertTriangle,
     accent: "from-orange-500/15 to-red-500/5 border-orange-400/30 text-orange-300",
+  },
+  {
+    title: "Label Printing",
+    desc: "Print FNSKU and shipping labels easily.",
+    path: "/tools/label-printing",
+    Icon: Printer,
+    accent: "from-pink-500/15 to-rose-500/5 border-pink-400/30 text-pink-300",
+  },
+  {
+    title: "Print Without PDF",
+    desc: "Direct thermal printing without PDF files.",
+    path: "/tools/printing-without-pdf",
+    Icon: Package,
+    accent: "from-fuchsia-500/15 to-pink-500/5 border-fuchsia-400/30 text-fuchsia-300",
+  },
+  {
+    title: "Worldwide Tracking",
+    desc: "Track packages from any carrier globally.",
+    path: "/tools/tracking",
+    Icon: Globe,
+    accent: "from-cyan-500/15 to-teal-500/5 border-cyan-400/30 text-cyan-300",
   },
 ];
 
