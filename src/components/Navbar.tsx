@@ -8,7 +8,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import NavbarLogo from "./navbar/NavbarLogo";
 import NavbarLinks from "./navbar/NavbarLinks";
 import NavbarMobileMenu from "./navbar/NavbarMobileMenu";
-import { FbaBlockedPill } from "./navbar/FbaBlockedPill";
 
 
 const Navbar = () => {
@@ -92,10 +91,6 @@ const Navbar = () => {
             goToDownloadPage={goToDownloadPage}
             goToBuyLicense={goToBuyLicense}
           />
-        </div>
-
-        <div className="hidden md:flex items-center ml-auto mr-2">
-          <FbaBlockedPill />
         </div>
 
         <div className="md:hidden flex items-center space-x-2 ml-auto">
