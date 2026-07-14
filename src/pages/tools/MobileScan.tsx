@@ -895,7 +895,7 @@ export default function MobileScan() {
       <header className="sticky top-0 z-20 backdrop-blur-md bg-black/40 border-b border-white/10">
         <div className="flex items-center gap-2 px-4 py-3">
           <button
-            onClick={() => navigate("/tools/dashboard")}
+            onClick={() => navigate("/tools")}
             className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-white/5 border border-white/10"
             aria-label="Back"
           >
