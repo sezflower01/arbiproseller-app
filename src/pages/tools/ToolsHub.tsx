@@ -1,7 +1,7 @@
 import type React from "react";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
-import { Calculator, Crown, ExternalLink, Sparkles, Warehouse, Radio, ScanLine, Lock, Sun, ListChecks, Activity, Stethoscope } from "lucide-react";
+import { Calculator, Crown, ExternalLink, Sparkles, Warehouse, Radio, ScanLine, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
@@ -291,7 +291,8 @@ function CategorySection({ category, isAdmin, locked }: { category: ModuleCatego
 
 const ToolsHub = () => {
   const { isAdmin, isExpired } = useSubscription();
-  const categories = visibleCategories(isAdmin);
+  // "dashboard" (Overview) moved to Account Settings > Admin Only — hidden here for everyone.
+  const categories = visibleCategories(isAdmin).filter((c) => c.id !== "dashboard");
   const locked = isExpired && !isAdmin;
 
   return (
@@ -417,113 +418,6 @@ const ToolsHub = () => {
               </a>
             ))}
           </nav>
-
-          {/* Desktop: shortcut to the mobile-optimized Live Sales (small/compact view) */}
-          <div className="hidden md:block max-w-7xl mx-auto mb-10">
-            <Link
-              to="/m/live-sales"
-              className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-emerald-400/30 bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent p-5 shadow-lg shadow-emerald-500/10 transition-all hover:-translate-y-0.5 hover:shadow-xl"
-              aria-label="Open Live Sales (mobile view)"
-            >
-              <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 shrink-0">
-                <Radio className="h-6 w-6" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-bold text-white">Live Sales — Mobile View</h2>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Live
-                  </span>
-                </div>
-                <p className="text-xs text-white/60 mt-0.5">
-                  Compact, mobile-optimized Today's sales view — great for a phone-sized window.
-                </p>
-              </div>
-              <div className="text-sm text-emerald-300 font-medium shrink-0">Open →</div>
-            </Link>
-          </div>
-
-          {/* Admin Daily Flow — quick access to the routine operating loop */}
-          {isAdmin && (
-            <section className="hidden md:block max-w-7xl mx-auto mb-12">
-              <header className="mb-5 flex items-end justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
-                    <Sun className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-white">Admin Daily Flow</h2>
-                    <p className="text-sm text-gray-400">Your routine: review → operate → investigate → diagnose.</p>
-                  </div>
-                </div>
-                <span className="text-xs text-gray-500">Admin only</span>
-              </header>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  {
-                    step: "1",
-                    when: "Morning · 2–5 min",
-                    title: "Executive Review",
-                    desc: "Start the day with the high-level health snapshot.",
-                    path: "/tools/executive",
-                    Icon: Sun,
-                    accent: "from-blue-500/15 to-indigo-500/5 border-blue-400/30 text-blue-300",
-                  },
-                  {
-                    step: "2",
-                    when: "Operational review",
-                    title: "Operator Queue",
-                    desc: "Approve, snooze, or escalate today's suggested actions.",
-                    path: "/tools/repricer/operator-queue",
-                    Icon: ListChecks,
-                    accent: "from-emerald-500/15 to-emerald-500/5 border-emerald-400/30 text-emerald-300",
-                  },
-                  {
-                    step: "3",
-                    when: "Investigate behavior",
-                    title: "Repricer Monitor",
-                    desc: "Look into unusual pricing or strategy behavior.",
-                    path: "/tools/repricer/monitor",
-                    Icon: Activity,
-                    accent: "from-violet-500/15 to-violet-500/5 border-violet-400/30 text-violet-300",
-                  },
-                  {
-                    step: "4",
-                    when: "Diagnose performance",
-                    title: "Cron Diagnostics",
-                    desc: "Inspect jobs, queues, and platform health.",
-                    path: "/tools/cron-diagnostics",
-                    Icon: Stethoscope,
-                    accent: "from-amber-500/15 to-amber-500/5 border-amber-400/30 text-amber-300",
-                  },
-                ].map(({ step, when, title, desc, path, Icon, accent }) => (
-                  <Link
-                    key={path}
-                    to={path}
-                    className={`group relative block overflow-hidden rounded-2xl border bg-gradient-to-br ${accent} p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg`}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="inline-flex items-center justify-center h-11 w-11 rounded-xl bg-white/10 border border-white/10">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-white/60">
-                        Step {step}
-                      </span>
-                    </div>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-white/50 mb-1">
-                      {when}
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
-                    <p className="text-xs text-white/70 leading-relaxed">{desc}</p>
-                    <div className="mt-3 text-xs font-medium text-white/80 group-hover:text-white">
-                      Open →
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
 
           {/* Categorized sections (desktop / tablet only) */}
           <div className="hidden md:block max-w-7xl mx-auto space-y-12">

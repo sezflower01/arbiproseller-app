@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { User, Building2, HeadphonesIcon, CreditCard, Link2, Receipt, Zap, Rocket, Mail, Printer, PackageCheck } from "lucide-react";
+import { User, Building2, HeadphonesIcon, CreditCard, Link2, Receipt, Zap, Rocket, Mail, Printer, PackageCheck, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import ProfileSettings from "@/components/settings/ProfileSettings";
@@ -10,6 +10,7 @@ import ManagedListingsSettings from "@/components/settings/ManagedListingsSettin
 import GettingStartedSettings from "@/components/settings/GettingStartedSettings";
 import ConnectPrinterSettings from "@/components/settings/ConnectPrinterSettings";
 import ShipmentPreferencesSettings from "@/components/settings/ShipmentPreferencesSettings";
+import AdminOnlySettings from "@/components/settings/AdminOnlySettings";
 import ChoosePlanDialog from "@/components/subscription/ChoosePlanDialog";
 import { useSubscription } from "@/hooks/use-subscription";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,10 @@ const TABS = [
   { id: "support", label: "Support", icon: HeadphonesIcon },
 ] as const;
 
-type TabId = typeof TABS[number]["id"];
+// Only shown to admins — appended to TABS conditionally, never rendered for regular users.
+const ADMIN_TAB = { id: "admin-only", label: "Admin Only", icon: Shield } as const;
+
+type TabId = typeof TABS[number]["id"] | typeof ADMIN_TAB["id"];
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -40,7 +44,9 @@ export default function Settings() {
     effectivePlan,
     marketplaceCounts,
     listingsLoading: subLoading,
+    isAdmin,
   } = useSubscription();
+  const tabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)] relative overflow-hidden">
       <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/20 rounded-full blur-[120px] animate-pulse" />
@@ -56,7 +62,7 @@ export default function Settings() {
         <div className="flex gap-8">
           {/* Sidebar */}
           <nav className="w-52 shrink-0 space-y-1">
-            {TABS.map((t) => {
+            {tabs.map((t) => {
               const Icon = t.icon;
               return (
                 <button
@@ -106,6 +112,7 @@ export default function Settings() {
             {tab === "connect-printer" && <ConnectPrinterSettings />}
             {tab === "shipment-preferences" && <ShipmentPreferencesSettings />}
             {tab === "support" && <SupportSettings />}
+            {tab === "admin-only" && isAdmin && <AdminOnlySettings />}
           </div>
         </div>
       </div>
