@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -48,6 +48,27 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     path: "/tools/create-listing",
     Icon: FilePlus,
     accent: "from-indigo-500/15 to-blue-500/5 border-indigo-400/30 text-indigo-300",
+  },
+  {
+    title: "Reports & Accounting",
+    desc: "Generate detailed business reports.",
+    path: "/tools/reports",
+    Icon: FileText,
+    accent: "from-indigo-500/15 to-blue-500/5 border-indigo-400/30 text-indigo-300",
+  },
+  {
+    title: "Shipment Profit & Loss",
+    desc: "Per-shipment cost breakdown: COGS, Amazon inbound fees, manual costs and totals.",
+    path: "/tools/shipment-accounting",
+    Icon: Receipt,
+    accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
+  },
+  {
+    title: "Price Discrepancy Audit",
+    desc: "Compare My Price vs Sales Report vs Live Mobile per order to diagnose revenue mismatches.",
+    path: "/tools/price-discrepancy-audit",
+    Icon: AlertTriangle,
+    accent: "from-orange-500/15 to-red-500/5 border-orange-400/30 text-orange-300",
   },
 ];
 
