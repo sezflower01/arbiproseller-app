@@ -601,6 +601,15 @@
     return map[m] || "sellercentral.amazon.com";
   }
 
+  // Public storefront link for a seller row — reuses approvalHost()'s
+  // per-marketplace TLD map (swapping "sellercentral." for "www.") instead
+  // of duplicating the marketplace->domain list a second time.
+  function sellerStorefrontUrl(sellerId, marketplace) {
+    if (!sellerId) return null;
+    const host = approvalHost(marketplace).replace(/^sellercentral\./, "www.");
+    return `https://${host}/sp?ie=UTF8&seller=${encodeURIComponent(sellerId)}`;
+  }
+
   function selectedMarketplaceGatingStatus() {
     const code = String(state.marketplace || "US").toUpperCase();
     const gates = Array.isArray(state.product?.marketplaceGating) ? state.product.marketplaceGating : [];
@@ -971,9 +980,14 @@
         roi = (profit / unitCost) * 100;
       }
       const roiText = roi == null ? "—" : `${roi.toFixed(0)}%`;
+      const displayName = o.sellerName || o.sellerId;
+      const storeUrl = sellerStorefrontUrl(o.sellerId, state.marketplace);
+      const nameHtml = storeUrl
+        ? `<a class="apx-seller-name" href="${esc(storeUrl)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(displayName)}'s storefront on Amazon">${esc(displayName)}</a>`
+        : `<span class="apx-seller-name" title="${esc(displayName)}">${esc(displayName)}</span>`;
 
       row.innerHTML = `
-        <span class="apx-seller-name" title="${o.sellerName || o.sellerId}">${o.sellerName || o.sellerId}</span>
+        ${nameHtml}
         <span>${tags.join("")}</span>
         <span class="apx-seller-price">${fmtMoney(o.landed, state.currency)}</span>
         <span class="apx-seller-roi ${roiClass(roi)}" title="ROI at this seller's price (uses your cost + estimated fees)">${roiText}</span>
