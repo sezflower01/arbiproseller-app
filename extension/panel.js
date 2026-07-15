@@ -895,11 +895,21 @@
   }
 
   // ── Sellers list ───────────────────────────────────────────────────
+  // Competitors list pagination — 20 at a time. Reset only when a genuinely
+  // NEW offers list has landed (new asin/marketplace/range, or a fresh
+  // fetch replaced the data), not on every re-render triggered by e.g.
+  // typing a cost — otherwise "More" would keep getting wiped out.
+  const SELLERS_PAGE_SIZE = 20;
   function renderSellers() {
     const list = $("apx-sellers-list");
     const offers = state.history?.offers?.list || [];
     const rState = state.historyRetrievalState || (offers.length ? "live" : "no_offers");
     const fetchedAt = state.history?.fetched_at || state.historyLastSuccessAt;
+    const sellersKey = `${state.asin}|${state.marketplace}|${state.range}|${fetchedAt || ""}`;
+    if (state.sellersVisibleKey !== sellersKey) {
+      state.sellersVisibleKey = sellersKey;
+      state.sellersVisibleCount = SELLERS_PAGE_SIZE;
+    }
     const ageMin = fetchedAt ? Math.max(0, Math.round((Date.now() - new Date(fetchedAt).getTime()) / 60000)) : null;
     const ageLabel = ageMin == null ? "" : ageMin < 1 ? "just now" : ageMin < 60 ? `${ageMin}m old` : `${Math.round(ageMin / 60)}h old`;
 
@@ -960,8 +970,9 @@
 
 
     const roiClass = (r) => r == null ? "na" : r >= 30 ? "good" : r >= 15 ? "warn" : "bad";
+    const visibleCount = Math.min(offers.length, state.sellersVisibleCount || SELLERS_PAGE_SIZE);
 
-    offers.slice(0, 30).forEach(o => {
+    offers.slice(0, visibleCount).forEach(o => {
       const row = document.createElement("div");
       row.className = "apx-seller-row" + (o.isBuyBox ? " bb" : "");
       const tags = [];
@@ -994,6 +1005,19 @@
       `;
       list.appendChild(row);
     });
+
+    if (offers.length > visibleCount) {
+      const remaining = offers.length - visibleCount;
+      const moreBtn = document.createElement("button");
+      moreBtn.type = "button";
+      moreBtn.className = "apx-sellers-more";
+      moreBtn.textContent = `Show 20 more (${remaining} left)`;
+      moreBtn.addEventListener("click", () => {
+        state.sellersVisibleCount = (state.sellersVisibleCount || SELLERS_PAGE_SIZE) + SELLERS_PAGE_SIZE;
+        renderSellers();
+      });
+      list.appendChild(moreBtn);
+    }
   }
 
   // ── Data load ──────────────────────────────────────────────────────
