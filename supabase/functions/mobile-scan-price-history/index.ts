@@ -41,6 +41,15 @@ const AMAZON_SELLER_IDS = new Set([
   'A1F83G8C2ARO7P', // UK
   'APJ6JRA9NG5V4',  // IT
   'A1VC38T7YXB528', // JP
+  // A2R2RITDJNW1Q6 — user-reported (2026-07-15), unverified by Keepa: this
+  // ID returns empty from Keepa's /seller lookup in every marketplace and
+  // has no public Amazon storefront (checked directly). That's consistent
+  // with an internal/non-standard Amazon retail account rather than a real
+  // third-party seller, which Keepa/Amazon's own storefront search would
+  // normally have SOME record of. Also observed appearing as both an FBA
+  // and an FBM offer at the identical price on the same ASIN — a pattern
+  // that doesn't fit a normal reseller. Revisit if this turns out wrong.
+  'A2R2RITDJNW1Q6',
 ]);
 
 function jsonResponse(body: unknown, status = 200) {
