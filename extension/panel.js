@@ -209,6 +209,52 @@
     }, FEE_RETRY_DELAYS_MS[attempt]);
   }
 
+  // Gating (Eligibility/Status + FBA Compliance) comes from a LIVE Amazon
+  // SP-API restrictions check every single time personalhour-product-data
+  // runs — there's no server-side cache to bypass, so pressing "Recheck"
+  // doesn't do anything a plain re-fetch wouldn't. The reason it "fixes"
+  // things is purely TIMING: Amazon's restrictions API has its own
+  // eventual-consistency lag right after a real approval, and our own
+  // seller-account override (checked against inventory/created_listings/
+  // repricer_assignments — see personalhour-product-data/index.ts) can miss
+  // a just-created row by a few seconds. The Create Listing tool calls this
+  // exact same endpoint — it only LOOKS more "in sync" because it happens to
+  // be checked a little later. This auto-retry closes that gap without
+  // requiring a manual click: one-time-per-scan, and only while the
+  // selected marketplace isn't already "approved".
+  const GATING_RETRY_DELAYS_MS = [4000, 10000, 20000];
+  let gatingRetryTimer = null;
+  let gatingRetryKey = null;
+
+  function scheduleGatingRetry(asin, marketplace, attempt = 0) {
+    if (!asin || attempt >= GATING_RETRY_DELAYS_MS.length || selectedMarketplaceGatingStatus() === "approved") return;
+    const key = `${asin}|${marketplace}`;
+    if (gatingRetryKey === `${key}|${attempt}`) return;
+    gatingRetryKey = `${key}|${attempt}`;
+    if (gatingRetryTimer) clearTimeout(gatingRetryTimer);
+    gatingRetryTimer = setTimeout(async () => {
+      try {
+        const prod = await bg("ARBIPRO_INVOKE", { fn: "personalhour-product-data", body: { asin, marketplaceId: marketplaceIdFor(marketplace) } }).then(r => r?.data ?? null);
+        if (state.asin !== asin || state.marketplace !== marketplace) return;
+        if (prod) {
+          // Same clear-then-apply pattern as the main fetch (loadData) so a
+          // stale prior gate never survives a retry that returns nothing.
+          state.product = state.product || {};
+          delete state.product.marketplaceGating;
+          delete state.product.gatingStatus;
+          if (prod.gatingStatus) state.product.gatingStatus = prod.gatingStatus;
+          if (Array.isArray(prod.marketplaceGating)) state.product.marketplaceGating = prod.marketplaceGating;
+          renderMeta(); renderEligibility(); renderFbaEligibility(); renderFbaCompliance(); renderSellerAmpSummary();
+        }
+      } catch (e) {
+        console.debug("[arbipro] gating retry failed", e?.message || e);
+      }
+      if (state.asin === asin && state.marketplace === marketplace && selectedMarketplaceGatingStatus() !== "approved") {
+        scheduleGatingRetry(asin, marketplace, attempt + 1);
+      }
+    }, GATING_RETRY_DELAYS_MS[attempt]);
+  }
+
   const MARKETPLACES = {
     US: { id: "ATVPDKIKX0DER" }, CA: { id: "A2EUQ1WTGCTBG2" }, MX: { id: "A1AM78C64UM0Y8" }, BR: { id: "A2Q3Y263D00KWC" },
     GB: { id: "A1F83G8C2ARO7P" }, UK: { id: "A1F83G8C2ARO7P" }, DE: { id: "A1PA6795UKMFR9" }, FR: { id: "A13V1IB3VIYZZH" },
@@ -515,12 +561,17 @@
         <div class="apx-fba-title">🛡️ FBA Compliance & Hazmat</div>
         <div class="apx-fba-source"><span class="apx-fba-badge">Source: Amazon SP-API</span>${state.fbaElig?.cached && checked ? `<span>Cached · ${checked}</span>` : checked ? `<span>Checked · ${checked}</span>` : ""}</div>
       </div>
-      <button id="apx-fba-recheck" class="apx-fba-recheck" type="button" ${loading ? "disabled" : ""}>${loading ? "Checking…" : "Recheck"}</button>
     </div>
     ${error ? `<div class="apx-fba-error">Amazon check unavailable: ${esc(error)}</div>` : ""}
     ${!stages.length ? `<div class="apx-fba-empty">${loading ? "Checking Amazon…" : "Amazon compliance check has not run yet."}</div>` : `<div class="apx-fba-list">${rows}</div>`}`;
-    const btn = $("apx-fba-recheck");
-    if (btn) btn.addEventListener("click", () => loadData(true));
+    // The Recheck button now lives in the top meta row (next to ASIN/Market/
+    // Status) instead of down here — it's a single shared control, so just
+    // reflect loading state on it rather than regenerating it per-render.
+    const metaBtn = $("apx-meta-recheck");
+    if (metaBtn) {
+      metaBtn.disabled = loading;
+      metaBtn.textContent = loading ? "Checking…" : "Recheck";
+    }
   }
 
   function approvalHost(mkt) {
@@ -1048,6 +1099,12 @@
         if (prod?.title && prod.title !== "Product not found on Amazon") state.product.title = prod.title;
         if (prod?.imageUrl) state.product.image = prod.imageUrl;
         renderMeta(); renderEligibility(); renderFbaEligibility(); renderFbaCompliance(); renderRoiAndSignal();
+        // Not approved yet on this first check? Amazon's restrictions API and
+        // our own seller-account override (see personalhour-product-data)
+        // both have a brief eventual-consistency window right after a real
+        // approval — auto-retry instead of leaving the user stuck showing a
+        // stale gate until they notice and press Recheck themselves.
+        if (selectedMarketplaceGatingStatus() !== "approved") scheduleGatingRetry(a, m);
       }),
       safeInvoke("mobile-scan-price-history", { asin: a, marketplace: m, range: r }, 25000).then((hist) => {
         if (!stillCurrent()) return;
@@ -2210,6 +2267,8 @@
   });
 
   $("apx-refresh").addEventListener("click", () => loadData(true));
+  const metaRecheckBtn = $("apx-meta-recheck");
+  if (metaRecheckBtn) metaRecheckBtn.addEventListener("click", () => loadData(true));
   const retryEl = $("apx-signal-retry");
   if (retryEl) {
     retryEl.addEventListener("click", async () => {
