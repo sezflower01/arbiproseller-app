@@ -27,7 +27,21 @@ const IDX_COUNT_NEW = 11;
 const KEEPA_EPOCH_MIN = 21564000; // minutes from unix epoch -> keepa minutes
 const KEEPA_EPOCH_MS_CONST = KEEPA_EPOCH_MIN * 60_000; // same epoch, in ms — derived so the two can never drift apart
 
-const AMAZON_SELLER_IDS = new Set(['ATVPDKIKX0DER', 'AMAZON']);
+// US retail (ATVPDKIKX0DER) plus Amazon's per-region retail seller IDs —
+// for many international marketplaces Amazon's own retail account uses the
+// SAME id as the marketplace itself, unlike US where it differs. Synced
+// from the more complete list already used in analyzer-product-snapshot —
+// this file previously only had ATVPDKIKX0DER, which mislabeled Amazon as a
+// third-party seller on every non-US marketplace.
+const AMAZON_SELLER_IDS = new Set([
+  'ATVPDKIKX0DER', // US
+  'A1AM78C64UM0Y8', // MX
+  'A1PA6795UKMFR9', // DE
+  'A13V1IB3VIYZZH', // FR
+  'A1F83G8C2ARO7P', // UK
+  'APJ6JRA9NG5V4',  // IT
+  'A1VC38T7YXB528', // JP
+]);
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -363,6 +377,18 @@ async function signedSpApiFetch(url: string, accessToken: string): Promise<Respo
   });
 }
 
+// AMAZON_SELLER_IDS only lists the US retail seller ID (ATVPDKIKX0DER) plus
+// a placeholder literal — Amazon operates under DIFFERENT seller IDs per
+// marketplace/region (and occasionally more than one within a marketplace),
+// so that allowlist alone will always miss some. Keepa's own /seller lookup
+// already returns the real business/storefront name — checking THAT closes
+// the gap for any Amazon-operated seller ID we haven't hardcoded, instead of
+// silently mislabeling it as a third-party seller.
+function looksLikeAmazonName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return /^amazon(\.|,|\s|$)/i.test(name.trim());
+}
+
 async function resolveSellerNames(
   admin: any,
   keepaKey: string,
@@ -390,9 +416,13 @@ async function resolveSellerNames(
   for (const row of (cached || []) as any[]) {
     const valid = row.expires_at && new Date(row.expires_at).getTime() > now;
     if (valid) {
+      const nm = row.business_name || row.storefront_name || null;
       out[row.seller_id] = {
-        name: row.business_name || row.storefront_name || row.seller_id,
-        isAmazon: !!row.is_amazon,
+        name: nm || row.seller_id,
+        // Re-check the name even for rows cached before this fix existed —
+        // those were written with is_amazon=false for any seller ID outside
+        // AMAZON_SELLER_IDS, regardless of what Keepa's name actually said.
+        isAmazon: !!row.is_amazon || looksLikeAmazonName(nm),
       };
       fresh.add(row.seller_id);
     }
@@ -427,8 +457,8 @@ async function resolveSellerNames(
         const s = sellers[id];
         const business = s?.sellerName || s?.businessName || null;
         const storefront = s?.storefrontName || s?.sellerName || null;
-        const isAmazon = AMAZON_SELLER_IDS.has(id);
-        const display = isAmazon ? 'Amazon.com' : (business || storefront || id);
+        const isAmazon = AMAZON_SELLER_IDS.has(id) || looksLikeAmazonName(business) || looksLikeAmazonName(storefront);
+        const display = isAmazon ? (business || storefront || 'Amazon.com') : (business || storefront || id);
         out[id] = { name: display, isAmazon };
         upserts.push({
           seller_id: id,
