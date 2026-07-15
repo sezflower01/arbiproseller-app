@@ -426,7 +426,14 @@ async function resolveSellerNames(
         rating: Number.isFinite(row.current_rating) ? row.current_rating : null,
         ratingCount: Number.isFinite(row.current_rating_count) ? row.current_rating_count : null,
       };
-      fresh.add(row.seller_id);
+      // Rows written before the rating feature shipped have BOTH rating
+      // fields null (the columns didn't exist yet) — don't count those as
+      // "fresh", or every existing cached seller would show no rating until
+      // its 7-day TTL naturally expires. Force one re-fetch to backfill;
+      // once a row genuinely has (or Keepa confirms it has none) rating
+      // data, it behaves normally again.
+      const hasRatingData = row.current_rating != null || row.current_rating_count != null;
+      if (hasRatingData) fresh.add(row.seller_id);
     }
   }
 
