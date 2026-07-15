@@ -881,6 +881,9 @@
     const max = Math.max(min + 1, hi * 1.2);
     const pct = parseInt(slider.value || "50", 10);
     const simSale = +(min + (max - min) * (pct / 100)).toFixed(2);
+    // Stashed so the "Send Notification" button can use the slider's
+    // current simulated price as the alert's target without re-deriving it.
+    state.simCurrentSale = simSale;
     $("apx-sim-val").textContent = fmtMoney(simSale, state.currency);
     $("apx-sim-sale").textContent = fmtMoney(simSale, state.currency);
     if (unitCost > 0 && unitFees != null) {
@@ -2314,6 +2317,54 @@
   $("apx-refresh").addEventListener("click", () => loadData(true));
   const metaRecheckBtn = $("apx-meta-recheck");
   if (metaRecheckBtn) metaRecheckBtn.addEventListener("click", () => loadData(true));
+
+  // What-if simulator → price alert. Uses the slider's current simulated
+  // Amazon price (state.simCurrentSale, set in renderSimulator()) as the
+  // alert target — no separate "min price" field, since the slider IS that
+  // number. Any email the user types is accepted; create-price-alert sends
+  // a confirm-first email rather than activating immediately.
+  const simAlertBtn = $("apx-sim-alert-btn");
+  if (simAlertBtn) {
+    simAlertBtn.addEventListener("click", async () => {
+      const statusEl = $("apx-sim-alert-status");
+      const emailInput = $("apx-sim-alert-email");
+      const email = (emailInput?.value || "").trim();
+      const targetPrice = state.simCurrentSale;
+      const showStatus = (msg, ok) => {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        statusEl.className = "apx-sim-alert-status " + (ok ? "ok" : "err");
+        statusEl.classList.remove("hidden");
+      };
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showStatus("Enter a valid email address.", false);
+        return;
+      }
+      if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+        showStatus("Move the slider to set a target price first.", false);
+        return;
+      }
+      if (!state.asin) {
+        showStatus("No ASIN loaded.", false);
+        return;
+      }
+      simAlertBtn.disabled = true;
+      const prevText = simAlertBtn.textContent;
+      simAlertBtn.textContent = "Sending…";
+      try {
+        const resp = await bg("ARBIPRO_INVOKE", {
+          fn: "create-price-alert",
+          body: { asin: state.asin, marketplace: state.marketplace, targetPrice, notifyEmail: email },
+        });
+        showStatus(resp?.data?.message || `Confirmation email sent to ${email} — click the link in that email to activate the alert.`, true);
+      } catch (e) {
+        showStatus(`Could not set alert: ${e?.message || e}`, false);
+      } finally {
+        simAlertBtn.disabled = false;
+        simAlertBtn.textContent = prevText;
+      }
+    });
+  }
   const retryEl = $("apx-signal-retry");
   if (retryEl) {
     retryEl.addEventListener("click", async () => {

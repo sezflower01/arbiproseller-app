@@ -238,6 +238,15 @@ a.apx-seller-name:hover { text-decoration: underline; color: #4F46E5; }
 .apx-sim { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .apx-sim input[type="range"] { width: 100%; accent-color: var(--primary); }
 .apx-sim .apx-out { margin-top: 6px; }
+.apx-sim-alert-row { display: flex; gap: 6px; margin-top: 10px; }
+.apx-sim-alert-row input[type="email"] {
+  flex: 1 1 auto; min-width: 0; background: var(--bg-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px;
+}
+.apx-sim-alert-row .apx-fba-recheck { flex: 0 0 auto; white-space: nowrap; }
+.apx-sim-alert-status { margin-top: 6px; font-size: 11px; line-height: 1.4; }
+.apx-sim-alert-status.ok  { color: #059669; }
+.apx-sim-alert-status.err { color: #DC2626; }
 
 /* Cost warning */
 .apx-cost-warn {
