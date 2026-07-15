@@ -142,6 +142,45 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
 .apx-spark-head { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
 #apx-spark { display: block; width: 100%; height: 60px; }
 
+/* Price History chart (replaces Decision Memory) — same panel background,
+   not a distinct card, so it reads as part of the extension's own UI. */
+.apx-history-section { margin-top: 12px; }
+.apx-history-section .apx-spark-head { margin-bottom: 8px; }
+.apx-history-chart-wrap { position: relative; }
+#apx-history-chart { display: block; width: 100%; height: 180px; cursor: crosshair; }
+.apx-history-tooltip {
+  position: absolute;
+  top: 6px;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(15,28,63,0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #fff;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.apx-history-tooltip .apx-ht-date {
+  font-weight: 700; margin-bottom: 2px; display: block;
+}
+.apx-history-tooltip .apx-ht-row { display: flex; align-items: center; gap: 5px; }
+.apx-history-tooltip .apx-ht-dot {
+  width: 7px; height: 7px; border-radius: 999px; display: inline-block; flex-shrink: 0;
+}
+.apx-history-legend {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin-top: 6px; font-size: 10px; color: var(--muted);
+}
+.apx-hl-item { display: inline-flex; align-items: center; gap: 4px; }
+.apx-hl-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.apx-history-verdict {
+  margin-top: 8px; padding: 6px 10px; border-radius: 8px;
+  font-size: 11px; font-weight: 600;
+}
+
 .apx-save-btn { width: 100%; margin-top: 12px; }
 .apx-save-btn:disabled { opacity: 0.6; cursor: progress; }
 .apx-print-btn { width: 100%; margin-top: 8px; background: #0ea5e9; }
@@ -269,6 +308,7 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
 .apx-sa-chip { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; display: inline-block; text-align: center; }
 .apx-sa-badge { padding: 2px 8px; border-radius: 999px; background: rgba(239,68,68,0.18); color: #DC2626; font-weight: 700; font-size: 11px; min-width: 20px; text-align: center; }
 .apx-sa-badge.zero { background: rgba(16,185,129,0.18); color: #059669; }
+.apx-sa-badge.caution { background: rgba(180,83,9,0.18); color: #B45309; }
 .apx-sa-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
 .apx-sa-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 6px; background: rgba(15,23,42,0.04); border-radius: 6px; }
 .apx-sa-grid .apx-k { font-size: 10px; }
@@ -343,6 +383,23 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
 .apx-diag-row.caution .apx-diag-v { color: #B45309; }
 .apx-diag-row.bad .apx-diag-v     { color: #DC2626; }
 .apx-diag-row.unknown .apx-diag-v { color: var(--muted); }
+.apx-diag-caption {
+  grid-column: 1 / -1; margin-top: -3px; padding: 0 8px 4px;
+  font-size: 10px; line-height: 1.4; color: var(--muted);
+}
+
+/* Loading skeleton — shown instead of real values while a new scan's data
+   is still incoming, so the panel never flashes a stale or half-loaded
+   verdict (e.g. a previous product's gating/PL data) as if it were final. */
+@keyframes apx-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.apx-skel-bar {
+  display: inline-block; height: 10px; border-radius: 4px;
+  background: rgba(15,23,42,0.14); animation: apx-pulse 1.2s ease-in-out infinite;
+}
+.apx-diag-row.apx-skel-row { cursor: default; }
+.apx-diag-row.apx-skel-row .apx-skel-bar { width: 46px; }
+.apx-sa-chip.apx-skel-bar, .apx-sa-badge.apx-skel-bar { width: 44px; height: 14px; color: transparent; }
+#apx-fd-confidence.apx-skel-bar { width: 60px; height: 12px; }
 
 /* Prominent "Open Full Web Analysis" button under meta row */
 .apx-open-analyzer-btn {
@@ -472,7 +529,7 @@ input[type="number"] { -moz-appearance: textfield; }
   align-items: center;
 }
 .apx-strip-decision {
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px 1fr;
   margin-bottom: 6px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
@@ -482,15 +539,44 @@ input[type="number"] { -moz-appearance: textfield; }
   font-weight: 700; font-size: 13px; line-height: 1.1;
 }
 .apx-strip-decision-text .apx-strip-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
-.apx-strip-chips { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.apx-strip-chips .apx-sa-chip,
-.apx-strip-chips .apx-sa-badge {
-  font-size: 10px; padding: 2px 6px;
+
+/* Human-readable label/value table — replaces the old unlabeled chip row */
+.apx-decision-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0 8px;
+  font-size: 12px;
+}
+.apx-decision-table td {
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.apx-decision-table tr:last-child td { border-bottom: 0; }
+.apx-decision-table .apx-dt-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+.apx-decision-table .apx-dt-value {
+  text-align: right;
+}
+.apx-decision-table .apx-sa-chip {
+  font-size: 11px;
+}
+.apx-decision-table .apx-sa-badge {
+  font-size: 11px;
+  border-radius: 6px;
+  min-width: 0;
+  white-space: normal;
+  text-align: right;
+  display: inline-block;
 }
 
-.apx-strip-money,
+.apx-strip-money {
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 4px;
+}
 .apx-strip-market {
-  grid-template-columns: repeat(6, minmax(0,1fr));
+  grid-template-columns: repeat(3, minmax(0,1fr));
   gap: 4px;
 }
 .apx-strip-money > div,

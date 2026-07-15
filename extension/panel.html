@@ -48,18 +48,28 @@
             <span class="apx-fd-emoji" id="apx-fd-emoji">⏳</span>
             <div class="apx-strip-decision-text">
               <div class="apx-fd-action" id="apx-dm-action">Analyzing…</div>
-              <div class="apx-strip-sub"><span class="apx-k">Conf.</span> <span id="apx-fd-confidence">—</span></div>
-            </div>
-            <div class="apx-strip-chips">
-              <span id="apx-sa-eligible" class="apx-sa-chip apx-sa-unknown" title="Eligibility">…</span>
-              <span id="apx-sa-pl" class="apx-sa-chip apx-sa-unknown" title="Private-label risk">PL</span>
-              <span id="apx-sa-alerts" class="apx-sa-badge" title="Alerts">0</span>
+              <div class="apx-strip-sub"><span class="apx-k">Decision Confidence:</span> <span id="apx-fd-confidence">—</span></div>
             </div>
           </div>
 
+          <table class="apx-decision-table">
+            <tbody>
+              <tr>
+                <td class="apx-dt-label">Eligible to list</td>
+                <td class="apx-dt-value"><span id="apx-sa-eligible" class="apx-sa-chip apx-sa-unknown">…</span></td>
+              </tr>
+              <tr>
+                <td class="apx-dt-label">Private-label risk</td>
+                <td class="apx-dt-value"><span id="apx-sa-pl" class="apx-sa-chip apx-sa-unknown">—</span></td>
+              </tr>
+              <tr>
+                <td class="apx-dt-label">Active alerts</td>
+                <td class="apx-dt-value"><span id="apx-sa-alerts" class="apx-sa-badge">—</span></td>
+              </tr>
+            </tbody>
+          </table>
+
           <div class="apx-strip-row apx-strip-money">
-            <div><span class="apx-k">Sale</span><span id="apx-sa-sale" class="apx-sa-v">—</span></div>
-            <div><span class="apx-k">Cost</span><span id="apx-sa-cost" class="apx-sa-v">—</span></div>
             <div><span class="apx-k">Fees</span><span id="apx-fees">—</span></div>
             <div><span class="apx-k">Profit</span><span id="apx-profit">—</span></div>
             <div><span class="apx-k">ROI</span><span id="apx-roi-out">—</span></div>
@@ -70,10 +80,18 @@
             <div><span class="apx-k">BSR</span><span id="apx-sa-bsr" class="apx-sa-v">—</span></div>
             <div><span class="apx-k">Est/mo</span><span id="apx-sa-sales" class="apx-sa-v">—</span></div>
             <div><span class="apx-k">Margin</span><span id="apx-sa-margin" class="apx-sa-v">—</span></div>
-            <div><span class="apx-k">Unit cost</span><span id="apx-unit-cost">—</span></div>
-            <div><span class="apx-k">ROI %</span><span id="apx-sa-roi" class="apx-sa-v">—</span></div>
-            <div><span class="apx-k">Profit $</span><span id="apx-sa-profit" class="apx-sa-v">—</span></div>
           </div>
+          <!-- apx-sa-sale / apx-sa-cost removed — already shown in the Profit
+               calculator below (Sale / Total cost). apx-unit-cost /
+               apx-sa-roi / apx-sa-profit removed — duplicated Cost / ROI /
+               Profit already shown in .apx-strip-money above. Elements kept
+               hidden so panel.js's existing $("id") lookups don't need to
+               change. -->
+          <span id="apx-sa-sale" class="apx-sa-v" hidden></span>
+          <span id="apx-sa-cost" class="apx-sa-v" hidden></span>
+          <span id="apx-unit-cost" hidden></span>
+          <span id="apx-sa-roi" class="apx-sa-v" hidden></span>
+          <span id="apx-sa-profit" class="apx-sa-v" hidden></span>
 
           <div class="apx-strip-actions">
             <a id="apx-open-analyzer-btn" class="apx-strip-link" target="_blank" rel="noopener">🔍 Full Analysis ↗</a>
@@ -86,8 +104,8 @@
           <h3>Profit calculator</h3>
           <div class="apx-row">
             <label>Total cost (USD) <input id="apx-cost" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" /><span id="apx-cost-converted" class="apx-conv-hint"></span></label>
-            <label>Units <input id="apx-units" type="text" inputmode="numeric" autocomplete="off" value="1" /></label>
-            <label>Sale override <input id="apx-sale" type="text" inputmode="decimal" autocomplete="off" placeholder="auto" /></label>
+            <label class="hidden">Units <input id="apx-units" type="text" inputmode="numeric" autocomplete="off" value="1" /></label>
+            <label>Sale <input id="apx-sale" type="text" inputmode="decimal" autocomplete="off" readonly title="Live sale price — read-only, refreshes automatically" /></label>
             <label>I sell as
               <select id="apx-seller-mode">
                 <option value="FBA">FBA</option>
@@ -97,7 +115,7 @@
           </div>
           <div id="apx-cost-warn" class="apx-cost-warn hidden"></div>
 
-          <details class="apx-details apx-details-inline">
+          <details class="apx-details apx-details-inline" open>
             <summary>What-if Amazon price simulator</summary>
             <div class="apx-sim">
               <div class="apx-spark-head">
@@ -142,8 +160,9 @@
 
         </details>
 
-        <!-- ───────── Decision memory (always visible — quick action) ───────── -->
-        <div class="apx-dm-memory" id="apx-dm-memory">
+        <!-- Decision memory hidden — kept in the DOM so panel.js wiring
+             (wireDecisionMemoryButtons, export handlers) doesn't break. -->
+        <div class="apx-dm-memory" id="apx-dm-memory" hidden>
           <div class="apx-dm-memory-head">
             <span>🧠 Decision Memory</span>
             <span class="apx-dm-memory-status" id="apx-dm-memory-status">Saving scan…</span>
@@ -162,6 +181,29 @@
             <div class="apx-dm-export-status" id="apx-dm-export-status"></div>
           </details>
         </div>
+
+        <!-- ───────── Price History (replaces Decision Memory) ───────── -->
+        <section class="apx-history-section">
+          <div class="apx-spark-head">
+            <span class="apx-k" style="font-weight:600;">📈 Price History</span>
+            <div class="apx-range-tabs" role="tablist">
+              <button class="apx-range-tab" data-range="90">3M</button>
+              <button class="apx-range-tab" data-range="180">6M</button>
+              <button class="apx-range-tab" data-range="365">1Y</button>
+            </div>
+          </div>
+          <div class="apx-history-chart-wrap">
+            <canvas id="apx-history-chart" width="320" height="180"></canvas>
+            <div id="apx-history-tooltip" class="apx-history-tooltip" hidden></div>
+          </div>
+          <div class="apx-history-legend">
+            <span class="apx-hl-item"><i class="apx-hl-dot" style="background:#34d399"></i>Buy Box</span>
+            <span class="apx-hl-item"><i class="apx-hl-dot" style="background:#f97316"></i>Amazon</span>
+            <span class="apx-hl-item"><i class="apx-hl-dot" style="background:#60a5fa"></i>FBA</span>
+            <span class="apx-hl-item"><i class="apx-hl-dot" style="background:#a78bfa"></i>FBM</span>
+          </div>
+          <div id="apx-history-verdict" class="apx-history-verdict apx-sa-unknown">—</div>
+        </section>
 
         <!-- ───────── Icon row: tap any icon to open a popover ───────── -->
         <div class="apx-iconbar" role="toolbar" aria-label="Details">
@@ -211,24 +253,6 @@
             </div>
           </details>
 
-          <details class="apx-pop">
-            <summary title="Buy Box history chart">📈<span class="apx-pop-cap">History</span></summary>
-            <div class="apx-pop-panel">
-              <div class="apx-spark-wrap">
-                <div class="apx-spark-head">
-                  <span class="apx-k">Buy Box history</span>
-                  <div class="apx-range-tabs" role="tablist">
-                    <button class="apx-range-tab" data-range="90">3M</button>
-                    <button class="apx-range-tab" data-range="180">6M</button>
-                    <button class="apx-range-tab" data-range="365">1Y</button>
-                  </div>
-                  <span class="apx-k apx-spark-range" id="apx-spark-range">—</span>
-                </div>
-                <canvas id="apx-spark" width="320" height="60"></canvas>
-              </div>
-            </div>
-          </details>
-
         </div>
 
         <!-- ───────── Competitors (always visible) ───────── -->
@@ -251,6 +275,7 @@
 
   <script src="config.js"></script>
   <script src="decisionSignal.js"></script>
+  <script src="plRisk.js"></script>
   <script src="panel.js"></script>
   <script src="panel-popover.js"></script>
 </body>

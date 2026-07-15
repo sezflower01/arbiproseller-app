@@ -24,6 +24,10 @@
     fbaComplianceLoading: false, fbaComplianceError: null,
     dims: null,
     cached: false, fetched_at: null, signedIn: false,
+    // True until the current scan's data is fully consistent — see loadData()
+    // and renderSellerAmpSkeleton(). Starts true so nothing renders a real
+    // (and possibly false-alarm) verdict before the first scan even starts.
+    summaryLoading: true,
     range: "90", // '90' (3M) | '180' (6M) | '365' (1Y)
     sellerMode: "FBA", // 'FBA' | 'FBM' — picks correct competitor lane
     // USD -> marketplace currency map (e.g. { CAD: 1.3872, MXN: 17.9, BRL: 5.37 }).
@@ -146,9 +150,23 @@
   }
 
   function computeWebStyleRoi(salePrice, unitCost, fees) {
-    const unitFees = getActualFeeTotal(fees);
-    if (!(salePrice > 0) || !(unitCost > 0) || unitFees == null) {
-      return { unitFees, profit: null, roi: null, margin: null };
+    const baseFees = getActualFeeTotal(fees);
+    if (!(salePrice > 0) || !(unitCost > 0) || baseFees == null) {
+      return { unitFees: baseFees, profit: null, roi: null, margin: null };
+    }
+    // If testing a price different from the one Amazon's fee estimate was
+    // computed against (Sale override edited away from the default BB
+    // price), rescale only the referral-fee portion — it's a % of sale
+    // price on Amazon — same approach as the per-seller ROI column in
+    // renderSellers(). fbaFee / closing fees are fixed absolute per-unit
+    // costs and don't move with price.
+    let unitFees = baseFees;
+    const refPrice = state.feesRefPrice;
+    if (refPrice > 0 && Math.abs(salePrice - refPrice) > 0.005) {
+      const refFee = Number(fees?.referralFee) || 0;
+      const referralRate = refFee > 0 ? Math.min(0.45, refFee / refPrice) : 0.15;
+      const nonReferralFees = baseFees - refFee;
+      unitFees = salePrice * referralRate + nonReferralFees;
     }
     const profit = salePrice - unitCost - unitFees;
     return {
@@ -704,7 +722,6 @@
   function renderRoiAndSignal() {
     const totalCostInput = parseFloat($("apx-cost").value) || 0;
     const units = Math.max(1, parseInt($("apx-units").value || "1", 10));
-    const saleOverride = parseFloat($("apx-sale").value);
     const unitCostUsd = totalCostInput > 0 ? totalCostInput / units : 0;
     // For non-US marketplaces, convert the USD source cost into the
     // marketplace currency so Profit/ROI are computed in the same currency
@@ -718,7 +735,10 @@
     // Anchor to the lane that actually matches our fulfillment (FBA vs FBM).
     // For an FBA seller, an FBM-held Buy Box is NOT our competition.
     const fallbackPrice = pickAnchorPrice(offers, state.sellerMode);
-    const salePrice = isFinite(saleOverride) && saleOverride > 0 ? saleOverride : fallbackPrice;
+    // Sale field is read-only and always reflects the freshly-retrieved Buy
+    // Box price — never a stale/persisted value from a previous session.
+    const salePrice = bb != null ? bb : fallbackPrice;
+    $("apx-sale").value = salePrice != null ? salePrice.toFixed(2) : "";
     const { unitFees, profit, roi } = computeWebStyleRoi(salePrice, unitCost, f);
     const feesAvailable = unitFees != null;
     // CRITICAL: never compute ROI without real Amazon fees — would inflate ROI.
@@ -917,6 +937,13 @@
     if (!state.asin || !state.signedIn) return;
     const a = state.asin, m = state.marketplace;
     loadingFor = `${a}|${m}|${state.range}`;
+    // Until this scan's data is fully consistent, renderSellerAmpSummary()
+    // paints a skeleton instead of computing from state — otherwise fields
+    // that resolve at different times (fba-eligibility is fast, gating/PL
+    // history are slower) would briefly mix stale-previous-product data
+    // with new-product data and flash false "red alert" rows.
+    state.summaryLoading = true;
+    renderSellerAmpSummary();
 
     const r = state.range;
     let servedFromCache = false;
@@ -942,6 +969,9 @@
           delete state.product.gatingStatus;
         }
         servedFromCache = true;
+        // Cached data is complete and consistent for THIS asin — safe to
+        // show immediately instead of a skeleton (still refreshed live below).
+        state.summaryLoading = false;
         renderAll();
         autoRecordHistory().catch((e) => console.debug("[arbipro] auto-record skipped:", e?.message || e));
         // Fall through: still issue the live fetches below so gating refreshes.
@@ -1051,7 +1081,7 @@
         if (!state.currency || state.currency === "USD") {
           state.currency = state.history?.offers?.list?.[0]?.currency || state.currency || "USD";
         }
-        renderHistory(); renderSparkline(); renderSellers();
+        renderHistory(); renderHistoryChart(); renderSellers();
       }),
       safeInvoke("mobile-scan-price-stability", { asin: a, marketplace: m, range: r }, 30000).then((stab) => {
         if (!stillCurrent()) return;
@@ -1080,6 +1110,7 @@
 
     await Promise.allSettled(tasks);
     if (!stillCurrent()) return;
+    state.summaryLoading = false;
     state.cached = false;
     state.fetched_at = new Date().toISOString();
     // Persist a sanitized product copy WITHOUT gating — gating must always
@@ -1177,7 +1208,7 @@
     renderEligibility();
     renderStability();
     renderHistory();
-    renderSparkline();
+    renderHistoryChart();
     renderSellers();
     renderDims();
     renderFbaEligibility();
@@ -1208,22 +1239,16 @@
     if (e === "approval_required" || e === "needs_approval" || e === "gated") return "approval_required";
     return null;
   }
-  function classifyPLRisk(reconciledTotalSellers) {
-    const intel = state.stability?.intel || {};
-    // Prefer reconciled offer-list total when provided; fall back to Keepa intel.
-    const total = (reconciledTotalSellers != null && reconciledTotalSellers > 0)
-      ? reconciledTotalSellers
-      : ((intel.sellers_fba ?? 0) + (intel.sellers_fbm ?? 0));
-    const top3p = intel.third_party_buybox_pct ?? 0;
-    const ageDays = intel.product_age_days ?? null;
-    let score = 0;
-    const reasons = [];
-    if (total > 0 && total <= 3) { score += 2; reasons.push(`Only ${total} sellers`); }
-    if (top3p >= 80) { score += 2; reasons.push(`1 seller wins BB ${Math.round(top3p)}%`); }
-    if (ageDays != null && ageDays > 365 && total <= 3) { score += 1; reasons.push("Long-listed, few sellers"); }
-    if (score >= 3) return { level: "bad", text: "High", reasons };
-    if (score >= 2) return { level: "caution", text: "Possible", reasons };
-    return { level: "good", text: "Low", reasons };
+  // Maps plRisk.js's "Low"/"Medium"/"High"/"unknown" vocabulary onto this
+  // file's existing "good"/"caution"/"bad"/"unknown" convention, used for
+  // diag-row coloring/icons and by the older classifyCompetitionRisk() /
+  // decision-engine scoring below. Kept as one small local adapter rather
+  // than baking this codebase's convention into plRisk.js itself.
+  function plRiskUiLevel(riskLevel) {
+    if (riskLevel === "High") return "bad";
+    if (riskLevel === "Medium") return "caution";
+    if (riskLevel === "Low") return "good";
+    return "unknown";
   }
   function classifyAmazonShare() {
     const p = state.stability?.intel?.amazon_presence_pct;
@@ -1261,6 +1286,17 @@
     if (v <= 1) return { level: "good", text: "No" };
     return { level: "caution", text: `${v} variations` };
   }
+  // Is this ASIN under Amazon's Dangerous Goods (hazmat) program? Reads the
+  // same FBA stage matrix the "Why this decision" hazmat overlay uses, so
+  // the two always agree — this just also surfaces it in Active alerts.
+  function classifyHazmat() {
+    const stages = Array.isArray(state.fbaElig?.stageStatuses) ? state.fbaElig.stageStatuses : [];
+    const hazmatStatus = Object.fromEntries(stages.map(s => [s.stage, s.status]))["hazmat"];
+    if (hazmatStatus === "blocked") return { level: "bad", text: "Yes" };
+    if (hazmatStatus === "warn") return { level: "caution", text: "Possible" };
+    if (hazmatStatus === "ok") return { level: "good", text: "No" };
+    return { level: "unknown", text: "Unknown" };
+  }
   function computeMaxCost() {
     const offers = state.history?.offers?.list || [];
     const sale = pickAnchorPrice(offers, state.sellerMode);
@@ -1270,8 +1306,54 @@
     return Math.max(0, (sale - unitFees) / 1.30);
   }
 
+  // Same k labels as the real diag grid (extension/panel.js renderSellerAmpSummary)
+  // — kept as a small static list purely for the loading skeleton, since the
+  // real labels are computed from live classify functions we don't want to
+  // run yet.
+  const DIAG_SKELETON_KEYS = [
+    "Eligibility", "Amazon Competition Risk", "Private-Label Risk",
+    "Current Active Offers", "Historical Active Offers",
+    "Hazmat / Dangerous Goods", "IP Analysis", "Size Tier", "Variations",
+  ];
+  function renderSellerAmpSkeleton() {
+    const elig = $("apx-sa-eligible");
+    if (elig) { elig.className = "apx-sa-chip apx-skel-bar"; elig.textContent = ""; }
+    const pl = $("apx-sa-pl");
+    if (pl) { pl.className = "apx-sa-chip apx-skel-bar"; pl.textContent = ""; }
+    const aBadge = $("apx-sa-alerts");
+    if (aBadge) { aBadge.className = "apx-sa-badge apx-skel-bar"; aBadge.textContent = ""; aBadge.title = ""; }
+
+    const grid = $("apx-diag-grid");
+    if (grid) {
+      grid.innerHTML = "";
+      DIAG_SKELETON_KEYS.forEach(k => {
+        const row = document.createElement("div");
+        row.className = "apx-diag-row apx-skel-row";
+        row.innerHTML = `<span class="apx-diag-k">${k}</span><span class="apx-diag-v"><span class="apx-skel-bar"></span></span>`;
+        grid.appendChild(row);
+      });
+    }
+
+    const act = $("apx-dm-action");
+    if (act) { act.className = "apx-fd-action"; act.textContent = "Analyzing…"; }
+    const emojiEl = $("apx-fd-emoji");
+    if (emojiEl) emojiEl.textContent = "⏳";
+    const conf = $("apx-fd-confidence");
+    if (conf) { conf.className = "apx-skel-bar"; conf.textContent = ""; }
+    const why = $("apx-dm-why");
+    if (why) why.textContent = "";
+    const scoreEl = $("apx-sa-verdict-score");
+    if (scoreEl) scoreEl.textContent = "";
+  }
+
   let __saMounted = false;
   function renderSellerAmpSummary() {
+    // Data for this scan isn't fully consistent yet (see loadData()) — show
+    // a skeleton instead of computing from a mix of stale-previous-product
+    // and partial-new-product state, which used to flash false "red alert"
+    // rows (e.g. a leftover gating/PL status from the last ASIN) until every
+    // fetch settled.
+    if (state.summaryLoading) { renderSellerAmpSkeleton(); return; }
     if (!__saMounted) { console.log("[InventorySprint] Analyzer summary mounted"); __saMounted = true; }
     console.log("[InventorySprint] Analyzer summary data loaded", { asin: state.asin, hasIntel: !!state.stability?.intel, hasOffers: !!state.history?.offers?.list?.length, hasDims: !!state.dims });
     const intel = state.stability?.intel || {};
@@ -1296,8 +1378,39 @@
     const _reconciledFba = offers.filter(o => o?.isFBA).length;
     const _reconciledFbm = offers.filter(o => o && o.isFBA === false).length;
     const _reconciledTotal = _reconciledFba + _reconciledFbm;
-    const pl = classifyPLRisk(_reconciledTotal || null);
-    setChip($("apx-sa-pl"), pl.level, pl.text);
+    // Private-Label Risk — scored from historical Buy Box ownership + active-offer
+    // trend (self.computePrivateLabelRisk, extension/plRisk.js), NOT from today's
+    // live seller-count snapshot. See extension/plRisk.js for the full model.
+    const plResult = self.computePrivateLabelRisk({
+      sellerHistory: state.history?.series?.sellerHistory || null,
+      buyBoxOwnership: state.history?.series?.buyBoxOwnership || null,
+      productAgeDays: intel.product_age_days ?? null,
+    });
+    // Show a plain 0-100% score instead of a bare Low/Medium/High word —
+    // easier for a regular seller to calibrate ("18%" reads more concretely
+    // than "Low"). plResult.state has three possible values:
+    //   "scored"          — real Low/Medium/High percentage.
+    //   "limited_history" — some real evidence exists (e.g. a single Buy Box
+    //                       event only a few days old) but too thin to
+    //                       reliably classify. Never shown as Low/Med/High.
+    //   "insufficient"    — no usable evidence at all.
+    // Both non-"scored" states are flag-worthy everywhere plRowLevel feeds
+    // into (chip color, diag alert, weighted verdict, competition-risk
+    // overlay) — "insufficient" as a hard "bad" (we know nothing), "limited
+    // history" as a softer "caution" (we know a little). The old separate
+    // "PL History Coverage" row is retired — its meaning is now folded
+    // directly into plResult.text below, since a standalone "Coverage"
+    // label didn't mean anything to users on its own.
+    const plRowLevel = plResult.state === "insufficient" ? "bad"
+      : plResult.state === "limited_history" ? "caution"
+      : plRiskUiLevel(plResult.level);
+    const plDisplayText = plResult.state === "insufficient" ? "Not enough data"
+      : plResult.state === "limited_history" ? "Limited History"
+      : `${plResult.normalizedScore}% — ${plResult.level} Risk`;
+    const plCaption = plResult.state === "insufficient"
+      ? "Not enough historical data yet to determine Private-Label Risk reliably."
+      : plResult.text;
+    setChip($("apx-sa-pl"), plRowLevel, plDisplayText);
 
     const bsr = intel.bsr_current;
     $("apx-sa-bsr").textContent = bsr ? "#" + bsr.toLocaleString() : "—";
@@ -1317,12 +1430,26 @@
     marginEl.className = "apx-sa-v " + (margin == null ? "" : margin >= 20 ? "apx-good" : margin >= 10 ? "apx-warn" : "apx-bad");
 
     const amz = classifyAmazonShare();
+    const amzRisk = self.computeAmazonCompetitionRisk(intel.amazon_presence_pct);
     const sz = classifySizeTier();
     const vars = classifyVariations();
+    const haz = classifyHazmat();
+
+    const sellerHist = state.history?.series?.sellerHistory || null;
+    const currentActiveOffers = sellerHist?.currentCount ?? (_reconciledTotal || null);
+    const historicalText = sellerHist?.sufficient
+      ? `${sellerHist.avg.toFixed(1)} avg over ${sellerHist.windowDays}d (${sellerHist.trend})`
+      : "Not enough history";
     const diag = [
       { k: "Eligibility", ...elig, tip: "From SP-API restrictions check for your seller account." },
-      { k: "Amazon on Listing", ...amz, tip: "% of last 90 days Amazon was selling on this listing." },
-      { k: "Private Label Risk", level: pl.level, text: pl.text, tip: pl.reasons.join(" • ") || "Few sellers + dominant BB winner = PL risk." },
+      // Amazon presence is an important sourcing warning on its own, but it is
+      // NOT evidence of private-label status — kept as its own separate risk,
+      // never added into the Private-Label Risk score below.
+      { k: "Amazon Competition Risk", level: amzRisk.level, text: amzRisk.text, tip: amzRisk.detail },
+      { k: "Private-Label Risk", level: plRowLevel, text: plDisplayText, tip: plCaption, caption: plCaption },
+      { k: "Current Active Offers", level: "unknown", text: currentActiveOffers != null ? String(currentActiveOffers) : "—", tip: "Live count right now — can dip temporarily from restocking/out-of-stock lag, so it only slightly influences Private-Label Risk." },
+      { k: "Historical Active Offers", level: sellerHist?.sufficient ? "good" : "unknown", text: historicalText, tip: "Active new-condition offers approximate seller participation — one seller can occasionally hold multiple offers. Trend is informational only in this phase." },
+      { k: "Hazmat / Dangerous Goods", ...haz, tip: "Is this ASIN under Amazon's Dangerous Goods program? From the FBA compliance stage check." },
       { k: "IP Analysis", level: "good", text: "No known issues", tip: "No internal IP risk database matches." },
       { k: "Size Tier", ...sz, tip: "Estimated from package dimensions/weight." },
       { k: "Variations", ...vars, tip: "Number of child ASINs from Keepa." },
@@ -1336,12 +1463,28 @@
       const icon = d.level === "good" ? "✓" : d.level === "caution" ? "⚠" : d.level === "bad" ? "✗" : "?";
       row.innerHTML = `<span class="apx-diag-k">${d.k}</span><span class="apx-diag-v">${icon} ${d.text}</span>`;
       grid.appendChild(row);
+      // Rows like Private-Label Risk use terms a seller can't be expected to
+      // know at a glance — show the plain-English explanation directly
+      // instead of burying it in a hover-only tooltip.
+      if (d.caption) {
+        const cap = document.createElement("div");
+        cap.className = "apx-diag-caption";
+        cap.textContent = d.caption;
+        grid.appendChild(cap);
+      }
     });
 
-    const alerts = diag.filter(d => d.level === "caution" || d.level === "bad").length;
+    const flagged = diag.filter(d => d.level === "caution" || d.level === "bad");
     const aBadge = $("apx-sa-alerts");
-    aBadge.textContent = String(alerts);
-    aBadge.className = "apx-sa-badge" + (alerts === 0 ? " zero" : "");
+    aBadge.textContent = flagged.length ? flagged.map(d => d.k).join(", ") : "None";
+    aBadge.title = flagged.length ? flagged.map(d => `${d.k}: ${d.tip || d.text}`).join(" • ") : "";
+    // Red should mean "real problem" (at least one "bad" item, e.g. Hazmat
+    // blocked, Ineligible, Insufficient PL data). A caution-only mix (e.g.
+    // just a Medium Private-Label Risk) is a milder heads-up, not an
+    // emergency — showing it in the same red as a hard block was confusing
+    // users into thinking something was actually wrong.
+    const hasBad = flagged.some(d => d.level === "bad");
+    aBadge.className = "apx-sa-badge" + (flagged.length === 0 ? " zero" : hasBad ? "" : " caution");
 
     // Weighted verdict
     let score = 0, max = 0;
@@ -1359,7 +1502,7 @@
     }
     w(20, elig.level);
     w(15, amz.level);
-    w(10, pl.level);
+    w(10, plRowLevel);
     max += 10;
     if (bsr != null) {
       if (bsr <= 10000) score += 10;
@@ -1391,8 +1534,13 @@
     const pct = max > 0 ? (score / max) * 100 : 0;
 
     // Compliance signals — read from the FBA stage matrix so they never get
-    // silently dropped from the verdict sentence.
-    const stages = Array.isArray(state.eligibility?.stageStatuses) ? state.eligibility.stageStatuses : [];
+    // silently dropped from the verdict sentence. FIX (2026-07-14): this
+    // used to read the never-populated legacy `state.eligibility` field,
+    // so hazmat/prep here always silently evaluated to "unknown" and the
+    // downgrade/warning in applyComplianceOverlay() below could never
+    // actually fire. The real data lives on `state.fbaElig` (see
+    // deriveFbaStages(state.fbaElig) above).
+    const stages = Array.isArray(state.fbaElig?.stageStatuses) ? state.fbaElig.stageStatuses : [];
     const stageBy = Object.fromEntries(stages.map(s => [s.stage, s.status]));
     const hazmatStatus = stageBy["hazmat"];
     const prepStatus = stageBy["prep"];
@@ -1412,11 +1560,15 @@
     const simActive = Number.isFinite(saleOverrideRaw) && saleOverrideRaw > 0 && buyBoxPrice != null && Math.abs(saleOverrideRaw - buyBoxPrice) > 0.01;
 
     // ───── Unified Final Decision (single human-readable verdict) ─────
+    // Compat shape for classifyCompetitionRisk() / the debug-JSON export,
+    // which still speak this file's "good"/"caution"/"bad" vocabulary.
+    const plCompat = { level: plRowLevel, text: plDisplayText };
     renderDecisionMatrix({
-      roi, profit, elig, amz, pl, intel,
+      roi, profit, elig, amz, pl: plCompat, intel,
       totalSellers, bsr, sales, scorePct: pct,
       sellerCountSource, offerCountFba, offerCountFbm,
       compliance, buyBoxPrice, simActive,
+      costMissing: totalCost <= 0,
     });
   }
 
@@ -1571,6 +1723,12 @@
 
   function buildHumanExplanation(final, ctx, profit, trend, comp) {
     const parts = [final.why];
+    // Cost-missing is a specific, fixable gap (ROI/Profit can't be computed
+    // without it) — call it out plainly rather than letting the reader
+    // assume the whole product's data is generally low-confidence.
+    if (ctx.costMissing) {
+      parts.push("Enter cost to calculate ROI, profit, and improve Decision Confidence.");
+    }
     const detail = [];
     const basisLabel = ctx.simActive
       ? "Based on your Sim inputs"
@@ -1631,10 +1789,20 @@
       act.className = "apx-fd-action " + (final.cls || "");
       act.textContent = final.action;
     }
+    // Decision Confidence reflects the overall BUY/SKIP verdict (ROI, eligibility,
+    // Amazon share, PL risk, BSR, sales, seller count) — NOT the same thing as
+    // the Private-Label Risk % above, which only reflects Keepa's historical
+    // data and never changes based on cost. When cost hasn't been entered,
+    // ROI/Profit can't be computed at all, so we say so plainly instead of
+    // showing a bare "Low" that reads like a general data problem.
     const conf = $("apx-fd-confidence");
     if (conf) {
-      const p = ctx.scorePct;
-      conf.textContent = p == null ? "—" : p >= 75 ? "High" : p >= 55 ? "Medium" : "Low";
+      if (ctx.costMissing) {
+        conf.textContent = "Low — cost required";
+      } else {
+        const p = ctx.scorePct;
+        conf.textContent = p == null ? "—" : p >= 75 ? "High" : p >= 55 ? "Medium" : "Low";
+      }
     }
     const scoreEl = $("apx-sa-verdict-score");
     if (scoreEl) scoreEl.textContent = ctx.scorePct != null ? `${Math.round(ctx.scorePct)}/100` : "";
@@ -1817,72 +1985,225 @@
   wireDecisionMemoryButtons();
 
 
-  // ── Sparkline (Buy Box 90d) ────────────────────────────────────────
-  function renderSparkline() {
-    const cv = $("apx-spark");
-    if (!cv) return;
+  // ── Price History chart (Buy Box / Amazon / FBA / FBM) ─────────────
+  // Same data source and series as the UPC scanner's Price History &
+  // Live Offers chart (mobile-scan-price-history), redrawn on <canvas>
+  // since the extension has no chart library available.
+  const HISTORY_SERIES = [
+    { key: "buybox", color: "#34d399" },
+    { key: "amazon", color: "#f97316" },
+    { key: "newFba", color: "#60a5fa" },
+    { key: "newFbm", color: "#a78bfa" },
+  ];
+
+  // Mirrors classifyMarketTrend()'s own series preference, so the min/max
+  // shown next to the verdict matches whatever the verdict was computed from.
+  function pickStabilitySeries() {
+    const s = state.history?.series || {};
+    const pick = (arr) => (arr || []).filter(p => Number.isFinite(p.v) && p.v > 0);
+    const bb = pick(s.buybox);
+    if (bb.length >= 5) return bb;
+    const fba = pick(s.newFba);
+    if (fba.length >= 5) return fba;
+    const amz = pick(s.amazon);
+    if (amz.length >= 5) return amz;
+    return pick(s.newFbm);
+  }
+
+  // Geometry from the last successful draw, reused by the hover handler so
+  // it doesn't need to recompute scales on every mousemove.
+  let historyGeom = null;
+  const fmtHistDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  // Pure drawing pass — gridlines, axis labels, and the 4 series lines.
+  // Returns the chart geometry (or null if there's no data) so callers can
+  // reuse xScale/yScale/seriesData for hover interaction.
+  function drawHistoryChart() {
+    const cv = $("apx-history-chart");
+    if (!cv) return null;
     const ctx = cv.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
-    const cssW = cv.clientWidth || 320, cssH = cv.clientHeight || 60;
-    if (cv.width !== cssW * dpr) { cv.width = cssW * dpr; cv.height = cssH * dpr; }
+    const cssW = cv.clientWidth || 320, cssH = cv.clientHeight || 180;
+    if (cv.width !== cssW * dpr || cv.height !== cssH * dpr) { cv.width = cssW * dpr; cv.height = cssH * dpr; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const series = state.history?.series?.buybox || state.history?.series?.newPrice || [];
-    const pts = series.filter(p => Number.isFinite(p.v) && p.v > 0);
-    const range = $("apx-spark-range");
-    if (pts.length < 2) {
+    const seriesData = HISTORY_SERIES.map(s => ({
+      ...s,
+      pts: (state.history?.series?.[s.key] || []).filter(p => Number.isFinite(p.v) && p.v > 0),
+    }));
+    const allPts = seriesData.flatMap(s => s.pts);
+
+    if (allPts.length < 2) {
       ctx.fillStyle = "#a4b0d4";
       ctx.font = "11px -apple-system, sans-serif";
       ctx.fillText("No price history yet", 8, cssH / 2 + 4);
-      if (range) range.textContent = "—";
-      return;
+      return null;
     }
-    const xs = pts.map(p => +new Date(p.t));
-    const ys = pts.map(p => p.v);
+
+    const xs = allPts.map(p => +new Date(p.t));
+    const ys = allPts.map(p => p.v);
     const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
-    const pad = 4, w = cssW - pad * 2, h = cssH - pad * 2;
-    const xScale = (x) => pad + ((x - xMin) / Math.max(1, xMax - xMin)) * w;
-    const yScale = (y) => pad + (1 - (y - yMin) / Math.max(0.0001, yMax - yMin)) * h;
+    const padL = 34, padR = 6, padT = 8, padB = 16;
+    const w = cssW - padL - padR, h = cssH - padT - padB;
+    const xScale = (x) => padL + ((x - xMin) / Math.max(1, xMax - xMin)) * w;
+    const yScale = (y) => padT + (1 - (y - yMin) / Math.max(0.0001, yMax - yMin)) * h;
 
-    // Area fill
-    ctx.beginPath();
-    ctx.moveTo(xScale(xs[0]), cssH - pad);
-    pts.forEach((p, i) => ctx.lineTo(xScale(xs[i]), yScale(ys[i])));
-    ctx.lineTo(xScale(xs[xs.length - 1]), cssH - pad);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(37,99,235,0.18)";
-    ctx.fill();
+    // Gridlines + $ labels
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.fillStyle = "#a4b0d4";
+    ctx.font = "9px -apple-system, sans-serif";
+    ctx.lineWidth = 1;
+    const GRID_LINES = 4;
+    for (let i = 0; i <= GRID_LINES; i++) {
+      const y = padT + (h / GRID_LINES) * i;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(cssW - padR, y);
+      ctx.stroke();
+      const val = yMax - ((yMax - yMin) / GRID_LINES) * i;
+      ctx.fillText(`$${val.toFixed(0)}`, 2, y + 3);
+    }
 
-    // Line
-    ctx.beginPath();
-    pts.forEach((p, i) => {
-      const X = xScale(xs[i]), Y = yScale(ys[i]);
-      i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+    // X-axis date labels (start / end)
+    ctx.textAlign = "left";
+    ctx.fillText(fmtHistDate(xMin), padL, cssH - 4);
+    ctx.textAlign = "right";
+    ctx.fillText(fmtHistDate(xMax), cssW - padR, cssH - 4);
+    ctx.textAlign = "left";
+
+    // Each series drawn as its own line, Buy Box slightly thicker (primary)
+    seriesData.forEach(s => {
+      if (s.pts.length < 2) return;
+      ctx.beginPath();
+      s.pts.forEach((p, i) => {
+        const X = xScale(+new Date(p.t)), Y = yScale(p.v);
+        i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+      });
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = s.key === "buybox" ? 2 : 1.5;
+      ctx.stroke();
     });
-    ctx.strokeStyle = "#60a5fa";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
 
-    // Last dot
-    const lx = xScale(xs[xs.length - 1]), ly = yScale(ys[ys.length - 1]);
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
-    ctx.fill();
+    // Last-point dot on Buy Box, if present
+    const bbPts = seriesData.find(s => s.key === "buybox")?.pts || [];
+    if (bbPts.length) {
+      const last = bbPts[bbPts.length - 1];
+      const lx = xScale(+new Date(last.t)), ly = yScale(last.v);
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    if (range) range.textContent = `${fmtMoney(yMin, state.currency)} – ${fmtMoney(yMax, state.currency)}`;
+    return { cssW, cssH, xMin, xMax, yMin, yMax, padL, padR, padT, padB, xScale, yScale, seriesData };
   }
 
+  function renderHistoryChart() {
+    historyGeom = drawHistoryChart();
+    const verdictEl = $("apx-history-verdict");
+    if (!verdictEl) return;
+    if (!historyGeom) {
+      verdictEl.textContent = "—";
+      verdictEl.className = "apx-history-verdict apx-sa-unknown";
+      return;
+    }
+    // Stability verdict — same classifier that drives the decision engine's
+    // "Mixed market (3M swing 24% · slope -6%)" text, so the two never disagree.
+    const trend = classifyMarketTrend();
+    const stabVals = pickStabilitySeries().map(p => p.v);
+    const rangeText = stabVals.length
+      ? ` (${fmtMoney(Math.min(...stabVals), state.currency)}–${fmtMoney(Math.max(...stabVals), state.currency)})`
+      : "";
+    verdictEl.className = "apx-history-verdict apx-sa-" + trend.level;
+    verdictEl.textContent = (trend.reason ? `${trend.text} — ${trend.reason}` : trend.text) + rangeText;
+  }
+
+  // ── Hover interactivity: crosshair + tooltip showing every line's value ──
+  function findNearestPoint(pts, targetMs) {
+    if (!pts.length) return null;
+    let best = pts[0], bestDiff = Math.abs(+new Date(pts[0].t) - targetMs);
+    for (const p of pts) {
+      const diff = Math.abs(+new Date(p.t) - targetMs);
+      if (diff < bestDiff) { best = p; bestDiff = diff; }
+    }
+    return best;
+  }
+
+  const SERIES_LABELS = { buybox: "Buy Box", amazon: "Amazon", newFba: "FBA", newFbm: "FBM" };
+
+  function handleHistoryHover(evt) {
+    if (!historyGeom) return;
+    const cv = $("apx-history-chart");
+    const tip = $("apx-history-tooltip");
+    if (!cv || !tip) return;
+    const rect = cv.getBoundingClientRect();
+    const mouseX = evt.clientX - rect.left;
+    const { xMin, xMax, padL, xScale, yScale, seriesData, cssW } = historyGeom;
+
+    // Invert xScale to find the date under the cursor
+    const clampedX = Math.max(padL, Math.min(mouseX, cssW - historyGeom.padR));
+    const targetMs = xMin + ((clampedX - padL) / Math.max(1, (cssW - historyGeom.padR - padL))) * (xMax - xMin);
+
+    // Redraw the clean chart, then overlay a crosshair + per-series dots
+    drawHistoryChart();
+    const cv2 = cv.getContext("2d");
+    cv2.strokeStyle = "rgba(255,255,255,0.35)";
+    cv2.lineWidth = 1;
+    cv2.beginPath();
+    cv2.moveTo(clampedX, historyGeom.padT);
+    cv2.lineTo(clampedX, historyGeom.cssH - historyGeom.padB);
+    cv2.stroke();
+
+    const rows = [];
+    let nearestDate = null;
+    seriesData.forEach(s => {
+      const near = findNearestPoint(s.pts, targetMs);
+      if (!near) return;
+      if (nearestDate == null || Math.abs(+new Date(near.t) - targetMs) < Math.abs(nearestDate - targetMs)) {
+        nearestDate = +new Date(near.t);
+      }
+      const X = xScale(+new Date(near.t)), Y = yScale(near.v);
+      cv2.fillStyle = s.color;
+      cv2.beginPath();
+      cv2.arc(X, Y, 3, 0, Math.PI * 2);
+      cv2.fill();
+      rows.push(`<div class="apx-ht-row"><span class="apx-ht-dot" style="background:${s.color}"></span>${SERIES_LABELS[s.key]}: <strong>${fmtMoney(near.v, state.currency)}</strong></div>`);
+    });
+
+    if (!rows.length) { tip.hidden = true; return; }
+    tip.innerHTML = `<span class="apx-ht-date">${fmtHistDate(nearestDate ?? targetMs)}</span>${rows.join("")}`;
+    tip.hidden = false;
+    // Keep the tooltip inside the chart bounds — flip to the left of the
+    // cursor once it would otherwise overflow the right edge.
+    const tipWidth = tip.offsetWidth || 120;
+    const left = (mouseX + tipWidth + 12 > cssW) ? Math.max(4, mouseX - tipWidth - 8) : mouseX + 8;
+    tip.style.left = `${left}px`;
+  }
+
+  (function wireHistoryHover() {
+    const cv = $("apx-history-chart");
+    if (!cv) return;
+    cv.addEventListener("mousemove", handleHistoryHover);
+    cv.addEventListener("mouseleave", () => {
+      const tip = $("apx-history-tooltip");
+      if (tip) tip.hidden = true;
+      drawHistoryChart();
+    });
+  })();
+
   // ── Wire up UI ─────────────────────────────────────────────────────
-  ["apx-cost", "apx-units", "apx-sale"].forEach((id) => {
+  // Sale (apx-sale) is read-only — it always reflects the freshly-retrieved
+  // Buy Box price (set in renderRoiAndSignal) and isn't user-editable, so it
+  // has no input listener here.
+  ["apx-cost", "apx-units"].forEach((id) => {
     $(id).addEventListener("input", async () => {
       renderRoiAndSignal();
       renderSellers();
       if (state.asin) {
         await saveCost(state.asin, {
-          totalCost: $("apx-cost").value, units: $("apx-units").value, salePrice: $("apx-sale").value,
+          totalCost: $("apx-cost").value, units: $("apx-units").value,
         });
       }
     });
@@ -2094,7 +2415,10 @@
       renderMeta();
       if (state.asin) {
         const c = await loadCost(state.asin);
-        $("apx-cost").value = c.totalCost; $("apx-units").value = c.units; $("apx-sale").value = c.salePrice;
+        // Sale is read-only and always reflects the live Buy Box price —
+        // never restore a persisted value here; renderRoiAndSignal() sets it
+        // once fresh offers load below.
+        $("apx-cost").value = c.totalCost; $("apx-units").value = c.units;
       }
       if (changed && state.asin) loadData(false);
     }
