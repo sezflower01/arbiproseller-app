@@ -168,7 +168,7 @@ const handler = async (req: Request): Promise<Response> => {
           <p>Someone (hopefully you) set up a price alert on InventorySprint for:</p>
           <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0;">
             <p><strong>ASIN:</strong> <a href="${amazonListingUrl(priceAlert.asin, priceAlert.marketplace)}" style="color: #6D28D9;">${priceAlert.asin}</a> (${priceAlert.marketplace || "US"})</p>
-            <p><strong>Notify when Amazon's price drops to:</strong> $${priceAlert.targetPrice.toFixed(2)}</p>
+            <p><strong>Desired Price:</strong> $${priceAlert.targetPrice.toFixed(2)} — any price at or over this will trigger the alert, it doesn't need to hit that exact number.</p>
           </div>
           <p>Click below to confirm and activate this alert. If you don't confirm, no notifications will ever be sent.</p>
           <p style="text-align: center; margin: 32px 0;">
@@ -183,15 +183,15 @@ const handler = async (req: Request): Promise<Response> => {
       if (!priceAlert) {
         throw new Error("priceAlert is required for price-alert-fired email type");
       }
-      subject = `Price alert: ${priceAlert.asin} hit your target of $${priceAlert.targetPrice.toFixed(2)}`;
+      subject = `Price alert: ${priceAlert.asin} reached $${(priceAlert.currentPrice ?? priceAlert.targetPrice).toFixed(2)} (at or above your $${priceAlert.targetPrice.toFixed(2)} Desired Price)`;
       html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #059669; margin-bottom: 24px;">Price target reached!</h1>
           <p>Hello,</p>
-          <p>Amazon's price for the listing you're tracking has reached your target.</p>
+          <p>Amazon's price for the listing you're tracking is now at or above your Desired Price.</p>
           <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 16px; margin: 24px 0;">
             <p><strong>ASIN:</strong> <a href="${amazonListingUrl(priceAlert.asin, priceAlert.marketplace)}" style="color: #059669;">${priceAlert.asin}</a> (${priceAlert.marketplace || "US"})</p>
-            <p><strong>Your target:</strong> $${priceAlert.targetPrice.toFixed(2)}</p>
+            <p><strong>Desired Price:</strong> $${priceAlert.targetPrice.toFixed(2)}</p>
             <p><strong>Current Amazon price:</strong> $${(priceAlert.currentPrice ?? priceAlert.targetPrice).toFixed(2)}</p>
           </div>
           <p>This alert has now fired and will not send again. Set a new alert from the extension if you want to keep watching this listing.</p>

@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      page('Price alert confirmed', `We'll email you when ${alert.asin}'s Amazon price drops to $${Number(alert.target_price).toFixed(2)} or below.`, true),
+      page('Price alert confirmed', `We'll email you when ${alert.asin}'s Amazon price reaches your Desired Price of $${Number(alert.target_price).toFixed(2)} or above.`, true),
       { status: 200, headers: HTML_HEADERS },
     );
   } catch (e) {

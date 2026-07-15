@@ -47,7 +47,9 @@ Deno.serve(async (req) => {
         asin,
         marketplace,
         target_price: targetPrice,
-        direction: 'at_or_below',
+        // Fires when Amazon's price rises TO or ABOVE the Desired Price
+        // (watching for a price recovery/increase), not a price-drop alert.
+        direction: 'at_or_above',
         notify_email: notifyEmail,
       })
       .select('id, confirm_token')
