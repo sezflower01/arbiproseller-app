@@ -395,20 +395,20 @@ async function resolveSellerNames(
   domainId: number,
   marketplace: string,
   sellerIds: string[],
-): Promise<Record<string, { name: string; isAmazon: boolean }>> {
-  const out: Record<string, { name: string; isAmazon: boolean }> = {};
+): Promise<Record<string, { name: string; isAmazon: boolean; rating: number | null; ratingCount: number | null }>> {
+  const out: Record<string, { name: string; isAmazon: boolean; rating: number | null; ratingCount: number | null }> = {};
   if (sellerIds.length === 0) return out;
   const unique = Array.from(new Set(sellerIds.filter(Boolean)));
 
-  // Amazon shortcut
+  // Amazon shortcut — Amazon retail doesn't carry a third-party feedback rating.
   for (const id of unique) {
-    if (AMAZON_SELLER_IDS.has(id)) out[id] = { name: 'Amazon.com', isAmazon: true };
+    if (AMAZON_SELLER_IDS.has(id)) out[id] = { name: 'Amazon.com', isAmazon: true, rating: null, ratingCount: null };
   }
 
   // Cache lookup
   const { data: cached } = await admin
     .from('keepa_seller_name_cache')
-    .select('seller_id, business_name, storefront_name, is_amazon, expires_at')
+    .select('seller_id, business_name, storefront_name, is_amazon, current_rating, current_rating_count, expires_at')
     .in('seller_id', unique)
     .eq('marketplace', marketplace);
   const now = Date.now();
@@ -423,6 +423,8 @@ async function resolveSellerNames(
         // those were written with is_amazon=false for any seller ID outside
         // AMAZON_SELLER_IDS, regardless of what Keepa's name actually said.
         isAmazon: !!row.is_amazon || looksLikeAmazonName(nm),
+        rating: Number.isFinite(row.current_rating) ? row.current_rating : null,
+        ratingCount: Number.isFinite(row.current_rating_count) ? row.current_rating_count : null,
       };
       fresh.add(row.seller_id);
     }
@@ -459,13 +461,20 @@ async function resolveSellerNames(
         const storefront = s?.storefrontName || s?.sellerName || null;
         const isAmazon = AMAZON_SELLER_IDS.has(id) || looksLikeAmazonName(business) || looksLikeAmazonName(storefront);
         const display = isAmazon ? (business || storefront || 'Amazon.com') : (business || storefront || id);
-        out[id] = { name: display, isAmazon };
+        // currentRating is 0-100 (% positive feedback); currentRatingCount is
+        // the seller's lifetime rating count. Both come from this SAME Keepa
+        // /seller call already being made for the name — no extra API cost.
+        const rating = Number.isFinite(s?.currentRating) ? s.currentRating : null;
+        const ratingCount = Number.isFinite(s?.currentRatingCount) ? s.currentRatingCount : null;
+        out[id] = { name: display, isAmazon, rating, ratingCount };
         upserts.push({
           seller_id: id,
           marketplace,
           business_name: business,
           storefront_name: storefront,
           is_amazon: isAmazon,
+          current_rating: rating,
+          current_rating_count: ratingCount,
           fetched_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         });
@@ -538,6 +547,8 @@ async function fetchLiveSpApiOffers(
         sellerName: sellerId,
         isAmazon: AMAZON_SELLER_IDS.has(sellerId),
         isSelf,
+        rating: null as number | null,
+        ratingCount: null as number | null,
       };
     })
     .filter((o: any) => o.sellerId && o.price != null && o.landed != null)
@@ -556,6 +567,8 @@ async function fetchLiveSpApiOffers(
   for (const offer of offers) {
     offer.sellerName = nameMap[offer.sellerId]?.name || offer.sellerName;
     offer.isAmazon = !!nameMap[offer.sellerId]?.isAmazon || offer.isAmazon;
+    offer.rating = nameMap[offer.sellerId]?.rating ?? null;
+    offer.ratingCount = nameMap[offer.sellerId]?.ratingCount ?? null;
   }
 
   const buyBox = offers.find((o: any) => o.isBuyBox);
@@ -813,6 +826,8 @@ Deno.serve(async (req) => {
           landed: total,
           sellerName: meta?.name || o.sellerId,
           isAmazon: !!meta?.isAmazon,
+          rating: meta?.rating ?? null,
+          ratingCount: meta?.ratingCount ?? null,
         };
       })
       .sort((a, b) => a.landed - b.landed);

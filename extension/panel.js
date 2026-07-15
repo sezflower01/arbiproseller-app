@@ -970,6 +970,7 @@
 
 
     const roiClass = (r) => r == null ? "na" : r >= 30 ? "good" : r >= 15 ? "warn" : "bad";
+    const ratingClass = (r) => r >= 95 ? "good" : r >= 85 ? "warn" : "bad";
     const visibleCount = Math.min(offers.length, state.sellersVisibleCount || SELLERS_PAGE_SIZE);
 
     offers.slice(0, visibleCount).forEach(o => {
@@ -996,9 +997,15 @@
       const nameHtml = storeUrl
         ? `<a class="apx-seller-name" href="${esc(storeUrl)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(displayName)}'s storefront on Amazon">${esc(displayName)}</a>`
         : `<span class="apx-seller-name" title="${esc(displayName)}">${esc(displayName)}</span>`;
+      // Seller feedback rating — from Keepa's /seller lookup (already fetched
+      // for the name/isAmazon check above, so this is zero extra Keepa cost).
+      // null for Amazon retail and sellers Keepa has no rating data for.
+      const ratingHtml = o.rating != null
+        ? `<span class="apx-seller-rating ${ratingClass(o.rating)}" title="${o.ratingCount != null ? o.ratingCount.toLocaleString() + " ratings" : "Seller feedback rating"}">★ ${o.rating}%</span>`
+        : "";
 
       row.innerHTML = `
-        ${nameHtml}
+        <span class="apx-seller-name-wrap">${nameHtml}${ratingHtml}</span>
         <span>${tags.join("")}</span>
         <span class="apx-seller-price">${fmtMoney(o.landed, state.currency)}</span>
         <span class="apx-seller-roi ${roiClass(roi)}" title="ROI at this seller's price (uses your cost + estimated fees)">${roiText}</span>
