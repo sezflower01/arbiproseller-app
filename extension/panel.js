@@ -350,19 +350,11 @@
     $("apx-asin").textContent = state.asin || "—";
     $("apx-mkt").textContent = state.marketplace;
     if (state.asin) {
-      $("apx-open").href = `${CFG.APP_URL}/tools/mobile-scan?asin=${state.asin}&marketplace=${state.marketplace}`;
       const analyzerUrl = `${CFG.APP_URL}/tools/product-analyzer?asin=${state.asin}&marketplace=${state.marketplace}`;
-      const analyzer = $("apx-open-analyzer");
-      if (analyzer) analyzer.href = analyzerUrl;
       const analyzerBtn = $("apx-open-analyzer-btn");
       if (analyzerBtn) analyzerBtn.href = analyzerUrl;
       const historyBtn = $("apx-open-history-btn");
       if (historyBtn) historyBtn.href = `${CFG.APP_URL}/tools/scan-history?asin=${state.asin}&marketplace=${state.marketplace}`;
-      const printBtn = $("apx-print-label");
-      if (printBtn) printBtn.disabled = false;
-    } else {
-      const printBtn = $("apx-print-label");
-      if (printBtn) printBtn.disabled = true;
     }
   }
 
@@ -411,14 +403,6 @@
       }
     } else {
       box.style.display = "none"; box.innerHTML = "";
-    }
-
-    // Disable FBA-dangerous buttons ONLY on a true hard block — never on
-    // propagation / pending info states (those are normal).
-    const printBtn = document.getElementById("apx-print-label");
-    if (printBtn) {
-      printBtn.disabled = hardBlock || !state.asin;
-      printBtn.title = hardBlock ? "Blocked: " + (e.fba_block_reason || "FBA not eligible") : "";
     }
   }
 
@@ -1965,19 +1949,6 @@
   $("apx-signin-btn").addEventListener("click", () => {
     window.open(`${CFG.APP_URL}/tools/ext-handoff?ext=1`, "_blank");
   });
-  $("apx-print-label").addEventListener("click", () => {
-    if (!state.asin) return;
-    const marketplaceApproved = selectedMarketplaceGatingStatus() === "approved";
-    const sellabilityCodes = new Set(["RESTRICTED", "NOT_ELIGIBLE", "APPROVAL_REQUIRED", "ASIN_NOT_ELIGIBLE", "BRAND_NOT_ELIGIBLE", "RESTRICTION"]);
-    const hardBlocks = (state.fbaElig?.blockingIssues || []).filter((i) =>
-      !(marketplaceApproved && sellabilityCodes.has(String(i.code || "").toUpperCase()))
-    );
-    if (hardBlocks.length > 0 || (state.fbaElig && !state.fbaElig.eligible && hardBlocks.length > 0)) {
-      alert("FBA action required: " + (state.fbaElig.fba_block_reason || "Resolve the Amazon restriction or barcode-mode issue, then re-check."));
-      return;
-    }
-    window.open(`${CFG.APP_URL}/tools/label-printing?asin=${encodeURIComponent(state.asin)}&marketplace=${encodeURIComponent(state.marketplace || "US")}`, "_blank");
-  });
 
   // ── Debug: copy the raw final-decision payload (inputs + verdict + compliance) ──
   (function wireDecisionDebugCopy() {
@@ -2088,89 +2059,6 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.arbipro_session) checkSession();
-  });
-
-  // ── Save to InventorySprint ──────────────────────────────────────────
-  $("apx-save").addEventListener("click", async () => {
-    const btn = $("apx-save"), status = $("apx-save-status");
-    if (!state.asin) return;
-    btn.disabled = true; status.className = "apx-save-status"; status.textContent = "Saving…";
-
-    const offers = state.history?.offers?.list || [];
-    const bb = offers.find(o => o.isBuyBox)?.landed ?? null;
-    const fbaPrices = offers.filter(o => o.isFBA).map(o => o.landed).filter(Number.isFinite);
-    const fbmPrices = offers.filter(o => !o.isFBA).map(o => o.landed).filter(Number.isFinite);
-    const lowestFba = fbaPrices.length ? Math.min(...fbaPrices) : null;
-    const lowestFbm = fbmPrices.length ? Math.min(...fbmPrices) : null;
-    const intel = state.stability?.intel || {};
-    const totalCost = parseFloat($("apx-cost").value) || null;
-    const units = parseInt($("apx-units").value || "1", 10) || 1;
-    const saleOverride = parseFloat($("apx-sale").value);
-    const unitCost = totalCost ? totalCost / units : null;
-    const fees = state.fees || null;
-    const unitFees = getActualFeeTotal(fees);
-    const fallbackPrice = pickAnchorPrice(offers, state.sellerMode);
-    const salePrice = isFinite(saleOverride) && saleOverride > 0 ? saleOverride : fallbackPrice;
-    const { profit, roi } = computeWebStyleRoi(salePrice, unitCost, fees);
-    const sig = self.computeDecisionSignal(effectiveStability(), {
-      profit, roi, hasCost: !!unitCost,
-    });
-    const bsr = intel.bsr_current ?? null;
-    const estSales = estimateMonthlySales(intel);
-    const approvalStatus = currentApprovalStatusForStorage();
-
-    // mobile_scan_history columns: barcode (NOT NULL), asin, title, image_url, brand,
-    // price, currency, marketplace, raw (jsonb), total_cost, units, sale_price_override.
-    // Source = 'extension' lives inside `raw` for traceability.
-    const row = {
-      barcode: state.asin, // No physical UPC scan in extension; use ASIN as barcode key
-      barcode_format: "EXTENSION",
-      asin: state.asin,
-      title: state.history?.title || state.stability?.intel?.title || state.product?.title || null,
-      image_url: state.history?.image || state.stability?.intel?.image || state.product?.image || null,
-      price: salePrice,
-      currency: state.currency || "USD",
-      marketplace: state.marketplace,
-      total_cost: totalCost,
-      units,
-      sale_price_override: isFinite(saleOverride) ? saleOverride : null,
-      raw: {
-        source: "chrome_extension",
-        url: state._url || null,
-        fees,
-        eligibility: approvalStatus,
-        stability_verdict: state.stability?.verdict || null,
-        swing_pct: state.stability?.swing_pct ?? null,
-        buy_box_price: bb,
-        sellers_fba: intel.sellers_fba ?? null,
-        sellers_fbm: intel.sellers_fbm ?? null,
-        amazon_presence_pct: intel.amazon_presence_pct ?? null,
-        bsr_current: bsr,
-        est_monthly_sales: estSales,
-        unit_cost: unitCost,
-        unit_fees: unitFees,
-        profit,
-        roi,
-        decision_signal: { level: sig.level, label: sig.label, reasons: sig.reasons },
-        saved_at: new Date().toISOString(),
-      },
-    };
-
-    try {
-      await new Promise((resolve, reject) =>
-        chrome.runtime.sendMessage({ type: "ARBIPRO_SAVE_SCAN", row }, (r) =>
-          r?.ok ? resolve(r) : reject(new Error(r?.error || "save failed")),
-        ),
-      );
-      status.className = "apx-save-status ok";
-      status.textContent = "Saved to InventorySprint ✓";
-    } catch (e) {
-      status.className = "apx-save-status err";
-      status.textContent = `Save failed: ${e.message}`;
-    } finally {
-      btn.disabled = false;
-      setTimeout(() => { if (status.textContent.startsWith("Saved")) status.textContent = ""; }, 4000);
-    }
   });
 
   // ── Receive ASIN updates from content script ───────────────────────
