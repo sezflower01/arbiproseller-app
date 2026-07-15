@@ -8,9 +8,24 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 // CORS headers to allow cross-origin requests
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": 
+  "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+// Per-marketplace consumer Amazon domain, for linking an ASIN straight to
+// its live listing in price-alert emails (kept separate from the
+// Confirm/action link so clicking the ASIN never triggers anything).
+const MARKETPLACE_DOMAIN: Record<string, string> = {
+  US: "amazon.com", CA: "amazon.ca", MX: "amazon.com.mx", BR: "amazon.com.br",
+  UK: "amazon.co.uk", GB: "amazon.co.uk", DE: "amazon.de", FR: "amazon.fr",
+  IT: "amazon.it", ES: "amazon.es", NL: "amazon.nl", SE: "amazon.se",
+  PL: "amazon.pl", JP: "amazon.co.jp", AU: "amazon.com.au", AE: "amazon.ae",
+  SA: "amazon.sa", IN: "amazon.in", SG: "amazon.sg", TR: "amazon.com.tr",
+};
+function amazonListingUrl(asin: string, marketplace?: string): string {
+  const host = MARKETPLACE_DOMAIN[(marketplace || "US").toUpperCase()] || "amazon.com";
+  return `https://www.${host}/dp/${encodeURIComponent(asin)}`;
+}
 
 // Email template types
 type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired";
@@ -152,7 +167,7 @@ const handler = async (req: Request): Promise<Response> => {
           <p>Hello,</p>
           <p>Someone (hopefully you) set up a price alert on InventorySprint for:</p>
           <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0;">
-            <p><strong>ASIN:</strong> ${priceAlert.asin} (${priceAlert.marketplace || "US"})</p>
+            <p><strong>ASIN:</strong> <a href="${amazonListingUrl(priceAlert.asin, priceAlert.marketplace)}" style="color: #6D28D9;">${priceAlert.asin}</a> (${priceAlert.marketplace || "US"})</p>
             <p><strong>Notify when Amazon's price drops to:</strong> $${priceAlert.targetPrice.toFixed(2)}</p>
           </div>
           <p>Click below to confirm and activate this alert. If you don't confirm, no notifications will ever be sent.</p>
@@ -175,7 +190,7 @@ const handler = async (req: Request): Promise<Response> => {
           <p>Hello,</p>
           <p>Amazon's price for the listing you're tracking has reached your target.</p>
           <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 16px; margin: 24px 0;">
-            <p><strong>ASIN:</strong> ${priceAlert.asin} (${priceAlert.marketplace || "US"})</p>
+            <p><strong>ASIN:</strong> <a href="${amazonListingUrl(priceAlert.asin, priceAlert.marketplace)}" style="color: #059669;">${priceAlert.asin}</a> (${priceAlert.marketplace || "US"})</p>
             <p><strong>Your target:</strong> $${priceAlert.targetPrice.toFixed(2)}</p>
             <p><strong>Current Amazon price:</strong> $${(priceAlert.currentPrice ?? priceAlert.targetPrice).toFixed(2)}</p>
           </div>
