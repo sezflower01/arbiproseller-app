@@ -2121,7 +2121,9 @@
   // Geometry from the last successful draw, reused by the hover handler so
   // it doesn't need to recompute scales on every mousemove.
   let historyGeom = null;
-  const fmtHistDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // Includes the year — ranges now go back up to 5Y / Since Listed, so
+  // "Aug 15" alone (no year) is ambiguous across a multi-year chart.
+  const fmtHistDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   // Pure drawing pass — gridlines, axis labels, and the 4 series lines.
   // Returns the chart geometry (or null if there's no data) so callers can
