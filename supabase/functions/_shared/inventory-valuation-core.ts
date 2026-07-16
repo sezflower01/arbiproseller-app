@@ -34,6 +34,36 @@ type ListingRow = {
   created_at: string | null;
 };
 
+type OverrideRow = {
+  asin: string;
+  unit_cost: number;
+  effective_from: string;
+};
+
+/**
+ * Same override source P&L's resolve_unit_cost_v1 treats as top-priority
+ * (after the sale-time snapshot, which doesn't apply to unsold stock).
+ * Wiring it in here too means Inventory Valuation and P&L agree on one
+ * number per ASIN instead of drifting apart.
+ */
+async function fetchAsinCostOverrides(supabase: any, userId: string): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from("asin_cost_overrides")
+    .select("asin, unit_cost, effective_from")
+    .eq("user_id", userId)
+    .order("effective_from", { ascending: true });
+  const map = new Map<string, number>();
+  if (error || !data) return map;
+  const today = new Date().toISOString().slice(0, 10);
+  for (const row of data as OverrideRow[]) {
+    if (!row.asin) continue;
+    const eff = (row.effective_from || "").slice(0, 10);
+    const cost = Number(row.unit_cost);
+    if (eff && eff <= today && cost > 0) map.set(row.asin, cost);
+  }
+  return map;
+}
+
 export interface InventoryValuationTotals {
   value: number;
   units: number;
@@ -123,7 +153,7 @@ async function fetchAllKeyset<T extends { id: string; created_at: string | null 
 }
 
 export async function computeInventoryValuation(supabase: any, userId: string): Promise<InventoryValuationTotals> {
-  const [inventoryRows, listingRows] = await Promise.all([
+  const [inventoryRows, listingRows, overridesByAsin] = await Promise.all([
     fetchAllKeyset<InventoryRow>(
       supabase,
       "inventory",
@@ -136,6 +166,7 @@ export async function computeInventoryValuation(supabase: any, userId: string): 
       "id,asin,sku,cost,amount,units,created_at",
       userId,
     ),
+    fetchAsinCostOverrides(supabase, userId),
   ]);
 
   const costBySku = new Map<string, CostEntry>();
@@ -160,8 +191,11 @@ export async function computeInventoryValuation(supabase: any, userId: string): 
     if (status === "NOT_IN_CATALOG" || status === "DELETED") continue;
 
     const costEntry = costBySku.get(row.sku) ?? costByAsin.get(row.asin);
+    const override = overridesByAsin.get(row.asin);
     let unitCost: number;
-    if (row.unit_cost_manual && row.cost !== null && row.cost !== undefined) {
+    if (override !== undefined) {
+      unitCost = override;
+    } else if (row.unit_cost_manual && row.cost !== null && row.cost !== undefined) {
       unitCost = Number(row.cost);
     } else {
       const fromEntry = costEntry?.unitCost;

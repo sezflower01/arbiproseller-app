@@ -379,6 +379,12 @@ const fetchInventoryData = async (userId: string, salesPeriodDays: number): Prom
     }
   >();
 
+  // Same override source P&L's resolve_unit_cost_v1 treats as top-priority
+  // (after the sale-time snapshot, which doesn't apply to unsold stock).
+  // Wiring it in here too means this page's Unit Cost column / Inventory
+  // Valuation Block and P&L agree on one number per ASIN instead of drifting.
+  const overridesByAsin = new Map<string, number>();
+
   try {
     // Paginate created_listings — Supabase defaults to 1000 rows max
     let clData: any[] = [];
@@ -398,6 +404,21 @@ const fetchInventoryData = async (userId: string, salesPeriodDays: number): Prom
       }
       if (batch) clData = clData.concat(batch);
       if ((batch?.length || 0) < clBatchSize) { hasMoreCl = false; } else { clFrom += clBatchSize; }
+    }
+
+    const { data: overrideRows } = await supabase
+      .from("asin_cost_overrides")
+      .select("asin, unit_cost, effective_from")
+      .eq("user_id", userId)
+      .order("effective_from", { ascending: true });
+    if (overrideRows) {
+      const today = new Date().toISOString().slice(0, 10);
+      for (const row of overrideRows as { asin: string; unit_cost: number; effective_from: string }[]) {
+        if (!row.asin) continue;
+        const eff = (row.effective_from || "").slice(0, 10);
+        const cost = Number(row.unit_cost);
+        if (eff && eff <= today && cost > 0) overridesByAsin.set(row.asin, cost);
+      }
     }
 
     if (clData.length > 0) {
@@ -679,9 +700,12 @@ const fetchInventoryData = async (userId: string, salesPeriodDays: number): Prom
 
   const formattedData = combinedItems.map(item => {
     const costEntry = costMapBySku.get(item.sku) ?? costMapByAsin.get(item.asin);
+    const override = overridesByAsin.get(item.asin);
 
     let finalUnitCost: number | null;
-    if (item.unit_cost_manual && item.cost !== null && item.cost !== undefined) {
+    if (override !== undefined) {
+      finalUnitCost = override;
+    } else if (item.unit_cost_manual && item.cost !== null && item.cost !== undefined) {
       // Manually edited → inventory.cost is already per-unit
       finalUnitCost = Number(item.cost);
     } else {
