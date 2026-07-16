@@ -2630,7 +2630,7 @@ export default function CreatedListings() {
                   setCostOverrideOpen(true);
                 }}
                 className="text-xs self-end"
-                title="Manage manual cost overrides for this ASIN (affects P&L + Repricer; Inventory Valuation unchanged)"
+                title="Manage manual cost overrides for this ASIN (affects P&L, Repricer, Inventory Valuation, Sales Report, and Mobile Live Sales — one cost across all pages)"
               >
                 <Calculator className="w-3 h-3 mr-1" />
                 Cost history
@@ -3236,7 +3236,7 @@ export default function CreatedListings() {
             onPurchasesChanged={() => fetchInventory(true)}
           />
         )}
-        {/* Cost Override Dialog (manual cost versioning — P&L + Repricer; Inventory Valuation untouched) */}
+        {/* Cost Override Dialog (manual cost versioning — affects P&L, Repricer, Inventory Valuation, Sales Report, and Mobile Live Sales) */}
         {costOverrideItem && (
           <CostOverrideDialog
             open={costOverrideOpen}
