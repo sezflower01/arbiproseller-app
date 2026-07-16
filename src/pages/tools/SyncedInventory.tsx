@@ -412,12 +412,15 @@ const fetchInventoryData = async (userId: string, salesPeriodDays: number): Prom
       .eq("user_id", userId)
       .order("effective_from", { ascending: true });
     if (overrideRows) {
-      const today = new Date().toISOString().slice(0, 10);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const thisYear = todayStr.slice(0, 4);
       for (const row of overrideRows as { asin: string; unit_cost: number; effective_from: string }[]) {
         if (!row.asin) continue;
         const eff = (row.effective_from || "").slice(0, 10);
         const cost = Number(row.unit_cost);
-        if (eff && eff <= today && cost > 0) overridesByAsin.set(row.asin, cost);
+        // Same calendar year as today only — don't reach back into a prior
+        // year's override when nothing exists yet this year.
+        if (eff && eff <= todayStr && eff.slice(0, 4) === thisYear && cost > 0) overridesByAsin.set(row.asin, cost);
       }
     }
 

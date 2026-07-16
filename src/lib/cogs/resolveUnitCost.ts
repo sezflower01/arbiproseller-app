@@ -207,9 +207,12 @@ function pickHistoricalCost(
   const boundary = orderDateEndBoundary(orderDate);
   if (!boundary) return undefined;
   const datePart = orderDate.slice(0, 10);
+  const orderYear = datePart.slice(0, 4);
   const candidates: HistoricalCostCandidate[] = [];
 
-  // Tier A — immutable cost_history (preferred). Filter: effective_date AND recorded_at both <= order_date.
+  // Tier A — immutable cost_history (preferred). Filter: effective_date AND
+  // recorded_at both <= order_date, AND same calendar year as order_date —
+  // don't reach back into a prior year's cost when nothing exists yet this year.
   for (const row of costHistory) {
     const unit = Number(row.cost) || 0;
     if (unit <= 0) continue;
@@ -217,6 +220,7 @@ function pickHistoricalCost(
     const rec = (row.recorded_at || "").slice(0, 10);
     if (!eff || eff > datePart) continue;
     if (rec && rec > datePart) continue;
+    if (eff.slice(0, 4) !== orderYear) continue;
     candidates.push({
       unitCost: unit,
       source: "costHistory",
@@ -227,10 +231,11 @@ function pickHistoricalCost(
     });
   }
 
-  // Tier B — purchase batches.
+  // Tier B — purchase batches, same calendar year as order_date only.
   for (const row of purchases) {
     const unit = Number(row.unit_cost) || 0;
     if (unit <= 0 || !row.purchase_date || row.purchase_date >= boundary) continue;
+    if (row.purchase_date.slice(0, 4) !== orderYear) continue;
     candidates.push({
       unitCost: unit,
       source: "purchaseBatch",
@@ -245,9 +250,11 @@ function pickHistoricalCost(
   //   effective_date <= order_date
   //   AND created_at::date <= order_date    (row physically existed)
   //   AND updated_at::date <= order_date    (cost wasn't edited after the sale)
+  //   AND same calendar year as order_date
   for (const row of listings) {
     const d = listingDate(row);
     if (!d || d > datePart) continue;
+    if (d.slice(0, 4) !== orderYear) continue;
     const createdDay = row.created_at?.slice(0, 10) || "";
     if (createdDay && createdDay > datePart) continue;
     const updatedDay = row.updated_at?.slice(0, 10) || "";
@@ -489,10 +496,13 @@ export async function buildCogsResolver(
   const resolveOverride = (asin: string, orderDate: string | null): number => {
     const timeline = overridesByAsin.get(asin);
     if (!timeline?.length || !orderDate) return 0;
+    const orderYear = orderDate.slice(0, 4);
     let chosen = 0;
     for (const entry of timeline) {
-      if (entry.effective_from <= orderDate) chosen = entry.unit_cost;
-      else break;
+      if (entry.effective_from > orderDate) break;
+      // Same calendar year as order_date only — don't reach back into a
+      // prior year's override when nothing exists yet this year.
+      if (entry.effective_from.slice(0, 4) === orderYear) chosen = entry.unit_cost;
     }
     return chosen > 0 ? chosen : 0;
   };

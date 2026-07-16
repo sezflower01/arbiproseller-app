@@ -55,11 +55,14 @@ async function fetchAsinCostOverrides(supabase: any, userId: string): Promise<Ma
   const map = new Map<string, number>();
   if (error || !data) return map;
   const today = new Date().toISOString().slice(0, 10);
+  const thisYear = today.slice(0, 4);
   for (const row of data as OverrideRow[]) {
     if (!row.asin) continue;
     const eff = (row.effective_from || "").slice(0, 10);
     const cost = Number(row.unit_cost);
-    if (eff && eff <= today && cost > 0) map.set(row.asin, cost);
+    // Same calendar year as today only — don't reach back into a prior
+    // year's override when nothing exists yet this year.
+    if (eff && eff <= today && eff.slice(0, 4) === thisYear && cost > 0) map.set(row.asin, cost);
   }
   return map;
 }
