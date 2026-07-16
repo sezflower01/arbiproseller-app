@@ -101,7 +101,7 @@ const Navbar = ({ hideMobileMenuButton = false }: NavbarProps = {}) => {
               Login
             </Button>
           )}
-          {!hideMobileMenuButton && (
+          {!hideMobileMenuButton && user && (
             <Button
               variant="ghost"
               size="icon"
@@ -115,7 +115,7 @@ const Navbar = ({ hideMobileMenuButton = false }: NavbarProps = {}) => {
         </div>
       </div>
 
-      {!hideMobileMenuButton && mobileMenuOpen && (
+      {!hideMobileMenuButton && user && mobileMenuOpen && (
         <NavbarMobileMenu
           goToHome={goToHome}
           handleNavigation={handleNavigation}
