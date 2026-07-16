@@ -60,15 +60,8 @@ const Navbar = ({ hideMobileMenuButton = false }: NavbarProps = {}) => {
   };
 
   const goToDownloadPage = () => {
-    if (location.pathname !== '/download') {
-      navigate('/download');
-    } else {
-      const downloadSection = document.getElementById('download-section');
-      if (downloadSection) {
-        downloadSection.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+    if (location.pathname !== '/admin') {
+      navigate('/admin');
     }
     setMobileMenuOpen(false);
   };

@@ -23,7 +23,7 @@ const PaymentSuccess = () => {
           If you don't receive your license key, please check your spam folder or contact our support team.
         </p>
       </div>
-      <Button onClick={() => navigate('/download')} size="lg">
+      <Button onClick={() => navigate('/admin')} size="lg">
         Download Software
       </Button>
     </div>

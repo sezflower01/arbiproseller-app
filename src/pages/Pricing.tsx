@@ -54,14 +54,14 @@ const Pricing = () => {
   return (
     <div className="min-h-screen bg-[hsl(222,84%,4.9%)]">
       <Helmet>
-        <title>Pricing — InventorySprint Amazon Arbitrage Suite</title>
+        <title>Pricing — InventorySprint Amazon Repricer & Inventory Suite</title>
         <meta
           name="description"
           content="Repricer, sourcing, inventory, listings and analytics in one plan. 60-day free autopilot trial. Cancel anytime."
         />
         <meta name="keywords" content="amazon repricer pricing, amazon inventory software pricing, FBA seller software plans, inventory sprint pricing, amazon seller software subscription" />
         <link rel="canonical" href="https://inventorysprint.com/pricing" />
-        <meta property="og:title" content="Pricing — InventorySprint Amazon Arbitrage Suite" />
+        <meta property="og:title" content="Pricing — InventorySprint Amazon Repricer & Inventory Suite" />
         <meta property="og:description" content="Repricer, sourcing, inventory and analytics in one plan. 60-day free trial." />
         <meta property="og:url" content="https://inventorysprint.com/pricing" />
       </Helmet>
@@ -77,7 +77,7 @@ const Pricing = () => {
           <h1 className="text-4xl md:text-6xl font-bold text-white leading-tight mb-4">
             Not Just a Repricer —{" "}
             <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
-              A Complete Arbitrage System
+              A Complete Amazon Seller System
             </span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
@@ -265,7 +265,7 @@ const Pricing = () => {
                   <p className="text-[#0f1c3f]/80 text-sm mb-5">
                     No credit card required. Pick any plan size during your trial.
                     On day 61, choose a plan to keep going — or cancel anytime
-                    with one click. Why 60 days? Because real Amazon arbitrage
+                    with one click. Why 60 days? Because real Amazon selling
                     results take time. Here's what happens:
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -297,7 +297,7 @@ const Pricing = () => {
         {/* CTA */}
         <section className="container mx-auto px-4 mt-16 text-center max-w-3xl">
           <h2 className="text-3xl font-bold text-white mb-3">
-            Ready to run your whole arbitrage business in one place?
+            Ready to run your whole Amazon business in one place?
           </h2>
           <p className="text-muted-foreground mb-6">
             Start your 60-day free trial. Upgrade, downgrade or cancel anytime.

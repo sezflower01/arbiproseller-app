@@ -217,8 +217,8 @@ const ArbitrageGuide = () => {
                 Get the tools you need to build a successful arbitrage business with Inventory S.P.R.I.N.T.'s comprehensive OA software.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                <a 
-                  href="/download" 
+                <a
+                  href="/admin"
                   className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
                 >
                   Download Free Trial

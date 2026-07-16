@@ -40,15 +40,10 @@ const Footer = () => {
   };
 
   const goToDownloadPage = () => {
-    if (location.pathname !== '/download') {
-      window.location.href = '/download';
+    if (location.pathname !== '/admin') {
+      window.location.href = '/admin';
     } else {
-      const downloadSection = document.getElementById('download-section');
-      if (downloadSection) {
-        downloadSection.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
