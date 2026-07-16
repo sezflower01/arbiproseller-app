@@ -2717,64 +2717,13 @@ export default function SyncedInventory() {
                   Inventory
                 </h1>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {isAdmin && (
-                  <Button
-                    onClick={handleSyncFromAmazon}
-                    disabled={syncingFromAmazon || fullSyncInProgress || !user}
-                    variant="default"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    {syncingFromAmazon ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Syncing...
-                      </>
-                    ) : (
-                      <>
-                        <Cloud className="h-4 w-4" />
-                        Quick Sync
-                      </>
-                    )}
-                  </Button>
-                  )}
+                  {/* Quick Sync button, Manual SP-API Refresh button/tooltip, and the
+                      AdminRefreshControl debug panel all hidden 2026-07-15 now that the
+                      full-inventory-refresh-2h cron is confirmed fixed and running
+                      correctly. Handlers (handleSyncFromAmazon, handleLiveUpdateAll) and
+                      the AdminRefreshControl component are still defined/imported in this
+                      file — just re-add the JSX here if cron issues need debugging again. */}
                   {isAdmin && (<>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleLiveUpdateAll}
-                          disabled={liveUpdateInProgress || syncingFromAmazon || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-cyan-500/50 hover:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400"
-                        >
-                          {liveUpdateInProgress ? (
-                            <>
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                              <span className="text-xs">{liveUpdateProgress || 'Updating...'}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Zap className="h-4 w-4" />
-                              Manual SP-API Refresh
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                          <p className="text-sm">
-                            <strong>Manual SP-API Refresh:</strong> User-triggered only. Updates all synced Amazon SKUs in the database directly from Amazon's live SP-API using per-SKU checks, including stale zero-stock and NOT_IN_CATALOG rows.
-                          </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <div className="w-full mt-1">
-                    <AdminRefreshControl
-                      onSelfRefresh={handleLiveUpdateAll}
-                      selfRefreshInProgress={liveUpdateInProgress}
-                    />
-                  </div>
                   {isAdmin && (
                     <TooltipProvider>
                       <Tooltip>
