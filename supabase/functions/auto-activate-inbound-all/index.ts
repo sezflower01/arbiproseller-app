@@ -17,7 +17,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
 };
 
 const MARKETPLACES = ['US', 'CA', 'MX', 'BR'] as const;
@@ -25,6 +25,25 @@ const STAGGER_MS = 800;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // ── AUTH GATE ── same pattern as sync-inventory-report-all: accepts
+  // x-internal-secret (cron path) or a service-role bearer. Without this,
+  // an unauthenticated caller could trigger a full-catalog activation pass
+  // for every seller.
+  const internalSecret = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
+  const serviceRoleKeyEnv = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const providedSecret = req.headers.get('x-internal-secret') || '';
+  const authHeader = req.headers.get('Authorization') || '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const okSecret = !!internalSecret && providedSecret === internalSecret;
+  const okServiceBearer = !!serviceRoleKeyEnv && bearer === serviceRoleKeyEnv;
+  if (!okSecret && !okServiceBearer) {
+    console.warn('[auto-activate-inbound-all] rejected unauthenticated request');
+    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

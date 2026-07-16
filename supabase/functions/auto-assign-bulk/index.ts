@@ -291,13 +291,30 @@ Deno.serve(async (req) => {
           .filter((r: any) => (Number(r.available) || 0) + (Number(r.reserved) || 0) + (Number(r.inbound) || 0) > 0)
           .map((r: any) => `${r.asin}:${r.sku}`),
       );
-      const { data: fbmListings } = await supabase
-        // Phase 2: shared source-of-truth view (validation gate + ghost filter)
-        .from('active_created_listings')
-        .select('asin, sku, price, cost, units, amount')
-        .eq('user_id', userId)
-        .not('asin', 'is', null)
-        .not('sku', 'is', null);
+      // PAGINATED for the same reason as the costListings query below — an
+      // unpaginated select() silently caps at Supabase's default 1000 rows,
+      // which would silently drop FBM listings from discovery for any user
+      // whose active_created_listings exceeds that.
+      const fbmListingsAll: any[] = [];
+      {
+        const FBM_PAGE = 1000;
+        let fbmStart = 0;
+        while (true) {
+          const { data: page } = await supabase
+            // Phase 2: shared source-of-truth view (validation gate + ghost filter)
+            .from('active_created_listings')
+            .select('asin, sku, price, cost, units, amount')
+            .eq('user_id', userId)
+            .not('asin', 'is', null)
+            .not('sku', 'is', null)
+            .range(fbmStart, fbmStart + FBM_PAGE - 1);
+          if (!page || page.length === 0) break;
+          fbmListingsAll.push(...page);
+          if (page.length < FBM_PAGE) break;
+          fbmStart += FBM_PAGE;
+        }
+      }
+      const fbmListings = fbmListingsAll;
 
       // Dedup by (asin,sku) keeping the row with the most info (units, then price)
       const fbmBest = new Map<string, any>();
@@ -399,11 +416,30 @@ Deno.serve(async (req) => {
     // 4. Fetch cost data from created_listings (Contract A)
     //    cost = TOTAL batch cost, amount = UNIT cost, units = purchase qty.
     //    The shared helper refuses to leak `cost` (TOTAL) as a unit value.
-    const { data: costListings } = await supabase
-      .from("created_listings")
-      .select("asin, sku, price, cost, units, amount")
-      .eq("user_id", userId)
-      .not("asin", "is", null);
+    //    PAGINATED: an unpaginated select() silently caps at Supabase's
+    //    default 1000-row limit. Verified live: a user with 8,418
+    //    created_listings rows had ASINs entirely missing from costMap
+    //    purely because they fell outside the first page — those rows got
+    //    permanently stamped activation_needs_cost even with valid cost on
+    //    file, no matter how many times or which marketplace re-ran this.
+    const costListingsAll: any[] = [];
+    {
+      const CL_PAGE = 1000;
+      let start = 0;
+      while (true) {
+        const { data: page } = await supabase
+          .from("created_listings")
+          .select("asin, sku, price, cost, units, amount")
+          .eq("user_id", userId)
+          .not("asin", "is", null)
+          .range(start, start + CL_PAGE - 1);
+        if (!page || page.length === 0) break;
+        costListingsAll.push(...page);
+        if (page.length < CL_PAGE) break;
+        start += CL_PAGE;
+      }
+    }
+    const costListings = costListingsAll;
 
     const costMap = new Map<string, number>();
     const createdPriceByKey = new Map<string, number>();
