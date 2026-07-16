@@ -3,7 +3,7 @@ import React from 'react';
 import FeatureCard from './FeatureCard';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-const ICON_SRC = '/lovable-uploads/730b8167-471d-4034-a4db-41a9eaa3a4af.png';
+const ICON_SRC = '/logo-icon.png';
 
 const EssentialFeatures = () => {
   const { t } = useLanguage();

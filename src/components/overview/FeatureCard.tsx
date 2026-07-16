@@ -8,7 +8,7 @@ interface FeatureCardProps {
   color: string;
 }
 
-const ICON_SRC = '/lovable-uploads/730b8167-471d-4034-a4db-41a9eaa3a4af.png';
+const ICON_SRC = '/logo-icon.png';
 
 const FeatureCard = ({ title, description, color }: FeatureCardProps) => {
   return (

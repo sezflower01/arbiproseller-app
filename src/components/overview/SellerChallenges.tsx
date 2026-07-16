@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useLanguage } from '@/contexts/LanguageContext';
 
 // The icon image replaces all the Lucide icons
-const ICON_SRC = '/lovable-uploads/730b8167-471d-4034-a4db-41a9eaa3a4af.png';
+const ICON_SRC = '/logo-icon.png';
 
 const SellerChallenges = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);

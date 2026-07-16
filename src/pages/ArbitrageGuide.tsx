@@ -27,7 +27,7 @@ const ArbitrageGuide = () => {
               "name": "InventorySprint",
               "logo": {
                 "@type": "ImageObject",
-                "url": "https://arbiproseller.com/lovable-uploads/730b8167-471d-4034-a4db-41a9eaa3a4af.png"
+                "url": "https://inventorysprint.com/logo-icon.png"
               }
             },
             "datePublished": "2024-01-01",
