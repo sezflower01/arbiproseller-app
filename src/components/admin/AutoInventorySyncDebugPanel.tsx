@@ -1,5 +1,9 @@
 /**
- * Admin-only debug panel showing the most recent auto-inventory-sync runs.
+ * Auto Inventory Sync cron status — visible to every signed-in user (not
+ * admin-only anymore, since the product is a SaaS where every user gets the
+ * same tools). auto_inventory_sync_runs has no user_id column (one row per
+ * whole cron cycle, aggregating counts across all users), so this only ever
+ * shows aggregate counts, never another user's private data.
  *
  * Visibility into:
  *  - Whether the cron actually fired
@@ -57,20 +61,12 @@ function ago(iso: string | null): string {
 
 export default function AutoInventorySyncDebugPanel() {
   const { user } = useAuth();
-  const [isAdmin, setIsAdmin] = useState(false);
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [triggering, setTriggering] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    supabase.rpc("has_role", { _user_id: user.id, _role: "admin" }).then(({ data }) => {
-      setIsAdmin(!!data);
-    });
-  }, [user]);
-
   const fetchRuns = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!user) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("auto_inventory_sync_runs")
@@ -79,17 +75,17 @@ export default function AutoInventorySyncDebugPanel() {
       .limit(10);
     if (!error && data) setRuns(data as RunRow[]);
     setLoading(false);
-  }, [isAdmin]);
+  }, [user]);
 
   useEffect(() => {
-    if (isAdmin) fetchRuns();
-  }, [isAdmin, fetchRuns]);
+    if (user) fetchRuns();
+  }, [user, fetchRuns]);
 
   const triggerNow = async () => {
     setTriggering(true);
     try {
       const { data, error } = await supabase.functions.invoke("auto-inventory-sync", {
-        body: { user_id: user?.id, max_per_user: 25, triggered_by: "manual_admin_debug" },
+        body: { user_id: user?.id, max_per_user: 25, triggered_by: "manual_user_trigger" },
       });
       if (error) throw error;
       toast.success(`Run complete: ${data?.summary?.[0]?.updated || 0} updated, ${data?.summary?.[0]?.errors || 0} errors`);
@@ -101,7 +97,7 @@ export default function AutoInventorySyncDebugPanel() {
     }
   };
 
-  if (!isAdmin) return null;
+  if (!user) return null;
 
   const latest = runs[0];
   const nextRun = nextCronAt();
@@ -111,7 +107,7 @@ export default function AutoInventorySyncDebugPanel() {
       <CardHeader className="py-3 px-4">
         <CardTitle className="text-sm flex items-center gap-2">
           <Activity className="h-4 w-4 text-blue-500" />
-          Auto Inventory Sync — Cron Debug (admin only)
+          Auto Inventory Sync — Cron Status
           <div className="ml-auto flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground">
               Next run: {nextRun.toLocaleString()} ({ago(new Date(Date.now() - (nextRun.getTime() - Date.now())).toISOString())} from now reversed)
