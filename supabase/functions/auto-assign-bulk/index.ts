@@ -794,6 +794,23 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Safety: max must never end up below a price we KNOW is real and was
+      // already successfully applied. For US, currentPrice comes from the
+      // continuously-synced `inventory` table, so this rarely triggers. For
+      // CA/MX/BR, currentPrice comes from asin_my_price_cache — populated by
+      // several different, inconsistently-triggered writers with no
+      // freshness check — so a stale cache entry (predating a real price
+      // increase) can make a freshly-computed max come out below the actual
+      // current price. If our own last_applied_price is already higher than
+      // the computed max, that's not a legitimate bound — raise max to cover
+      // it, same buffer the max strategy already uses.
+      const knownLivePrice = Number(existingAssignment?.last_applied_price) || 0;
+      if (maxPrice !== null && knownLivePrice > maxPrice) {
+        const bufferedMax = Math.round(knownLivePrice * (1 + (settings!.auto_max_buffer_pct || 15) / 100) * 100) / 100;
+        console.log(`[auto-assign-bulk] 🛡️ max $${maxPrice} < known live price $${knownLivePrice} for ${asin}/${marketplace} — raising max to $${bufferedMax}`);
+        maxPrice = bufferedMax;
+      }
+
       // Final sanity: if min STILL > max after all guards, skip this item
       if (minPrice !== null && maxPrice !== null && minPrice > maxPrice) {
         skip(asin, sku, "inverted_min_max"); continue;
