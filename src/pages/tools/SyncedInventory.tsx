@@ -2944,32 +2944,12 @@ export default function SyncedInventory() {
                         {/* Divider */}
                         <div className="w-px h-14 bg-gradient-to-b from-transparent via-border to-transparent" />
                         
-                        {/* Export Button */}
-                        <Button
-                          onClick={handleExportValuationToExcel}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-emerald-500/30 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        >
-                          <FileSpreadsheet className="h-4 w-4" />
-                          Export Excel
-                        </Button>
-                        
-                        {/* Stock Valuation Export */}
-                        <Button
-                          onClick={handleExportStockValuation}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-blue-500/30 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                        >
-                          <DollarSign className="h-4 w-4" />
-                          Stock Valuation
-                        </Button>
-
-                        {/* Refresh Selected Prices button and the row-selection checkbox
-                            column hidden 2026-07-16 per cleanup request — handler
-                            (handleRefreshPrices) and state (selectedForShipment,
-                            handleToggleSelect) still defined in this file if needed again. */}
+                        {/* Export Excel, Stock Valuation, Refresh Selected Prices buttons,
+                            and the row-selection checkbox column all hidden 2026-07-16 per
+                            cleanup requests — handlers (handleExportValuationToExcel,
+                            handleExportStockValuation, handleRefreshPrices) and state
+                            (selectedForShipment, handleToggleSelect) still defined in this
+                            file if needed again. */}
 
 
 
