@@ -934,7 +934,15 @@ Deno.serve(async (req) => {
         roi_at_min_percent: roiAtMin,
         roi_at_max_percent: roiAtMax,
         roi_range_updated_at: roiAtMin != null || roiAtMax != null ? new Date().toISOString() : null,
-        last_applied_price: currentPrice > 0 ? roundMoney(currentPrice) : undefined,
+        // NEVER `undefined` here — this field gets batched into a single
+        // multi-row upsert with rows from OTHER items in the same pass.
+        // Supabase/PostgREST treats a missing key as NULL for that row in
+        // the shared column list, not "leave unchanged" — so `undefined`
+        // either silently nulls a value that should have been preserved,
+        // or (for NOT NULL columns) crashes the WHOLE batch, rolling back
+        // every other row's legitimate fix along with it. Preserve the
+        // existing value instead of stripping the key.
+        last_applied_price: currentPrice > 0 ? roundMoney(currentPrice) : (existingAssignment?.last_applied_price ?? null),
         last_price_change_at: new Date().toISOString(),
         // Auto-activation audit fields (used by AssignmentsTable to pin
         // newly-activated rows to the top + show "New inbound" pill).
@@ -951,7 +959,14 @@ Deno.serve(async (req) => {
         last_error_type: activationDiagReason ? activationErrorType : (existingManualPause ? undefined : null),
         last_error_message: activationDiagReason ? activationErrorMessage : (existingManualPause ? undefined : null),
         consecutive_failures: activationDiagReason ? 1 : (existingManualPause ? undefined : 0),
-        manual_paused: activationDiagReason ? false : (existingManualPause ? true : undefined),
+        // manual_paused is NOT NULL with no default — the `undefined` this
+        // used to produce here (when activation succeeded and the row
+        // wasn't manually paused) got silently coerced to NULL by the
+        // batched upsert below, violating the constraint and rolling back
+        // the entire ~100-row batch, not just this one row. existingManualPause
+        // is already a plain boolean (never undefined), so this is always
+        // a valid explicit value.
+        manual_paused: activationDiagReason ? false : existingManualPause,
         _shouldAutoRaise: shouldAutoRaise && finalIsEnabled, // internal flag, stripped before insert
         _roiSafeMin: roiSafeMin,
         _currentPrice: currentPrice,
