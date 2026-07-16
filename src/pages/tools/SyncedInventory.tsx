@@ -2717,45 +2717,18 @@ export default function SyncedInventory() {
                   Inventory
                 </h1>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Quick Sync button, Manual SP-API Refresh button/tooltip, and the
-                      AdminRefreshControl debug panel all hidden 2026-07-15 now that the
-                      full-inventory-refresh-2h cron is confirmed fixed and running
-                      correctly. Handlers (handleSyncFromAmazon, handleLiveUpdateAll) and
-                      the AdminRefreshControl component are still defined/imported in this
-                      file — just re-add the JSX here if cron issues need debugging again. */}
-                  {isAdmin && (<>
-                  {isAdmin && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            onClick={handleManualFbmSync}
-                            disabled={fbmSyncInProgress || syncingFromAmazon || liveUpdateInProgress || fullSyncInProgress || !user}
-                            variant="outline"
-                            size="sm"
-                            className="gap-2 border-emerald-500/50 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                          >
-                            {fbmSyncInProgress ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 animate-spin" />
-                                <span className="text-xs">Syncing FBM...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Cloud className="h-4 w-4" />
-                                FBM Sync
-                              </>
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <p className="text-sm">
-                            <strong>Manual FBM Sync:</strong> Pulls the Merchant Listings report from Amazon SP-API and inserts/updates all active FBM listings (qty &gt; 0) into Synced Inventory. Takes 1–3 minutes. Runs automatically every 4h at :45.
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  {/* Quick Sync, Manual SP-API Refresh, AdminRefreshControl, FBM Sync,
+                      Recover Suspicious Zeros, Assign Missing, Rescue MISMATCH, Clean
+                      Ghost Listings, and Live Verify all hidden 2026-07-15/16 now that
+                      the cron system (full-inventory-refresh-2h, sync-inventory-report-4h,
+                      auto-inventory-sync) is confirmed working reliably, so these manual
+                      recovery tools from the pre-cron era are no longer needed day-to-day.
+                      Show Ghost ASINs is kept per explicit request. All handlers
+                      (handleManualFbmSync, handleRecoverSuspiciousZeros,
+                      handleAssignMissing, handleRescueMismatch, handleCleanGhostListings)
+                      and the AdminRefreshControl component are still defined/imported in
+                      this file — just re-add the JSX here if manual recovery is ever
+                      needed again. */}
                   <div className="flex flex-col text-xs text-muted-foreground">
                     <span>Last synced: {formatSyncTime(getLastSyncTime())}</span>
                     <span className={cn("text-[10px] font-medium", getSyncFreshness(getLastSyncTime()).className)}>
@@ -2763,182 +2736,32 @@ export default function SyncedInventory() {
                     </span>
                     <span className="text-[10px] opacity-70">Auto-refresh: disabled (manual only)</span>
                   </div>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleRecoverSuspiciousZeros}
-                          disabled={recoveringSuspicious || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-emerald-500/50 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        >
-                          {recoveringSuspicious ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span className="text-xs">Recovering…</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="h-4 w-4" />
-                              Recover Suspicious Zeros
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Recover Suspicious Zeros:</strong> Finds inventory rows currently at 0/0 that had positive stock in the last 7 days, then re-queries Amazon SP-API with double confirmation. Only restores when at least one fetch returns positive stock. Preserves inbound. Safe to run any time.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  {recoveryResult && (
-                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                      ✅ {recoveryResult.restored} restored · {recoveryResult.still_zero} confirmed zero · {recoveryResult.candidates} scanned
-                    </span>
+                  {isAdmin && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={() => setShowGhostsOnly((v) => !v)}
+                            size="lg"
+                            className={cn(
+                              "gap-2 font-bold text-base shadow-lg border-2",
+                              showGhostsOnly
+                                ? "bg-green-700 hover:bg-green-800 text-white border-green-900"
+                                : "bg-green-500 hover:bg-green-600 text-white border-green-700"
+                            )}
+                          >
+                            <Trash2 className="h-5 w-5" />
+                            {showGhostsOnly ? "👻 Showing Ghost ASINs (Click to hide)" : "👻 Show Ghost ASINs"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <p className="text-sm">
+                            <strong>Show Ghost ASINs:</strong> View soft-deleted / NOT_IN_CATALOG / amzn.gr.* rows with their deletion reason and timestamp. These are normally hidden from inventory views.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
-                  </>)}
-                  {isAdmin && (<>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleAssignMissing}
-                          disabled={assigningMissing || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-blue-500/50 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                        >
-                          {assigningMissing ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Assigning...
-                            </>
-                          ) : (
-                            <>
-                              <Zap className="h-4 w-4" />
-                              Assign Missing
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Assign Missing:</strong> Finds active inventory items without repricer assignments and creates them automatically using your default rule settings.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleRescueMismatch}
-                          disabled={rescuingMismatch || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-orange-500/50 hover:bg-orange-500/10 text-orange-700 dark:text-orange-400"
-                        >
-                          {rescuingMismatch ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span className="text-xs">
-                                Rescuing {rescueProgress.done}/{rescueProgress.total} ({rescueProgress.recovered} recovered)
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertTriangle className="h-4 w-4" />
-                              Rescue MISMATCH
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Rescue MISMATCH:</strong> Re-verifies all MISMATCH items against Amazon's live inventory API. Items with real stock will be recovered and updated.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleCleanGhostListings}
-                          disabled={cleaningGhosts || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-red-500/50 hover:bg-red-500/10 text-red-700 dark:text-red-400"
-                        >
-                          {cleaningGhosts ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span className="text-xs">Scanning catalog...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Trash2 className="h-4 w-4" />
-                              Clean Ghost Listings
-                            </>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Clean Ghost Listings:</strong> Compares your inventory against Amazon's live catalog report. Items not found in the catalog are marked as NOT_IN_CATALOG, hidden from views, and their repricer assignments are disabled.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  {/* Show Ghost ASINs - prominent green toggle, sits next to Clean Ghost Listings */}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={() => setShowGhostsOnly((v) => !v)}
-                          size="lg"
-                          className={cn(
-                            "gap-2 font-bold text-base shadow-lg border-2",
-                            showGhostsOnly
-                              ? "bg-green-700 hover:bg-green-800 text-white border-green-900"
-                              : "bg-green-500 hover:bg-green-600 text-white border-green-700"
-                          )}
-                        >
-                          <Trash2 className="h-5 w-5" />
-                          {showGhostsOnly ? "👻 Showing Ghost ASINs (Click to hide)" : "👻 Show Ghost ASINs"}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Show Ghost ASINs:</strong> View soft-deleted / NOT_IN_CATALOG / amzn.gr.* rows with their deletion reason and timestamp. These are normally hidden from inventory views.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={() => setShowBulkVerifyDialog(true)}
-                          disabled={bulkVerifying || fullSyncInProgress || !user}
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 border-teal-500/50 hover:bg-teal-500/10 text-teal-700 dark:text-teal-400"
-                        >
-                          <ShieldCheck className="h-4 w-4" />
-                          Live Verify
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Live Verify:</strong> Checks inventory against Amazon's real-time API. Start with dry-run to see what would change, then apply corrections.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  </>)}
                 </div>
               </div>
 
