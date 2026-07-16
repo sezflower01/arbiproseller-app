@@ -2966,36 +2966,10 @@ export default function SyncedInventory() {
                           Stock Valuation
                         </Button>
 
-                        {/* Refresh Selected Prices - Admin only, inline */}
-                        {isAdmin && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  onClick={handleRefreshPrices}
-                                  disabled={syncingFromAmazon || fullSyncInProgress || refreshingPrices || !user}
-                                  size="sm"
-                                  className="gap-2 bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
-                                >
-                                  {refreshingPrices ? (
-                                    <>
-                                      <RefreshCw className="h-4 w-4 animate-spin" />
-                                      Refreshing...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <DollarSign className="h-4 w-4" />
-                                      Refresh Selected Prices ({selectedForShipment.size})
-                                    </>
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Fetch your actual listing prices from Amazon Listings API</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
+                        {/* Refresh Selected Prices button and the row-selection checkbox
+                            column hidden 2026-07-16 per cleanup request — handler
+                            (handleRefreshPrices) and state (selectedForShipment,
+                            handleToggleSelect) still defined in this file if needed again. */}
 
 
 
@@ -3246,9 +3220,6 @@ export default function SyncedInventory() {
                   <table className="w-full border-collapse">
                     <thead className="sticky top-0 z-20 border-b-2 border-border bg-muted">
                       <tr className="text-xs">
-                        <th className="px-1 py-2 text-center whitespace-nowrap text-xs w-8">
-                          <Truck className="h-3 w-3 mx-auto text-muted-foreground" />
-                        </th>
                         <th className="px-1 py-2 text-left whitespace-nowrap text-xs">Image</th>
                         <th className="px-1 py-2 text-left whitespace-nowrap text-xs">ASIN</th>
                         <th className="px-1 py-2 text-left whitespace-nowrap text-xs">SKU</th>
@@ -3343,14 +3314,6 @@ export default function SyncedInventory() {
 
                         return (
                           <tr key={item.id} className={`border-b border-border hover:bg-muted/50 transition-colors ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/30'}`}>
-                            <td className="px-1 py-2 text-center">
-                              {isAdmin && (
-                                <Checkbox
-                                  checked={selectedForShipment.has(item.asin)}
-                                  onCheckedChange={() => handleToggleSelect(item)}
-                                />
-                              )}
-                            </td>
                             <td className="px-1 py-2">
                               {item.image_url ? (
                                 <img
