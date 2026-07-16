@@ -2736,7 +2736,6 @@ export default function SyncedInventory() {
                     <span className={cn("text-[10px] font-medium", getSyncFreshness(getLastSyncTime()).className)}>
                       Freshness: {getSyncFreshness(getLastSyncTime()).label}
                     </span>
-                    <span className="text-[10px] opacity-70">Auto-refresh: disabled (manual only)</span>
                   </div>
                   {isAdmin && (
                     <TooltipProvider>
