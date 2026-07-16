@@ -765,6 +765,13 @@ Deno.serve(async (req) => {
       const globalFloor = 5 * fxRate;
       if (!hasExistingMin && minPrice !== null && minPrice < globalFloor) minPrice = Math.round(globalFloor * 100) / 100;
 
+      // Known-real price we can trust — the last price we ourselves actually
+      // applied — as opposed to `currentPrice`, which for CA/MX/BR comes from
+      // asin_my_price_cache with no freshness check and can drift either
+      // direction from reality (see the max-price safety check below for the
+      // "too low" case; this is the "too high" mirror case).
+      const knownLivePrice = Number(existingAssignment?.last_applied_price) || 0;
+
       // Safety: if min > current price — handle based on ROI protection.
       // Skip entirely for existing manual mins so we never silently lower them.
       if (!hasExistingMin && minPrice !== null && currentPrice > 0 && minPrice > currentPrice) {
@@ -775,10 +782,31 @@ Deno.serve(async (req) => {
             maxPrice = Math.round(minPrice * 1.35 * 100) / 100;
           }
         } else {
-          console.log(`[auto-assign-bulk] ⚠️ min_price $${minPrice} > current $${currentPrice} for ${asin} — capping to buffer below current`);
-          minPrice = Math.round(currentPrice * (1 - (settings!.auto_min_buffer_pct || 15) / 100) * 100) / 100;
+          // Cap using the KNOWN real price when we have one, not currentPrice —
+          // if currentPrice is a stale-HIGH cache entry, capping against it
+          // would still leave min above the actual current price (this was
+          // the reported bug: min ends up above "my price" in BR/CA/MX).
+          const referencePrice = knownLivePrice > 0 ? knownLivePrice : currentPrice;
+          console.log(`[auto-assign-bulk] ⚠️ min_price $${minPrice} > current $${currentPrice} for ${asin} — capping to buffer below ${knownLivePrice > 0 ? 'known live price $' + knownLivePrice : 'current $' + currentPrice}`);
+          minPrice = Math.round(referencePrice * (1 - (settings!.auto_min_buffer_pct || 15) / 100) * 100) / 100;
           if (minPrice < 5) minPrice = 5;
         }
+      }
+
+      // Safety: min must never end up above the KNOWN real current price
+      // without ROI justification. The check above only fires when minPrice
+      // exceeds `currentPrice` itself — but minPrice is usually computed AS
+      // A FRACTION of currentPrice (e.g. 0.85x for price_buffer), so it can
+      // land above the REAL price without ever exceeding the (possibly
+      // stale-HIGH) currentPrice it was derived from. This is the actual
+      // shape of the reported bug: a fresh min computed from a stale cache
+      // entry ends up above "my price" even though it never exceeded that
+      // same stale reference. Only applies to freshly-computed, non-ROI-floor
+      // mins — existing/manual mins and legitimate ROI floors are untouched.
+      if (!hasExistingMin && !usedRoiFloor && minPrice !== null && knownLivePrice > 0 && minPrice > knownLivePrice) {
+        const cappedMin = Math.round(knownLivePrice * (1 - (settings!.auto_min_buffer_pct || 15) / 100) * 100) / 100;
+        console.log(`[auto-assign-bulk] ⚠️ min $${minPrice} > known live price $${knownLivePrice} for ${asin}/${marketplace} (currentPrice=$${currentPrice} may be stale) — capping to $${cappedMin}`);
+        minPrice = Math.max(cappedMin, 5);
       }
 
       // Safety: max must be > min
@@ -803,8 +831,8 @@ Deno.serve(async (req) => {
       // increase) can make a freshly-computed max come out below the actual
       // current price. If our own last_applied_price is already higher than
       // the computed max, that's not a legitimate bound — raise max to cover
-      // it, same buffer the max strategy already uses.
-      const knownLivePrice = Number(existingAssignment?.last_applied_price) || 0;
+      // it, same buffer the max strategy already uses. (knownLivePrice
+      // declared above, reused here.)
       if (maxPrice !== null && knownLivePrice > maxPrice) {
         const bufferedMax = Math.round(knownLivePrice * (1 + (settings!.auto_max_buffer_pct || 15) / 100) * 100) / 100;
         console.log(`[auto-assign-bulk] 🛡️ max $${maxPrice} < known live price $${knownLivePrice} for ${asin}/${marketplace} — raising max to $${bufferedMax}`);
