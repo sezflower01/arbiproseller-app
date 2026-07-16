@@ -3088,19 +3088,10 @@ export default function SyncedInventory() {
                       <option value="fbm">FBM Only</option>
                     </select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-foreground font-medium">Restock:</span>
-                    <select
-                      value={replenishCoverageMonths}
-                      onChange={(e) => setReplenishCoverageMonths(Number(e.target.value))}
-                      className="border border-white/30 rounded px-3 py-2 text-sm bg-white/80 text-foreground font-medium"
-                      title="How many months of inventory to keep at Amazon (avoids storage fees for stock over 1 month)"
-                    >
-                      <option value={1}>1 month</option>
-                      <option value={2}>2 months</option>
-                      <option value={3}>3 months</option>
-                    </select>
-                  </div>
+                  {/* Restock (1/2/3 months) dropdown hidden 2026-07-16 per cleanup
+                      request — replenishCoverageMonths stays at its default (1) and
+                      still drives coverageDays; setReplenishCoverageMonths is still
+                      defined if this needs to come back. */}
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-foreground font-medium">Show:</span>
                     <select
