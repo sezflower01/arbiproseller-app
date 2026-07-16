@@ -3167,37 +3167,12 @@ export default function SyncedInventory() {
                       <option value={250}>250 records</option>
                     </select>
                   </div>
-                  {/* Fetch Missing Images and Fix All Unit Costs hidden 2026-07-16 per
-                      cleanup request — handlers (handleFetchMissingImages,
-                      handleFixAllUnitCosts) still defined in this file if needed again. */}
-                  {isAdmin && (
-                  <>
-                  <Button
-                    onClick={() => {
-                      loadSavedDrafts();
-                      setLoadDraftDialogOpen(true);
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                    Load Draft
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setDraftToLoad(null);
-                      setShipmentBuilderOpen(true);
-                    }}
-                    disabled={selectedForShipment.size === 0}
-                    size="sm"
-                    className="gap-2"
-                  >
-                    <Truck className="h-4 w-4" />
-                    Create Shipment ({selectedForShipment.size})
-                  </Button>
-                  </>
-                  )}
+                  {/* Fetch Missing Images, Fix All Unit Costs (2026-07-16), and Load
+                      Draft / Create Shipment (2026-07-16) all hidden per cleanup
+                      requests — handlers (handleFetchMissingImages,
+                      handleFixAllUnitCosts, loadSavedDrafts) and state
+                      (setLoadDraftDialogOpen, setShipmentBuilderOpen, setDraftToLoad)
+                      still defined in this file if needed again. */}
                 </div>
               </div>
             </div>
