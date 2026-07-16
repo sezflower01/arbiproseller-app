@@ -95,7 +95,11 @@
           <span id="apx-sa-profit" class="apx-sa-v" hidden></span>
 
           <div class="apx-strip-actions">
-            <a id="apx-open-analyzer-btn" class="apx-strip-link" target="_blank" rel="noopener">🔍 Full Analysis ↗</a>
+            <!-- Hidden 2026-07-15: user asked to hide the Full Analysis button
+                 from the extension analyzer. Left in the DOM (just `hidden`)
+                 so panel.js's renderMeta() can keep setting .href without
+                 needing changes — quick re-add by removing `hidden`. -->
+            <a id="apx-open-analyzer-btn" class="apx-strip-link" target="_blank" rel="noopener" hidden>🔍 Full Analysis ↗</a>
             <a id="apx-open-history-btn" class="apx-strip-link" target="_blank" rel="noopener">📜 History ↗</a>
           </div>
         </section>
