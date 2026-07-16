@@ -3029,29 +3029,11 @@ export default function SyncedInventory() {
                       {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-foreground font-medium">Stock:</span>
-                    <select
-                      value={stockFilter}
-                      onChange={(e) => {
-                        const newFilter = e.target.value as 'all' | 'in-stock' | 'out-of-stock' | 'needs-replenish' | 'slow-selling';
-                        setStockFilter(newFilter);
-                        // Auto-sort by attention score when slow-selling is selected
-                        if (newFilter === 'slow-selling') {
-                          setSortBy('attentionScore');
-                          setSortDirection('desc');
-                        }
-                      }}
-                      className="border border-white/30 rounded px-3 py-2 text-sm bg-white/80 text-foreground font-medium"
-                    >
-                      <option value="all">All Products</option>
-                      <option value="in-stock">In Stock Only</option>
-                      <option value="out-of-stock">Out of Stock</option>
-                      <option value="needs-replenish">Needs Replenishment</option>
-                      <option value="slow-selling">⚠️ Slow Selling (Needs Attention)</option>
-                      <option value="preserved">🔶 Preserved / MISMATCH</option>
-                    </select>
-                  </div>
+                  {/* Stock dropdown (All Products / In Stock Only / Out of Stock /
+                      Needs Replenishment / Slow Selling / Preserved-MISMATCH) hidden
+                      2026-07-16 per cleanup request — stockFilter stays at its default
+                      ('all') and still drives filteredInventory; setStockFilter is
+                      still defined if this needs to come back. */}
                   {stockFilter === 'slow-selling' && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-foreground font-medium">Age:</span>
