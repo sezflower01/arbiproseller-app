@@ -1179,6 +1179,31 @@ async function scoreAllCandidates(
 
     // ── STARVATION PROMOTION: ASINs not checked in 60+ min get boosted into competitive range ──
     const isStarving = checkAgeMinutes >= 60 && !isHot;
+    if (isStarving) {
+      // BUG FIX: this was computed but never actually added to the score —
+      // the "boosted into competitive range" the comment above promises
+      // never happened. Combined with maintenance-role marketplaces (BR/CA/MX)
+      // already starting at score -= 30, long-neglected assignments there
+      // could sit unevaluated indefinitely (confirmed live: an assignment
+      // with last_evaluated_at = null, never checked even once).
+      score += 50;
+      reasons.push('starvation_promoted');
+    }
+
+    // Price currently below its own effective floor (min_price_override) —
+    // an active configuration violation (selling below the seller's
+    // configured minimum/ROI floor), not just routine staleness. The AI
+    // evaluation engine's "Universal Floor Recovery" / "BB Owner Floor
+    // Recovery" logic already knows how to fix this the moment it actually
+    // runs — but dispatch scoring had no signal for it at all, so a
+    // floor-violating item in a maintenance-role marketplace could be
+    // starved out by routine competitive scoring on primary-market items.
+    const belowMinFloor = a.min_price_override != null && a.last_applied_price != null
+      && Number(a.last_applied_price) < Number(a.min_price_override) - 0.005;
+    if (belowMinFloor) {
+      score += 90;
+      reasons.push('below_min_floor');
+    }
 
     if (mktRole === 'primary') {
       score += 20;
