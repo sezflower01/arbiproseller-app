@@ -3144,15 +3144,6 @@ export default function SyncedInventory() {
                     </select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-sm text-foreground font-medium cursor-pointer select-none">
-                      <Checkbox
-                        checked={showOverriddenOnly}
-                        onCheckedChange={(v) => setShowOverriddenOnly(v === true)}
-                      />
-                      Overridden cost only
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2">
                     <span className="text-sm text-foreground font-medium">Restock:</span>
                     <select
                       value={replenishCoverageMonths}
@@ -3176,46 +3167,11 @@ export default function SyncedInventory() {
                       <option value={250}>250 records</option>
                     </select>
                   </div>
-                  <Button
-                    onClick={handleFetchMissingImages}
-                    disabled={fetchingImages || loading}
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    {fetchingImages ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Fetching... {imageProgress.done}/{imageProgress.total}
-                      </>
-                    ) : (
-                      <>
-                        <Cloud className="h-4 w-4" />
-                        Fetch Missing Images
-                      </>
-                    )}
-                  </Button>
+                  {/* Fetch Missing Images and Fix All Unit Costs hidden 2026-07-16 per
+                      cleanup request — handlers (handleFetchMissingImages,
+                      handleFixAllUnitCosts) still defined in this file if needed again. */}
                   {isAdmin && (
                   <>
-                  <Button
-                    onClick={handleFixAllUnitCosts}
-                    disabled={fixingCosts || loading}
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    {fixingCosts ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Fixing... {fixProgress.done}/{fixProgress.total}
-                      </>
-                    ) : (
-                      <>
-                        <TrendingUp className="h-4 w-4" />
-                        Fix All Unit Costs
-                      </>
-                    )}
-                  </Button>
                   <Button
                     onClick={() => {
                       loadSavedDrafts();
