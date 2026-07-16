@@ -3016,20 +3016,10 @@ export default function SyncedInventory() {
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-foreground font-medium">Sales Period:</span>
-                    <select
-                      value={salesPeriodDays}
-                      onChange={(e) => {
-                        setSalesPeriodDays(Number(e.target.value));
-                      }}
-                      className="border border-white/30 rounded px-3 py-2 text-sm bg-white/80 text-foreground font-medium"
-                    >
-                      <option value={7}>7 days</option>
-                      <option value={14}>14 days</option>
-                      <option value={30}>30 days</option>
-                      <option value={60}>60 days</option>
-                      <option value={90}>90 days</option>
-                    </select>
+                    {/* Sales Period dropdown hidden 2026-07-16 per cleanup request —
+                        salesPeriodDays stays at its default (30) and still drives the
+                        query; setSalesPeriodDays is still defined if this needs to
+                        come back. */}
                     <Button
                       onClick={() => fetchInventory()}
                       disabled={loading}
