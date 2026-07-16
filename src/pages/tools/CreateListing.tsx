@@ -445,37 +445,124 @@ const CreateListing = () => {
       const willSubmitToAmazon = shouldCreateOnAmazon && fulfillmentChannel === 'FBA';
       const initialValidationStatus = willSubmitToAmazon ? 'PENDING_VALIDATION' : 'ACTIVE';
 
-      const { data: insertedRow, error: inventoryError } = await supabase
+      // Repurchase check: if this ASIN already has a created_listings row,
+      // update it with a weighted-average cost (same behavior as the Excel
+      // bulk-import path in CreatedListings.tsx) instead of inserting a
+      // second, independent row. A duplicate row would make Inventory
+      // Valuation's "newest row wins" cost resolution jump to whatever this
+      // one purchase cost, discarding the weighted history.
+      const { data: existingRow, error: existingRowError } = await supabase
         .from("created_listings")
-        .insert([{
-          user_id: user?.id!,
-          asin: asin.toUpperCase(),
-          sku,
-          fnsku: fnskuData?.fnsku || null,
-          title: productData.title,
-          image_url: productData.imageUrl,
-          price: parseFloat(sellingPrice),
-          cost: totalCostNum, // total cost entered by user
-          amount: cogNum,     // calculated COG (unit cost)
-          units: unitsNum,
-          supplier_links: filteredSupplierLinks as any,
-          date_created: dateCreated,
-          fba_blocked: blockedNow,
-          fba_block_reason: blockedNow ? (eligibility.fba_block_reason ?? null) : null,
-          validation_status: initialValidationStatus,
-          validation_started_at: willSubmitToAmazon ? new Date().toISOString() : null,
-        }])
-        .select('id')
-        .single();
+        .select("id, cost, units")
+        .eq("user_id", user?.id!)
+        .eq("asin", asin.toUpperCase())
+        .maybeSingle();
 
-      if (inventoryError) {
-        console.error("Inventory save error:", inventoryError);
+      if (existingRowError) {
+        console.error("Existing listing lookup error:", existingRowError);
         toast({
           title: "Error",
-          description: "Failed to save to inventory",
+          description: "Failed to check for an existing listing",
           variant: "destructive",
         });
         return;
+      }
+
+      let listingId: string;
+
+      if (existingRow) {
+        const updatedUnits = (existingRow.units || 0) + unitsNum;
+        const updatedTotalCost = (existingRow.cost || 0) + totalCostNum;
+        const updatedUnitCost = updatedUnits > 0 ? updatedTotalCost / updatedUnits : 0;
+
+        const { error: updateError } = await supabase
+          .from("created_listings")
+          .update({
+            cost: updatedTotalCost,
+            amount: updatedUnitCost,
+            units: updatedUnits,
+            supplier_links: filteredSupplierLinks.length > 0 ? (filteredSupplierLinks as any) : undefined,
+            // date_created intentionally untouched — it marks the original
+            // listing date; this purchase's date lives in created_listing_purchases.
+          })
+          .eq("id", existingRow.id);
+
+        if (updateError) {
+          console.error("Inventory update error:", updateError);
+          toast({
+            title: "Error",
+            description: "Failed to update existing listing",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const { error: purchaseError } = await supabase
+          .from("created_listing_purchases")
+          .insert({
+            listing_id: existingRow.id,
+            user_id: user?.id,
+            units: unitsNum,
+            unit_cost: cogNum,
+            total_cost: totalCostNum,
+            purchase_date: dateCreated,
+            note: "Create Listing form (repurchase)",
+          });
+        if (purchaseError) {
+          console.error("Purchase history log error:", purchaseError);
+        }
+
+        listingId = existingRow.id;
+      } else {
+        const { data: insertedRow, error: inventoryError } = await supabase
+          .from("created_listings")
+          .insert([{
+            user_id: user?.id!,
+            asin: asin.toUpperCase(),
+            sku,
+            fnsku: fnskuData?.fnsku || null,
+            title: productData.title,
+            image_url: productData.imageUrl,
+            price: parseFloat(sellingPrice),
+            cost: totalCostNum, // total cost entered by user
+            amount: cogNum,     // calculated COG (unit cost)
+            units: unitsNum,
+            supplier_links: filteredSupplierLinks as any,
+            date_created: dateCreated,
+            fba_blocked: blockedNow,
+            fba_block_reason: blockedNow ? (eligibility.fba_block_reason ?? null) : null,
+            validation_status: initialValidationStatus,
+            validation_started_at: willSubmitToAmazon ? new Date().toISOString() : null,
+          }])
+          .select('id')
+          .single();
+
+        if (inventoryError) {
+          console.error("Inventory save error:", inventoryError);
+          toast({
+            title: "Error",
+            description: "Failed to save to inventory",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        listingId = insertedRow.id;
+
+        const { error: purchaseError } = await supabase
+          .from("created_listing_purchases")
+          .insert({
+            listing_id: insertedRow.id,
+            user_id: user?.id,
+            units: unitsNum,
+            unit_cost: cogNum,
+            total_cost: totalCostNum,
+            purchase_date: dateCreated,
+            note: "Create Listing form",
+          });
+        if (purchaseError) {
+          console.error("Purchase history log error:", purchaseError);
+        }
       }
 
       if (shouldCreateOnAmazon) {
@@ -495,7 +582,7 @@ const CreateListing = () => {
               cost: totalCostNum,
               marketplaceId: mpConfig?.marketplaceId,
               marketplaceCode: selectedMarketplace,
-              createdListingId: insertedRow?.id ?? null,
+              createdListingId: listingId ?? null,
             },
             headers: { Authorization: `Bearer ${session.access_token}` }
           }
