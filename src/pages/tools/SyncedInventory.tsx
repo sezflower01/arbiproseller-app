@@ -3015,20 +3015,10 @@ export default function SyncedInventory() {
                   />
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    {/* Sales Period dropdown hidden 2026-07-16 per cleanup request —
-                        salesPeriodDays stays at its default (30) and still drives the
-                        query; setSalesPeriodDays is still defined if this needs to
-                        come back. */}
-                    <Button
-                      onClick={() => fetchInventory()}
-                      disabled={loading}
-                      variant="outline"
-                      size="sm"
-                    >
-                      {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    </Button>
-                  </div>
+                  {/* Sales Period dropdown and its adjacent Refresh button hidden
+                      2026-07-16 per cleanup request — salesPeriodDays stays at its
+                      default (30) and still drives the query; setSalesPeriodDays
+                      and fetchInventory are still defined if this needs to come back. */}
                   {/* Stock dropdown (All Products / In Stock Only / Out of Stock /
                       Needs Replenishment / Slow Selling / Preserved-MISMATCH) hidden
                       2026-07-16 per cleanup request — stockFilter stays at its default
