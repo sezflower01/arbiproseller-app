@@ -3371,11 +3371,16 @@ export default function SyncedInventory() {
                                           : <span className="text-muted-foreground italic">Click to add</span>}
                                       </button>
                                     )}
-                                    <CostSourceBadge
+                                    {/* Hidden 2026-07-15: user wants the Unit Cost column's
+                                        "From Purchase"/"Overridden" tooltip badge removed
+                                        entirely. CostSourceBadge is still used elsewhere
+                                        (ReplenishmentOrderPanel, Inventory.tsx) so the
+                                        component itself is untouched — just not rendered here. */}
+                                    {/* <CostSourceBadge
                                       row={item}
                                       compact
                                       hasPurchaseRecord={hasPurchaseRecord(item.asin)}
-                                    />
+                                    /> */}
                                   </div>
                                   {item.unit_cost_manual &&
                                     item.unit_cost &&
