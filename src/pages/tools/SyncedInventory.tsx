@@ -2694,7 +2694,9 @@ export default function SyncedInventory() {
         <Navbar />
         <main className="flex-1 px-2 py-8 pt-24 relative z-10">
           <SyncReadinessBanner module="inventory" />
-          <div className="mb-3"><AutoInventorySyncDebugPanel /></div>
+          {/* Auto Inventory Sync — Cron Status panel hidden 2026-07-16 per cleanup
+              request. Component still defined/imported — just re-add
+              <AutoInventorySyncDebugPanel /> here if needed again. */}
           {(() => {
             const missingItems = inventory.filter(item => {
               const totalQty = (item.available || 0) + (item.reserved || 0) + (item.inbound || 0);
