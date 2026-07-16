@@ -145,7 +145,7 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
 /* Price History chart (replaces Decision Memory) — same panel background,
    not a distinct card, so it reads as part of the extension's own UI. */
 .apx-history-section { margin-top: 12px; }
-.apx-history-section .apx-spark-head { margin-bottom: 8px; }
+.apx-history-section .apx-spark-head { margin-bottom: 8px; flex-wrap: wrap; row-gap: 4px; }
 .apx-history-chart-wrap { position: relative; }
 #apx-history-chart { display: block; width: 100%; height: 180px; cursor: crosshair; }
 .apx-history-tooltip {
@@ -255,11 +255,11 @@ a.apx-seller-name:hover { text-decoration: underline; color: #4F46E5; }
 }
 
 /* Range tabs (3M/6M/1Y) */
-.apx-range-tabs { display: inline-flex; gap: 4px; margin: 0 8px; }
+.apx-range-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 8px; }
 .apx-range-tab {
   background: rgba(15,23,42,0.05); color: #475569;
   border: 1px solid rgba(15,23,42,0.06);
-  border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+  border-radius: 6px; padding: 2px 6px; font-size: 10px; cursor: pointer; white-space: nowrap;
 }
 .apx-range-tab:hover { background: rgba(15,23,42,0.07); }
 .apx-range-tab.active {

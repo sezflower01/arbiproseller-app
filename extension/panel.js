@@ -10,6 +10,9 @@
     catch { return "$" + Number(n).toFixed(2); }
   };
   const esc = (v) => String(v ?? "").replace(/[&<>'"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
+  // Shared range labels — keep in sync with the data-range buttons in panel.html
+  // and the range enum accepted by mobile-scan-price-history.
+  const RANGE_LABELS = { "90": "3M", "180": "6M", "365": "1Y", "730": "2Y", "1825": "5Y", "SINCE_LISTED": "Since Listed" };
   const estimateMonthlySales = (intel = {}) => {
     const backendEstimate = Number(intel.est_monthly_sales ?? intel.monthly_sold);
     if (Number.isFinite(backendEstimate) && backendEstimate > 0) return Math.round(backendEstimate);
@@ -1701,7 +1704,7 @@
     const series = state.history?.series?.buybox || state.history?.series?.newPrice || [];
     const swing  = computeSwingFromHistory();
     const slope  = computePriceSlope(series);
-    const rangeLbl = { "90": "3M", "180": "6M", "365": "1Y" }[state.range] || "Range";
+    const rangeLbl = RANGE_LABELS[state.range] || "Range";
     if (swing == null && slope == null) return { level: "unknown", text: "No history", reason: null };
     // Falling = sustained drop (slope <= -8%) regardless of swing
     if (slope != null && slope <= -8) {
@@ -2012,7 +2015,7 @@
       brand: state.stability?.intel?.brand || state.product?.brand || null,
       amazon_presence: offers.some(o => o.isAmazon) ? "present" : (offers.length ? "absent" : "unknown"),
       source_surface: "extension",
-      active_range_viewed: { "90": "3M", "180": "6M", "365": "1Y" }[state.range] || null,
+      active_range_viewed: RANGE_LABELS[state.range] || null,
       data_freshness: state.cached ? "cached" : "live",
       retrieval_state: offers.length ? "ok" : "partial",
     };
@@ -2383,7 +2386,7 @@
     document.querySelectorAll(".apx-range-tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.range === state.range);
     });
-    const lbl = { "90": "3M swing", "180": "6M swing", "365": "1Y swing" }[state.range] || "Swing";
+    const lbl = RANGE_LABELS[state.range] ? `${RANGE_LABELS[state.range]} swing` : "Swing";
     const el = $("apx-swing-label"); if (el) el.textContent = lbl;
   }
   document.querySelectorAll(".apx-range-tab").forEach((btn) => {
@@ -2594,7 +2597,7 @@
   // Init
   (async () => {
     const o = await chrome.storage.local.get(["arbipro_range", "arbipro_seller_mode"]);
-    if (o.arbipro_range && ["90", "180", "365"].includes(o.arbipro_range)) {
+    if (o.arbipro_range && Object.prototype.hasOwnProperty.call(RANGE_LABELS, o.arbipro_range)) {
       state.range = o.arbipro_range;
     }
     if (o.arbipro_seller_mode === "FBA" || o.arbipro_seller_mode === "FBM") {

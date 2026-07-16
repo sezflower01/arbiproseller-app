@@ -261,6 +261,34 @@ export function computeTopSellerContinuity(
   };
 }
 
+// "Since Listed" range support. Keepa's `listedSince` (when the item was
+// first listed on Amazon) and `trackingSince` (when Keepa itself started
+// tracking the ASIN) are Keepa-minute timestamps returned on every product
+// response at no extra token cost — no special parameter needed to get them.
+// listedSince is preferred; it's 0/absent for some products, in which case
+// trackingSince (always populated once Keepa knows the ASIN) is used instead.
+// `maxDays` is the generous window we already requested from Keepa up front
+// (see SINCE_LISTED_STATS_WINDOW_DAYS) — used as the fallback when neither
+// field is usable, and as an upper clamp so a corrupt/ancient timestamp can't
+// produce a nonsensical result.
+export function computeSinceListedDays(
+  listedSinceKeepaMin: number | null | undefined,
+  trackingSinceKeepaMin: number | null | undefined,
+  nowMs: number,
+  maxDays: number,
+): number {
+  const listed = Number(listedSinceKeepaMin);
+  const tracking = Number(trackingSinceKeepaMin);
+  const raw = listed > 0 ? listed : tracking;
+  if (!Number.isFinite(raw) || raw <= 0) return maxDays;
+
+  const sinceMs = KEEPA_EPOCH_MS_CONST + raw * 60_000;
+  const daysSince = Math.floor((nowMs - sinceMs) / (24 * 60 * 60 * 1000));
+  if (!Number.isFinite(daysSince) || daysSince <= 0) return maxDays; // bad/future timestamp guard
+
+  return Math.min(maxDays, Math.max(1, daysSince));
+}
+
 // Combines Keepa's own pre-computed per-seller Buy Box win stats
 // (stats.buyBoxStats — verified live to be { sellerId: { percentageWon, ... } }
 // for the requested `stats` window) with the time-weighted continuity above.
@@ -616,9 +644,30 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const asin = String(body.asin || '').toUpperCase().trim();
     const marketplace = String(body.marketplace || 'US').toUpperCase();
-    const range = String(body.range || '90'); // '90' | '180' | '365'
+    const range = String(body.range || '90'); // '90' | '180' | '365' | '730' | '1825' | 'SINCE_LISTED'
     const force = body.force === true;
-    const days = range === '365' ? 365 : range === '180' ? 180 : 90;
+    const FIXED_RANGE_DAYS: Record<string, number> = { '90': 90, '180': 180, '365': 365, '730': 730, '1825': 1825 };
+    const isSinceListed = range === 'SINCE_LISTED';
+    // "Since Listed" needs the product's listedSince/trackingSince, which only
+    // comes back IN the Keepa response — so the true day count isn't known
+    // before asking. We request Keepa's stats over a generously large window
+    // up front (the `stats` parameter costs zero extra Keepa tokens regardless
+    // of size, and Keepa can't return more history than it actually tracked
+    // anyway, so this is effectively "the ASIN's full Keepa history" in a
+    // single round trip). The real since-listed day count is then derived
+    // from that SAME response (computeSinceListedDays) and used for
+    // display/truncation/caching instead of this placeholder.
+    // ~15 years — safely covers Keepa's entire operating history (KEEPA_EPOCH_MIN
+    // is 2011-01-01). Verified live: one real ASIN's listedSince predates its
+    // own trackingSince by years (Amazon listing older than Keepa's tracking
+    // of it), so a 10-year cap was clamping a real, larger computed value.
+    const SINCE_LISTED_STATS_WINDOW_DAYS = 5500;
+    const requestedDays = isSinceListed ? SINCE_LISTED_STATS_WINDOW_DAYS : (FIXED_RANGE_DAYS[range] ?? 90);
+    // Cache key: fixed ranges key on their exact day count; "Since Listed"
+    // uses one sentinel per ASIN (the real day count varies per ASIN and is
+    // carried inside the cached series' windowDays fields instead).
+    const SINCE_LISTED_CACHE_KEY = -1;
+    const cacheDaysKey = isSinceListed ? SINCE_LISTED_CACHE_KEY : requestedDays;
 
     if (!/^[A-Z0-9]{10}$/.test(asin)) return jsonResponse({ error: 'Invalid ASIN' }, 400);
 
@@ -630,8 +679,15 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('asin', asin)
       .eq('marketplace', marketplace)
-      .eq('days_range', days)
+      .eq('days_range', cacheDaysKey)
       .maybeSingle();
+
+    // The real day count for a cached "Since Listed" row varies per ASIN and
+    // isn't part of the cache key — read it back out of the series payload
+    // (sellerHistory/buyBoxOwnership already carry windowDays) instead.
+    const cachedEffectiveDays = (cached?.series?.buyBoxOwnership?.windowDays as number | undefined)
+      ?? (cached?.series?.sellerHistory?.windowDays as number | undefined)
+      ?? cacheDaysKey;
 
     const cacheFresh = cached && new Date(cached.expires_at).getTime() > Date.now();
     // Legacy rows written before the Private-Label Risk redesign lack these
@@ -662,7 +718,7 @@ Deno.serve(async (req) => {
         newFbm: appendCurrentPoint(cached.series?.newFbm || [], liveFbm.length ? Math.min(...liveFbm) : null),
       };
       return jsonResponse({
-        asin, marketplace, days, cached: true,
+        asin, marketplace, days: cachedEffectiveDays, cached: true,
         series: liveSeries,
         offers: liveOffers,
         fetched_at: cached.fetched_at,
@@ -691,7 +747,7 @@ Deno.serve(async (req) => {
           buybox: appendCurrentPoint(cached.series?.buybox || [], spBuyBox),
         };
         return jsonResponse({
-          asin, marketplace, days, cached: true, degraded: true, degraded_reason: reason,
+          asin, marketplace, days: cachedEffectiveDays, cached: true, degraded: true, degraded_reason: reason,
           series,
           offers: spOffers || cached.offers,
           fetched_at: cached.fetched_at,
@@ -699,7 +755,7 @@ Deno.serve(async (req) => {
       }
       if (spOffers && spOffers.list.length > 0) {
         return jsonResponse({
-          asin, marketplace, days, cached: false, degraded: true, degraded_reason: reason,
+          asin, marketplace, days: requestedDays, cached: false, degraded: true, degraded_reason: reason,
           series: { buybox: appendCurrentPoint([], spBuyBox) },
           offers: spOffers,
           fetched_at: new Date().toISOString(),
@@ -713,7 +769,7 @@ Deno.serve(async (req) => {
       key: KEEPA_KEY,
       domain: String(domainId),
       asin,
-      stats: String(days),
+      stats: String(requestedDays),
       history: '1',
       offers: '20',
       buybox: '1',
@@ -742,6 +798,13 @@ Deno.serve(async (req) => {
     const json = await res.json();
     const product = json?.products?.[0];
     if (!product) return await degradeFallback('No Keepa product data');
+
+    // Real "Since Listed" day count, derived from THIS response's
+    // listedSince/trackingSince fields — see computeSinceListedDays. For
+    // fixed ranges this is just requestedDays unchanged.
+    const days = isSinceListed
+      ? computeSinceListedDays(product.listedSince, product.trackingSince, Date.now(), SINCE_LISTED_STATS_WINDOW_DAYS)
+      : requestedDays;
 
     const csv: (number[] | null)[] = product.csv || [];
 
@@ -871,9 +934,11 @@ Deno.serve(async (req) => {
       list: finalOffers,
     };
 
-    // Cache
+    // Cache — keyed by cacheDaysKey (the "Since Listed" sentinel for that
+    // mode), not the computed `days`, so repeat "Since Listed" lookups for
+    // the same ASIN hit one row instead of a new one per exact day count.
     await admin.from('keepa_price_history_cache').upsert({
-      asin, marketplace, days_range: days,
+      asin, marketplace, days_range: cacheDaysKey,
       series, offers: offersPayload,
       fetched_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),

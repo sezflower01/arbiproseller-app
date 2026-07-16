@@ -170,6 +170,24 @@ function computeBuyBoxOwnership(
   };
 }
 
+function computeSinceListedDays(
+  listedSinceKeepaMin: number | null | undefined,
+  trackingSinceKeepaMin: number | null | undefined,
+  nowMs: number,
+  maxDays: number,
+): number {
+  const listed = Number(listedSinceKeepaMin);
+  const tracking = Number(trackingSinceKeepaMin);
+  const raw = listed > 0 ? listed : tracking;
+  if (!Number.isFinite(raw) || raw <= 0) return maxDays;
+
+  const sinceMs = KEEPA_EPOCH_MS_CONST + raw * 60_000;
+  const daysSince = Math.floor((nowMs - sinceMs) / (24 * 60 * 60 * 1000));
+  if (!Number.isFinite(daysSince) || daysSince <= 0) return maxDays;
+
+  return Math.min(maxDays, Math.max(1, daysSince));
+}
+
 const AMAZON = new Set(['ATVPDKIKX0DER', 'AMAZON']);
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -329,4 +347,49 @@ Deno.test('computeBuyBoxOwnership: single event, 3 days => real evidence but not
   const result = computeBuyBoxOwnership(buyBoxStats, history, 90, AMAZON, referenceEndMs);
   assertEquals(result.continuityWindowDays, 3);
   assertEquals(result.sufficient, false); // too short to trust, but continuityWindowDays is not null — real evidence exists
+});
+
+// ── computeSinceListedDays ("Since Listed" range) ──────────────────────────
+
+Deno.test('computeSinceListedDays: listedSince 400 days ago => ~400 days', () => {
+  const nowMs = KEEPA_EPOCH_MS_CONST + 10_000_000 * 60_000;
+  const listedSinceKeepaMin = 10_000_000 - 400 * 24 * 60;
+  const result = computeSinceListedDays(listedSinceKeepaMin, null, nowMs, 3650);
+  assertEquals(result, 400);
+});
+
+Deno.test('computeSinceListedDays: listedSince missing (0) falls back to trackingSince', () => {
+  const nowMs = KEEPA_EPOCH_MS_CONST + 10_000_000 * 60_000;
+  const trackingSinceKeepaMin = 10_000_000 - 900 * 24 * 60;
+  const result = computeSinceListedDays(0, trackingSinceKeepaMin, nowMs, 3650);
+  assertEquals(result, 900);
+});
+
+Deno.test('computeSinceListedDays: listedSince takes priority over trackingSince when both present', () => {
+  const nowMs = KEEPA_EPOCH_MS_CONST + 10_000_000 * 60_000;
+  const listedSinceKeepaMin = 10_000_000 - 200 * 24 * 60; // 200 days ago
+  const trackingSinceKeepaMin = 10_000_000 - 900 * 24 * 60; // 900 days ago (Keepa started tracking earlier)
+  const result = computeSinceListedDays(listedSinceKeepaMin, trackingSinceKeepaMin, nowMs, 3650);
+  assertEquals(result, 200);
+});
+
+Deno.test('computeSinceListedDays: neither field usable => falls back to the generously-requested max window', () => {
+  const nowMs = Date.now();
+  assertEquals(computeSinceListedDays(null, null, nowMs, 3650), 3650);
+  assertEquals(computeSinceListedDays(0, 0, nowMs, 3650), 3650);
+  assertEquals(computeSinceListedDays(undefined, undefined, nowMs, 3650), 3650);
+});
+
+Deno.test('computeSinceListedDays: a computed day count beyond maxDays is clamped down', () => {
+  const nowMs = KEEPA_EPOCH_MS_CONST + 10_000_000 * 60_000;
+  const listedSinceKeepaMin = 10_000_000 - 5000 * 24 * 60; // 5000 days ago — beyond maxDays
+  const result = computeSinceListedDays(listedSinceKeepaMin, null, nowMs, 3650);
+  assertEquals(result, 3650);
+});
+
+Deno.test('computeSinceListedDays: a future/invalid timestamp is guarded, falls back to maxDays', () => {
+  const nowMs = KEEPA_EPOCH_MS_CONST + 10_000_000 * 60_000;
+  const listedSinceKeepaMin = 10_000_000 + 1000; // in the future relative to nowMs
+  const result = computeSinceListedDays(listedSinceKeepaMin, null, nowMs, 3650);
+  assertEquals(result, 3650);
 });
