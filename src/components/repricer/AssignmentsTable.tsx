@@ -5368,6 +5368,15 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
       : pendingNewPrice[currentItem.id];
     const hasNewPrice = newPrice != null;
 
+    // Track whether Min/Max actually changed (vs just being re-saved at the
+    // same value) so a Set-Price-only save never triggers a bounds check,
+    // and a bounds-only save never triggers a full competitive re-evaluation.
+    const previousMin = currentItem.min_price_override ?? currentItem.inv_min_price ?? null;
+    const previousMax = currentItem.max_price_override ?? currentItem.inv_max_price ?? null;
+    const minChanged = liveMin !== undefined && liveMin !== previousMin;
+    const maxChanged = liveMax !== undefined && liveMax !== previousMax;
+    const boundsChanged = minChanged || maxChanged;
+
     const ruleChanged = currentItem.rule_id !== currentItem.saved_rule_id;
     const shouldClearMinRoiOverride = ruleChanged && !currentItem.rule_min_roi_enabled && liveMinRoi === undefined;
 
@@ -5558,10 +5567,27 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
         calculateRoiRange(updatedItem);
       }
 
-      if (assignmentId) {
-        setTimeout(() => {
-          void runSingleItem(nextItem);
-        }, 500);
+      // Set Price is a standalone submission — it must not chain into a
+      // competitive Momentum Builder re-evaluation. Only Min/Max bound
+      // changes get a follow-up check, and that check only clamps the price
+      // to the new bound if it's actually violated — it never runs the full
+      // competitive anchor/undercut logic. See bounds-changed investigation.
+      if (assignmentId && boundsChanged) {
+        void checkBoundsViolation({
+          assignmentId,
+          asin: nextItem.asin,
+          sku: nextItem.sku,
+          minPrice: nextItem.min_price_override,
+          maxPrice: nextItem.max_price_override,
+          minChanged,
+          maxChanged,
+          previousMin,
+          previousMax,
+          // If a new price was submitted in this same save, validate THAT
+          // entered price against the new bounds. Otherwise validate the
+          // item's existing known live price.
+          referencePrice: hasNewPrice ? (newPrice as number) : (currentItem.my_price ?? currentItem.price ?? null),
+        });
       }
 
       return true;
@@ -5574,6 +5600,69 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
         next.delete(currentItem.id);
         return next;
       });
+    }
+  };
+
+  // Bounds-changed follow-up: fires only when Min/Max actually changed on a
+  // save. It does NOT run the competitive Momentum Builder evaluation — it
+  // only checks whether the reference price (the just-submitted Set Price,
+  // or the item's existing live price if only bounds changed) now violates
+  // the newly saved bound, and if so submits a direct clamp to that bound.
+  // If the reference price is already within bounds, this is a no-op.
+  const checkBoundsViolation = async (args: {
+    assignmentId: string;
+    asin: string;
+    sku: string;
+    minPrice: number | null | undefined;
+    maxPrice: number | null | undefined;
+    minChanged: boolean;
+    maxChanged: boolean;
+    previousMin: number | null;
+    previousMax: number | null;
+    referencePrice: number | null;
+  }) => {
+    const { asin, sku, minPrice, maxPrice, minChanged, maxChanged, previousMin, previousMax, referencePrice } = args;
+    if (referencePrice == null || !Number.isFinite(referencePrice)) return;
+
+    let clampedPrice: number | null = null;
+    let boundaryNote = "";
+    if (minPrice != null && referencePrice < minPrice - 0.004) {
+      clampedPrice = minPrice;
+      boundaryNote = `min ${previousMin ?? "—"} → ${minPrice}`;
+    } else if (maxPrice != null && referencePrice > maxPrice + 0.004) {
+      clampedPrice = maxPrice;
+      boundaryNote = `max ${previousMax ?? "—"} → ${maxPrice}`;
+    }
+
+    if (clampedPrice == null) return; // reference price already within the new bounds — nothing to do
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const changedWhich = minChanged && maxChanged ? "min+max" : minChanged ? "min" : "max";
+      const result = await invokeEdgeFunction({
+        functionName: "update-amazon-price",
+        body: {
+          asin,
+          sku,
+          newPrice: clampedPrice,
+          newMinPrice: minPrice,
+          newMaxPrice: maxPrice,
+          marketplace: marketplace || "US",
+          triggerSource: "bounds_changed",
+          reason: `Bounds changed (${changedWhich}): ${boundaryNote} — live price ${referencePrice.toFixed(2)} violated new bound, clamped to ${clampedPrice.toFixed(2)}`,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        context: { asin, sku, source: "bounds_changed" },
+      });
+
+      if (result.ok) {
+        toast.info(`${asin}: price clamped to ${clampedPrice.toFixed(2)} — outside newly saved bounds`, { duration: 5000 });
+        setItems(prev => prev.map(i => (i.asin === asin && i.sku === sku ? { ...i, my_price: clampedPrice as number, price: clampedPrice as number } : i)));
+      }
+    } catch (error: any) {
+      console.error("[checkBoundsViolation] clamp failed:", error);
     }
   };
 

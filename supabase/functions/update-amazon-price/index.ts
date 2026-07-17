@@ -18,6 +18,11 @@ interface UpdatePriceRequest {
   internal?: boolean;
   user_id?: string;
   fromScheduler?: boolean;
+  // Optional audit-log overrides for callers that aren't a plain manual UI edit
+  // (e.g. the bounds-changed clamp path). Falls back to the existing defaults
+  // ('manual' / 'rule_change') when omitted.
+  triggerSource?: string;
+  reason?: string;
 }
 
 Deno.serve(async (req) => {
@@ -412,8 +417,8 @@ Deno.serve(async (req) => {
         old_max_price: oldMaxPrice,
         new_max_price: body.newMaxPrice,
         action_type: updateMinMaxOnly ? 'minmax_change' : (hasMinMaxUpdate ? 'price_and_minmax_change' : 'price_change'),
-        trigger_source: updateMinMaxOnly ? 'rule_change' : 'manual',
-        reason: updateMinMaxOnly ? 'MIN/MAX bounds updated from UI' : 'Manual price update from UI',
+        trigger_source: body.triggerSource ?? (updateMinMaxOnly ? 'rule_change' : 'manual'),
+        reason: body.reason ?? (updateMinMaxOnly ? 'MIN/MAX bounds updated from UI' : 'Manual price update from UI'),
         success: true,
         amazon_response: priceUpdateResult
       });
