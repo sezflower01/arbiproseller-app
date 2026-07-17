@@ -1271,18 +1271,44 @@ Deno.serve(async (req) => {
         }
       }
 
-      // 7d. Deduplicate: if same ASIN has multiple enabled rows, keep newest, disable rest
+      // 7d. Deduplicate: if same ASIN has multiple enabled rows (different SKUs),
+      // keep the one backed by a REAL, active, in-stock listing — not just
+      // whichever assignment row happens to have the newest created_at.
+      // BUG this fixes: a ghost/NOT_IN_CATALOG SKU's assignment can easily
+      // have a NEWER created_at than the real, currently-active SKU's
+      // assignment (e.g. created during a later backfill pass), which made
+      // the old "keep newest" rule disable the REAL listing and leave a
+      // dead SKU actively repricing — confirmed live on B004IH1WSK/BR: the
+      // NOT_IN_CATALOG/ghosted SKU was enabled and converging to its own
+      // min floor, while the real, 91-unit-in-stock SKU sat disabled.
       deduplicatedCount = 0;
-      const seenAsins = new Map<string, string>(); // asin → newest id (already sorted DESC)
+      const rankFor = (a: any): number => {
+        const inv = invStatusMap.get(`${a.asin}:${a.sku}`);
+        if (!inv) return 0; // no inventory match at all
+        const status = (inv.status || '').toUpperCase();
+        const isBadStatus = ['NOT_IN_CATALOG', 'DELETED', 'INACTIVE', 'NOT_FOUND', 'INCOMPLETE'].includes(status);
+        const hasStock = (inv.available + inv.reserved + inv.inbound) > 0;
+        if (!isBadStatus && hasStock) return 3; // best: real, active, in stock
+        if (!isBadStatus) return 2; // active-status but currently no stock
+        return 1; // ghost/bad status — worst, but still ranked above "no match"
+      };
+      const bestForAsin = new Map<string, { id: string; sku: string; rank: number; createdAt: string }>();
       for (const a of allEnabled) {
         if (toDisable.includes(a.id)) continue; // already marked for disable
-        if (seenAsins.has(a.asin)) {
-          // This is an older duplicate — disable it
-          console.log(`[auto-assign-bulk] ⚠️ Dedup: disabling older duplicate ${a.asin}/${a.sku} (id=${a.id})`);
-          toDisable.push(a.id);
-          deduplicatedCount++;
-        } else {
-          seenAsins.set(a.asin, a.id);
+        const rank = rankFor(a);
+        const existing = bestForAsin.get(a.asin);
+        if (!existing) {
+          bestForAsin.set(a.asin, { id: a.id, sku: a.sku, rank, createdAt: a.created_at });
+          continue;
+        }
+        const thisIsBetter = rank > existing.rank || (rank === existing.rank && a.created_at > existing.createdAt);
+        const loserId = thisIsBetter ? existing.id : a.id;
+        const loserSku = thisIsBetter ? existing.sku : a.sku;
+        console.log(`[auto-assign-bulk] ⚠️ Dedup: disabling duplicate ${a.asin}/${loserSku} (id=${loserId}, rank=${thisIsBetter ? existing.rank : rank}) in favor of ${thisIsBetter ? a.sku : existing.sku} (rank=${thisIsBetter ? rank : existing.rank})`);
+        toDisable.push(loserId);
+        deduplicatedCount++;
+        if (thisIsBetter) {
+          bestForAsin.set(a.asin, { id: a.id, sku: a.sku, rank, createdAt: a.created_at });
         }
       }
 
