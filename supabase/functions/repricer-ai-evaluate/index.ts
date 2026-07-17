@@ -6858,6 +6858,33 @@ Deno.serve(async (req) => {
         result.newPrice !== null &&
         resultAnchorDiagnostics &&
         resultAnchorDiagnostics.selected_anchor === 'smart_recapture' &&
+        (result.guardsApplied || []).includes('fbm_mode_explicit_anchor')
+      ) {
+        // ============================================================
+        // FBM EXPLICIT ANCHOR BYPASS
+        // filtered_lowest_fba is computed from FBA offers only (see
+        // fbaEligible above) — it is never a meaningful ceiling when the
+        // rule's own competition settings explicitly anchored this eval
+        // to an FBM Buy Box seller (fbm_mode_explicit_anchor). Without
+        // this bypass, the guard below silently replaces a valid
+        // FBM-derived candidate with an unrelated FBA competitor's
+        // price, contradicting the anchor the engine itself just chose.
+        // Other guards (min/max bounds, ROI floor, max-step) are
+        // untouched and still apply independently of this bypass.
+        // ============================================================
+        resultAnchorDiagnostics.ai_override_after_enforcement = false;
+        resultAnchorDiagnostics.post_enforcement_override_reason = 'fbm_explicit_anchor_preserved';
+        resultAnchorDiagnostics.final_output_price = result.newPrice;
+        if (!result.guardsApplied.includes('final_smart_recapture_guard_bypassed_fbm_anchor')) {
+          result.guardsApplied.push('final_smart_recapture_guard_bypassed_fbm_anchor');
+        }
+        console.log(
+          `[FINAL_ANCHOR_GUARD] BYPASSED (fbm_explicit_anchor): asin=${targetAsin} candidate=$${result.newPrice.toFixed(2)} filtered_lowest_fba=$${Number(resultAnchorDiagnostics.filtered_lowest_fba ?? 0).toFixed(2)} — preserving FBM-anchored target, not overriding with FBA-only ceiling`
+        );
+      } else if (
+        result.newPrice !== null &&
+        resultAnchorDiagnostics &&
+        resultAnchorDiagnostics.selected_anchor === 'smart_recapture' &&
         context.currentPrice &&
         !context.smartRaise.isBuyboxOwner &&
         !finalFilteredRaiseSelectorActive &&
