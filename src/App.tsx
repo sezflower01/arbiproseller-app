@@ -10,6 +10,44 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { Suspense, lazy, Component, ReactNode, ComponentType } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+// Stale-chunk error detection, shared by lazyWithRetry and LazyErrorBoundary
+// so the two can't drift out of sync with each other again. Browsers phrase
+// a failed dynamic import differently: Chrome/Edge say "Failed to fetch
+// dynamically imported module", Safari says "Importing a module script
+// failed", Firefox says "error loading dynamically imported module" (was
+// missing here entirely — the most likely reason some mobile browsers fell
+// through to the manual "Hard Refresh" button instead of auto-recovering).
+// Also covers Vite's CSS-chunk failure message and an older webpack-style
+// "Loading chunk" string for safety.
+function isStaleChunkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('failed to fetch dynamically imported module') ||
+    msg.includes('error loading dynamically imported module') ||
+    msg.includes('importing a module script failed') ||
+    msg.includes('loading chunk') ||
+    msg.includes('unable to preload css') ||
+    msg.includes('dynamically imported module')
+  );
+}
+
+// One auto-reload per browser session for this failure class — if a reload
+// doesn't actually fix it (e.g. a persistent network issue, not a stale
+// chunk), loop forever is worse than falling through to the manual buttons.
+const CHUNK_RELOAD_GUARD_KEY = 'chunk-error-auto-reload-attempted';
+function reloadOnceForStaleChunk(): boolean {
+  try {
+    if (sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY)) return false;
+    sessionStorage.setItem(CHUNK_RELOAD_GUARD_KEY, '1');
+  } catch {
+    // sessionStorage unavailable (private mode etc.) — reload once anyway,
+    // no way to guard against a loop in that case.
+  }
+  window.location.reload();
+  return true;
+}
+
 // Retry wrapper for lazy imports - handles stale chunk errors after HMR/deployments
 function lazyWithRetry<T extends ComponentType<unknown>>(
   importFn: () => Promise<{ default: T }>,
@@ -20,26 +58,21 @@ function lazyWithRetry<T extends ComponentType<unknown>>(
       try {
         return await importFn();
       } catch (error) {
-        const isChunkError = 
-          error instanceof Error && 
-          (error.message.includes('Failed to fetch dynamically imported module') ||
-           error.message.includes('Loading chunk') ||
-           error.message.includes('Importing a module script failed'));
-        
+        const isChunkError = isStaleChunkError(error);
+
         if (isChunkError && attempt < retries) {
           // Wait briefly then retry
           await new Promise(resolve => setTimeout(resolve, 500));
           continue;
         }
-        
+
         // On final failure for chunk errors, force reload to get fresh chunks
-        if (isChunkError) {
+        if (isChunkError && reloadOnceForStaleChunk()) {
           console.warn('Chunk load failed after retries, reloading page...');
-          window.location.reload();
           // Return a dummy component while reload happens
           return { default: (() => null) as unknown as T };
         }
-        
+
         throw error;
       }
     }
@@ -58,10 +91,9 @@ class LazyErrorBoundary extends Component<{ children: ReactNode; fallback?: Reac
   }
   componentDidCatch(error: Error) {
     console.error('Lazy load error:', error);
-    // Auto-reload on chunk errors
-    if (error.message.includes('Failed to fetch dynamically imported module') ||
-        error.message.includes('Loading chunk')) {
-      window.location.reload();
+    // Auto-reload on chunk errors (same detection + one-shot guard as lazyWithRetry)
+    if (isStaleChunkError(error)) {
+      reloadOnceForStaleChunk();
     }
   }
   handleRetry = () => {
