@@ -1210,7 +1210,7 @@ const MobileLiveSales = () => {
         let salesOrdersQuery = supabase
           .from("sales_orders")
             .select(
-              "id, order_id, asin, sku, seller_sku, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, order_date, purchase_timestamp_utc, is_cancelled, is_replacement, order_status, order_type, marketplace, fulfillment_channel, referral_fee, fba_fee, closing_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, price_source, price_calc_mode, price_confidence, needs_price_enrich, price_enrich_status, shipping_label_fee, promotion_discount, promotion_discount_currency",
+              "id, order_id, asin, sku, seller_sku, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, order_date, purchase_timestamp_utc, is_cancelled, is_replacement, order_status, order_type, marketplace, fulfillment_channel, referral_fee, fba_fee, closing_fee, total_fees, fees_source, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, price_source, price_calc_mode, price_confidence, needs_price_enrich, price_enrich_status, shipping_label_fee, promotion_discount, promotion_discount_currency",
             )
           .eq("user_id", user.id)
           .gte("order_date", rangeStart)

@@ -871,7 +871,7 @@ const LiveSales = ({
         for (let from = 0; ; from += PAGE) {
           let q = supabase
             .from("sales_orders")
-            .select("id, order_id, asin, sku, seller_sku, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, marketplace, status, is_cancelled, order_status, order_type, price_source, price_calc_mode, referral_fee, fba_fee, closing_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, shipping_label_fee, fulfillment_channel, promotion_discount, promotion_discount_currency")
+            .select("id, order_id, asin, sku, seller_sku, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, marketplace, status, is_cancelled, order_status, order_type, price_source, price_calc_mode, referral_fee, fba_fee, closing_fee, total_fees, fees_source, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, total_cost, shipping_label_fee, fulfillment_channel, promotion_discount, promotion_discount_currency")
             .eq("user_id", user.id)
             .gte("order_date", rangeStart)
             .lte("order_date", rangeEnd)

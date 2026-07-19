@@ -8,14 +8,14 @@ const toUsd = (amount: number, mp?: string | null) => {
   return amount / r;
 };
 
-describe("getSalesOrderFeeBreakdownUsd — combined-total native-currency detection", () => {
-  it("converts multiple native-BRL fee components even when each is individually below the per-component threshold (real order 702-5229920-7869069)", () => {
-    // referral_fee=15.39 and fba_fee=2.87 are both native BRL (128.22 * 0.12
-    // referral rate = 15.39 exactly), but neither alone exceeds 70% of the
-    // $23.85 USD revenue. Their sum (18.26) is 77% of revenue and must be
-    // detected as native currency.
+describe("getSalesOrderFeeBreakdownUsd — fees_source-aware currency conversion", () => {
+  it("'from_cache': converts only referral_fee (native), leaves fba_fee/closing_fee as-is (already USD)", () => {
+    // Real order 702-5229920-7869069: referral_fee=15.39 (native BRL,
+    // 128.22 * 0.12 referral rate), fba_fee=2.87 (already USD, straight from
+    // asin_fee_cache.fba_fee_fixed per the writer contract).
     const row = {
       marketplace: "BR",
+      fees_source: "from_cache",
       referral_fee: 15.39,
       fba_fee: 2.87,
       closing_fee: 0,
@@ -24,42 +24,66 @@ describe("getSalesOrderFeeBreakdownUsd — combined-total native-currency detect
     const revenueUsd = 23.847784845441357;
     const result = getSalesOrderFeeBreakdownUsd(row, revenueUsd, toUsd);
 
-    // Correct conversion: 18.26 / 5.3766 ~= 3.396
-    expect(result.total).toBeCloseTo(18.26 / 5.3766, 2);
-    expect(result.total).toBeLessThan(revenueUsd * 0.3);
+    expect(result.referral).toBeCloseTo(15.39 / 5.3766, 3); // ~2.862
+    expect(result.fba).toBeCloseTo(2.87, 5); // unconverted
+    expect(result.total).toBeCloseTo(15.39 / 5.3766 + 2.87, 3); // ~5.73
     expect(getSalesOrderFeesUsd(row, revenueUsd, toUsd)).toBeCloseTo(result.total, 5);
   });
 
-  it("leaves genuinely small USD fee components unconverted", () => {
+  it("'fees_api': already USD, never converted even though componentTotal exceeds 70% of revenue", () => {
     const row = {
       marketplace: "BR",
-      referral_fee: 2.86,
-      fba_fee: 0.53,
+      fees_source: "fees_api",
+      referral_fee: 3.5,
+      fba_fee: 15.0, // deliberately large — must NOT be treated as native
       closing_fee: 0,
-      total_fees: 3.39,
+    };
+    const revenueUsd: number = 23.85;
+    const result = getSalesOrderFeeBreakdownUsd(row, revenueUsd, toUsd);
+    expect(result.total).toBeCloseTo(18.5, 5);
+  });
+
+  it("'fees_api_y8' (MX marketplace-id-suffixed variant): treated the same as 'fees_api'", () => {
+    const row = { marketplace: "BR", fees_source: "fees_api_y8", referral_fee: 3.5, fba_fee: 2.0, closing_fee: 0 };
+    const result = getSalesOrderFeeBreakdownUsd(row, 23.85, toUsd);
+    expect(result.total).toBeCloseTo(5.5, 5);
+  });
+
+  it("'learned_history' and 'learned_history_old': already USD, never converted", () => {
+    const row1 = { marketplace: "BR", fees_source: "learned_history", referral_fee: 3.5, fba_fee: 2.0, closing_fee: 0 };
+    const row2 = { marketplace: "BR", fees_source: "learned_history_old", referral_fee: 3.5, fba_fee: 2.0, closing_fee: 0 };
+    expect(getSalesOrderFeeBreakdownUsd(row1, 23.85, toUsd).total).toBeCloseTo(5.5, 5);
+    expect(getSalesOrderFeeBreakdownUsd(row2, 23.85, toUsd).total).toBeCloseTo(5.5, 5);
+  });
+
+  it("'financial_events' (settled): already USD, never converted", () => {
+    const row = { marketplace: "BR", fees_source: "financial_events", referral_fee: 3.5, fba_fee: 2.0, closing_fee: 0 };
+    const result = getSalesOrderFeeBreakdownUsd(row, 23.85, toUsd);
+    expect(result.total).toBeCloseTo(5.5, 5);
+  });
+
+  it("null/empty fees_source with real fee data: treated as already-USD (orders_itemprice success-branch writer)", () => {
+    const row = { marketplace: "BR", fees_source: null, referral_fee: 3.5, fba_fee: 2.0, closing_fee: 0 };
+    const result = getSalesOrderFeeBreakdownUsd(row, 23.85, toUsd);
+    expect(result.total).toBeCloseTo(5.5, 5);
+  });
+
+  it("unrecognized fees_source: falls back to combined-total magnitude heuristic", () => {
+    const row = {
+      marketplace: "BR",
+      fees_source: "some_future_unknown_source",
+      referral_fee: 15.39,
+      fba_fee: 2.87,
+      closing_fee: 0,
     };
     const revenueUsd = 23.85;
     const result = getSalesOrderFeeBreakdownUsd(row, revenueUsd, toUsd);
-    expect(result.total).toBeCloseTo(3.39, 2);
+    // componentTotal (18.26) > 70% of revenue -> whole row treated as native and converted
+    expect(result.total).toBeCloseTo(18.26 / 5.3766, 2);
   });
 
-  it("still converts a single implausibly large component (legacy per-component case)", () => {
-    // A single native-BRL referral fee of 20 exceeds 70% of the $23.85 USD
-    // revenue (16.695) on its own -- must still be caught and converted.
-    const row = {
-      marketplace: "BR",
-      referral_fee: 20,
-      fba_fee: 0,
-      closing_fee: 0,
-      total_fees: 20,
-    };
-    const revenueUsd = 23.85;
-    const result = getSalesOrderFeeBreakdownUsd(row, revenueUsd, toUsd);
-    expect(result.total).toBeCloseTo(20 / 5.3766, 2);
-  });
-
-  it("US marketplace fees are never converted", () => {
-    const row = { marketplace: "US", referral_fee: 15.39, fba_fee: 2.87, closing_fee: 0 };
+  it("US marketplace fees are never converted regardless of fees_source", () => {
+    const row = { marketplace: "US", fees_source: "from_cache", referral_fee: 15.39, fba_fee: 2.87, closing_fee: 0 };
     const result = getSalesOrderFeeBreakdownUsd(row, 23.85, toUsd);
     expect(result.total).toBeCloseTo(18.26, 2);
   });
