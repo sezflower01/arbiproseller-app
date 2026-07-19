@@ -2201,6 +2201,14 @@ const MobileLiveSales = () => {
             State + logic paths for "estimated" / "reconciled" remain intact so
             desktop and any legacy callers continue to work. */}
 
+        <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-400/20 px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-300 shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-snug text-amber-200/90">
+            <span className="font-semibold text-amber-200">Estimated gap: ~1–2%.</span>{" "}
+            Pending orders show an estimated price until Amazon confirms it — final figures are in your reconciled Profit &amp; Loss report.
+          </p>
+        </div>
+
         <div className="mb-4 flex items-center justify-between gap-0.5 rounded-xl bg-white/[0.04] border border-white/10 p-1">
           <button
             onClick={() => {
