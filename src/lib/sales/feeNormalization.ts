@@ -76,9 +76,24 @@ export const getSalesOrderFeeBreakdownUsd = (
   const componentTotal = referralRaw + fbaRaw + closingRaw;
 
   if (componentTotal > 0) {
-    const referral = normalizePossibleLocalFee(referralRaw, row.marketplace, revenueUsd, toUsd);
-    const fba = normalizePossibleLocalFee(fbaRaw, row.marketplace, revenueUsd, toUsd);
-    const closing = normalizePossibleLocalFee(closingRaw, row.marketplace, revenueUsd, toUsd);
+    // Decide ONCE from the COMBINED total whether these components are still
+    // in native currency. Checking each component individually (the previous
+    // behavior) has a blind spot: several native-currency fees can each be
+    // small enough on their own to look like a plausible USD value, even
+    // though their sum is clearly too large relative to revenue. Confirmed
+    // live on a BR order: referral_fee=15.39, fba_fee=2.87 (both native BRL,
+    // neither exceeding the old per-component 70%-of-revenue threshold on its
+    // own) summed to 18.26 -- 77% of the $23.85 USD revenue -- and were
+    // passed through unconverted, then inflated further by the learned fee
+    // multiplier to $23.65 (vs. the correct ~$4.40).
+    const treatAsLocal = isNonUsMarketplace(row.marketplace) && revenueUsd > 0 && componentTotal > revenueUsd * 0.7;
+    const convertComponent = (amount: number) => {
+      if (amount <= 0) return 0;
+      return treatAsLocal ? toUsd(amount, row.marketplace) : amount;
+    };
+    const referral = convertComponent(referralRaw);
+    const fba = convertComponent(fbaRaw);
+    const closing = convertComponent(closingRaw);
     return { referral, fba, closing, label: labelUsd, total: referral + fba + closing + labelUsd };
   }
 
