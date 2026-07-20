@@ -480,6 +480,20 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Auto-clear a stale needs_attention label. auto-assign-bulk sets this
+        // status when it can't complete activation (missing rule, cost, price,
+        // or bounds) and nothing ever re-checks it afterward -- so a listing
+        // that gets its rule/bounds filled in later (e.g. via manual edit or
+        // Sync Bounds) keeps showing "needs attention" forever even though it's
+        // evaluating fine. Reaching this point already proves rule (gate above)
+        // and bounds (base query requires min_price_override) are present, and
+        // spApiSuccess just confirmed a real, fetchable Amazon price -- the
+        // same three conditions auto-assign-bulk's gate required.
+        if (assignment.status === 'needs_attention' && assignment.max_price_override != null) {
+          supabase.from('repricer_assignments').update({ status: 'active' }).eq('id', assignmentId).then(() => {});
+          console.log(`[repricer-scheduler] ${asin}/${marketplace}: needs_attention cleared — rule+bounds+price confirmed present`);
+        }
+
         const buyboxPriceCents = spPricing.buyboxPrice ? Math.round(spPricing.buyboxPrice * 100) : null;
         const lowestFbaPriceCents = spPricing.lowestFbaPrice ? Math.round(spPricing.lowestFbaPrice * 100) : null;
         const lowestFbmPriceCents = spPricing.lowestFbmPrice ? Math.round(spPricing.lowestFbmPrice * 100) : null;
