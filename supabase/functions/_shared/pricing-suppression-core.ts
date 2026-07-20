@@ -237,44 +237,45 @@ export async function checkAndUpdateSuppressionForItem(params: {
         }).eq('id', a.id);
         action_taken = alreadySuppressed ? 'kept_suppressed' : 'detected';
       } else if (a.is_pricing_suppression) {
-        if (!a.pricing_suppression_pending_clear_at) {
-          await supabase.from('repricer_assignments').update({
-            ...unknownPatch,
-            pricing_suppression_pending_clear_at: new Date().toISOString(),
-            pricing_suppression_last_checked_at: new Date().toISOString(),
-          }).eq('id', a.id);
-          action_taken = 'pending_clear';
-        } else {
-          const clearedAt = new Date().toISOString();
-          await supabase.from('repricer_pricing_suppression_history').insert({
-            user_id: userId,
-            sku: a.sku,
-            asin: a.asin,
-            marketplace: marketplaceCode,
-            raw_code: a.pricing_suppression_raw_code,
-            raw_message: a.pricing_suppression_raw_message,
-            categories: a.pricing_suppression_categories,
-            enforcement_actions: a.pricing_suppression_enforcement_actions,
-            severity: a.pricing_suppression_severity,
-            was_pricing_suppression: true,
-            detected_at: a.pricing_suppression_detected_at || clearedAt,
-            cleared_at: clearedAt,
-          });
-          await supabase.from('repricer_assignments').update({
-            ...unknownPatch,
-            is_pricing_suppression: false,
-            pricing_suppression_raw_code: null,
-            pricing_suppression_raw_message: null,
-            pricing_suppression_categories: null,
-            pricing_suppression_enforcement_actions: null,
-            pricing_suppression_severity: null,
-            pricing_suppression_detected_at: null,
-            pricing_suppression_cleared_at: clearedAt,
-            pricing_suppression_pending_clear_at: null,
-            pricing_suppression_last_checked_at: clearedAt,
-          }).eq('id', a.id);
-          action_taken = 'cleared';
-        }
+        // Single-strike clear: one clean read (http 200, real summaries, no
+        // INVALID_PRICE+ERROR issue) is enough to clear immediately. The
+        // previous two-strike design staged a "pending clear" and required a
+        // SECOND separate clean read (up to a full day later via the nightly
+        // cron) before actually clearing -- meant to guard against a flaky
+        // API response falsely clearing a still-broken listing. Removed per
+        // explicit user decision: if the issue genuinely persists, the next
+        // detection pass re-flags it anyway (is_pricing_suppression=true,
+        // fresh detected_at), so the two-strike wait only added delay, not
+        // real protection.
+        const clearedAt = new Date().toISOString();
+        await supabase.from('repricer_pricing_suppression_history').insert({
+          user_id: userId,
+          sku: a.sku,
+          asin: a.asin,
+          marketplace: marketplaceCode,
+          raw_code: a.pricing_suppression_raw_code,
+          raw_message: a.pricing_suppression_raw_message,
+          categories: a.pricing_suppression_categories,
+          enforcement_actions: a.pricing_suppression_enforcement_actions,
+          severity: a.pricing_suppression_severity,
+          was_pricing_suppression: true,
+          detected_at: a.pricing_suppression_detected_at || clearedAt,
+          cleared_at: clearedAt,
+        });
+        await supabase.from('repricer_assignments').update({
+          ...unknownPatch,
+          is_pricing_suppression: false,
+          pricing_suppression_raw_code: null,
+          pricing_suppression_raw_message: null,
+          pricing_suppression_categories: null,
+          pricing_suppression_enforcement_actions: null,
+          pricing_suppression_severity: null,
+          pricing_suppression_detected_at: null,
+          pricing_suppression_cleared_at: clearedAt,
+          pricing_suppression_pending_clear_at: null,
+          pricing_suppression_last_checked_at: clearedAt,
+        }).eq('id', a.id);
+        action_taken = 'cleared';
       } else {
         await supabase.from('repricer_assignments').update({
           ...unknownPatch,

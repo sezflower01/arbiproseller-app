@@ -462,9 +462,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
                               />
                             </td>
                             <td className="px-2 py-1.5">
-                              {r.pricing_suppression_pending_clear_at
-                                ? <Badge variant="secondary" className="text-[10px]">Pending clear</Badge>
-                                : <Badge variant="destructive" className="text-[10px]">Suppressed</Badge>}
+                              <Badge variant="destructive" className="text-[10px]">Suppressed</Badge>
                               <div className="text-[10px] text-muted-foreground mt-0.5">
                                 {r.pricing_suppression_detected_at
                                   ? new Date(r.pricing_suppression_detected_at).toLocaleDateString()
@@ -504,7 +502,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
                 </div>
               ))}
               <div className="text-[11px] text-amber-900/70">
-                Raw Amazon issue codes and messages are stored verbatim. Detection = <code>categories</code> includes <code>INVALID_PRICE</code> AND <code>severity=ERROR</code>. Clearance requires two consecutive clean nightly reads.
+                Raw Amazon issue codes and messages are stored verbatim. Detection = <code>categories</code> includes <code>INVALID_PRICE</code> AND <code>severity=ERROR</code>. Clears on the next clean read (checked nightly, or immediately via Check now / Reactivate) — if the issue recurs, it's re-flagged on the following check.
               </div>
             </div>
           )}
