@@ -705,6 +705,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [lastRecommendationReason, setLastRecommendationReason] = useState<string | null>(null);
   const [assignmentStatus, setAssignmentStatus] = useState<string | null>(null);
+  const [needsAttentionReason, setNeedsAttentionReason] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<{
     isPriority?: boolean;
     lastSkipReason?: string | null;
@@ -994,7 +995,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
         (() => {
           let q = supabase
             .from("repricer_assignments")
-            .select("last_evaluated_at, last_sp_api_check_at, last_recommendation_reason, status, fulfillment_type, is_priority, last_skip_reason, last_skip_lane, last_skip_details, last_evaluation_attempt_at, min_fetch_interval_minutes, last_applied_price, last_buybox_price, consecutive_zero_offers, last_buybox_status, buybox_lost_at, last_trigger_source, last_data_source, last_throttle_at, min_price_override, max_price_override, updated_at, rule_id, oscillation_state, oscillation_cooldown_until, dispatch_reason")
+            .select("last_evaluated_at, last_sp_api_check_at, last_recommendation_reason, status, fulfillment_type, is_priority, last_skip_reason, last_skip_lane, last_skip_details, last_evaluation_attempt_at, min_fetch_interval_minutes, last_applied_price, last_buybox_price, consecutive_zero_offers, last_buybox_status, buybox_lost_at, last_trigger_source, last_data_source, last_throttle_at, min_price_override, max_price_override, updated_at, rule_id, oscillation_state, oscillation_cooldown_until, dispatch_reason, last_error_message")
             .eq("asin", asin)
             .eq("marketplace", marketplace);
           if (sku) q = q.eq("sku", sku);
@@ -1226,6 +1227,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
         setLastCheckedAt(assignmentRes.data.last_sp_api_check_at ?? assignmentRes.data.last_evaluated_at);
         setLastRecommendationReason(assignmentRes.data.last_recommendation_reason);
         setAssignmentStatus(assignmentRes.data.status);
+        setNeedsAttentionReason(assignmentRes.data.last_error_message ?? null);
 
         const baseInterval = assignmentRes.data.min_fetch_interval_minutes ?? 60;
         const lastAppliedPrice = assignmentRes.data.last_applied_price != null ? Number(assignmentRes.data.last_applied_price) : null;
@@ -1610,16 +1612,20 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
               <PauseCircle className="h-4 w-4 text-destructive shrink-0" />
               <div className="text-sm">
                 <span className="font-medium text-destructive">
-                  {effectiveStatus === 'paused_profit_guard' 
-                    ? 'Paused by Profit Guard' 
-                    : effectiveStatus === 'paused' 
+                  {effectiveStatus === 'paused_profit_guard'
+                    ? 'Paused by Profit Guard'
+                    : effectiveStatus === 'paused'
                       ? 'Manually Paused'
-                      : `Status: ${effectiveStatus}`}
+                      : effectiveStatus === 'needs_attention'
+                        ? 'Needs Attention'
+                        : `Status: ${effectiveStatus}`}
                 </span>
                 <span className="text-muted-foreground ml-1">
                   {effectiveStatus === 'paused_profit_guard'
                     ? '— The market price is below your cost floor.'
-                    : '— The scheduler is not actively checking this item.'}
+                    : effectiveStatus === 'needs_attention'
+                      ? `— ${needsAttentionReason || 'Setup was incomplete when this listing was added (missing rule, cost, price, or bounds).'} It's still checked normally and clears itself automatically once resolved — or click Resume to force it now.`
+                      : '— The scheduler is not actively checking this item.'}
                 </span>
               </div>
             </div>
