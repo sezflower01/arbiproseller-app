@@ -167,9 +167,21 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
   const runNow = async () => {
     setRunning(true);
     try {
-      const { data, error } = await supabase.functions.invoke("detect-pricing-suppressions", { body: {} });
+      // Queued + worker-drained instead of one direct bulk call — a single
+      // invocation looping a whole large catalog can hit a compute limit and
+      // crash partway through. This enqueues the check and kicks the worker
+      // once immediately for fast feedback; results land within the next
+      // several seconds as the worker processes the batch (already-suppressed
+      // rows are prioritized so clears surface quickly).
+      const { data, error } = await supabase.functions.invoke("trigger-pricing-suppression-check", { body: {} });
       if (error) throw error;
-      toast.success(`Checked ${data?.total_checked ?? 0} listings — ${data?.detected ?? 0} suppressed, ${data?.cleared ?? 0} cleared`);
+      const enqueued = data?.enqueued ?? 0;
+      const processed = data?.worker?.items_processed ?? 0;
+      toast.success(
+        enqueued > processed
+          ? `Queued ${enqueued} listings for re-check (${processed} processed so far — the rest finish within a minute).`
+          : `Checked ${processed || enqueued} listings.`
+      );
       await load();
     } catch (e: any) {
       toast.error(`Detection failed: ${e?.message || e}`);
