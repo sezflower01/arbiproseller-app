@@ -7,6 +7,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Real achievable capacity, now that repricer-sp-api-pricing enforces
+// Amazon's true getItemOffersBatch limit (0.1 req/s account-wide, 20
+// items/batch) via a cross-invocation DB gate (sp_api_rate_limit_state).
+// Theoretical ceiling: (3600s / 10.5s per batch) * 20 items ≈ 6,857/hr.
+// effectiveChecksPerHour previously derived from the user-configurable
+// sp_api_calls_per_minute_cap setting under a stale "no batching, ~2 raw
+// calls per check" model, which yielded ~900/hr -- far below what the
+// gate can now reliably sustain. This is decoupled from that setting
+// because the gate (not this estimate) is what actually enforces the
+// ceiling; ~15% margin below theoretical covers retries/overhead.
+const REAL_BATCH_MIN_GAP_MS = 10_500;
+const REAL_BATCH_SIZE = 20;
+const EFFECTIVE_CHECKS_PER_HOUR = Math.floor((3_600_000 / REAL_BATCH_MIN_GAP_MS) * REAL_BATCH_SIZE * 0.85);
+
 function isLegacyAnonCronCall(req: Request): boolean {
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
   const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -703,7 +717,7 @@ async function scoreAllCandidates(
   if (noRule > 0) {
     console.log(`[unified-dispatch] ${userId}: ${noRule} assignments skipped (no rule or min_price or restricted), restricted=${restrictedCount}`);
   }
-  const effectiveChecksPerHour = (cap / 2) * 60;
+  const effectiveChecksPerHour = EFFECTIVE_CHECKS_PER_HOUR;
   const capacityRatio = withRule.length / Math.max(effectiveChecksPerHour, 1);
   const overCapacity = capacityRatio > 1;
   const severeOverCapacity = capacityRatio > 1.1;
@@ -1406,7 +1420,7 @@ async function scoreAllCandidates(
         let cooldownMin = 20;
         if (constraint === 'no_competitors') {
           // ── DYNAMIC CAPACITY-AWARE BACKOFF for no_competitors ──
-          const effectiveChecksPerHour = (cap / 2) * 60;
+          const effectiveChecksPerHour = EFFECTIVE_CHECKS_PER_HOUR;
           const capacityRatio = withRule.length / Math.max(effectiveChecksPerHour, 1);
           const baseBackoff = Math.max(30, Math.min(90, Math.round(capacityRatio * 60)));
           const mktFactor = a.marketplace === primaryMarketplace ? 1.0 : 1.3;

@@ -85,6 +85,94 @@ async function acquireKeepaGlobalSlot(supabase: any, usageDate: string): Promise
   return { ok: false, waitSeconds: Math.ceil(waitMs / 1000) };
 }
 
+// Cross-invocation SP-API rate-limit gate. Amazon enforces these per
+// seller-account (shared across all 4 NA marketplaces, not per-marketplace):
+//   getItemOffersBatch: 0.1 req/s, burst 1, max 20 items/batch
+//   getItemOffers (single, non-batch): 0.5 req/s, burst 1
+// Multiple concurrent callers (two staggered cron shards x 4 marketplaces)
+// have no shared awareness of each other without this gate, so real calls
+// can run far faster than Amazon allows -- this is the actual cause of the
+// account's QuotaExceeded retries and its artificially low configured
+// capacity. Claim pattern mirrors acquireKeepaGlobalSlot above.
+const SP_API_MIN_GAP_MS: Record<string, number> = {
+  getItemOffersBatch: 10_500,
+  getItemOffers: 2_100,
+};
+
+async function acquireSpApiSlot(
+  supabase: any,
+  userId: string,
+  operation: string,
+): Promise<{ ok: boolean; waitMs: number }> {
+  const minGapMs = SP_API_MIN_GAP_MS[operation] ?? 10_500;
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const thresholdIso = new Date(now.getTime() - minGapMs).toISOString();
+
+  const claimOld = await supabase
+    .from('sp_api_rate_limit_state')
+    .update({ last_called_at: nowIso })
+    .eq('user_id', userId)
+    .eq('operation', operation)
+    .lt('last_called_at', thresholdIso)
+    .select('user_id')
+    .maybeSingle();
+  if (claimOld.data) return { ok: true, waitMs: 0 };
+
+  const claimNull = await supabase
+    .from('sp_api_rate_limit_state')
+    .update({ last_called_at: nowIso })
+    .eq('user_id', userId)
+    .eq('operation', operation)
+    .is('last_called_at', null)
+    .select('user_id')
+    .maybeSingle();
+  if (claimNull.data) return { ok: true, waitMs: 0 };
+
+  const insertAttempt = await supabase
+    .from('sp_api_rate_limit_state')
+    .insert({ user_id: userId, operation, last_called_at: nowIso })
+    .select('user_id')
+    .maybeSingle();
+  if (insertAttempt.data) return { ok: true, waitMs: 0 };
+
+  const { data: latest } = await supabase
+    .from('sp_api_rate_limit_state')
+    .select('last_called_at')
+    .eq('user_id', userId)
+    .eq('operation', operation)
+    .maybeSingle();
+
+  const elapsedMs = latest?.last_called_at ? now.getTime() - new Date(latest.last_called_at).getTime() : 0;
+  const waitMs = Math.max(250, minGapMs - Math.max(0, elapsedMs));
+  return { ok: false, waitMs };
+}
+
+// Deliberately a SHORT max wait, not a long one. Callers like
+// repricer-unified-dispatch run multiple marketplace streams concurrently,
+// awaiting each batch's full round trip before moving to the next -- if this
+// blocked for the full ~10.5s gap on every contended call, a single
+// invocation would burn its whole execution budget waiting instead of
+// dispatching, and could get killed mid-run with no graceful fallback.
+// Fail fast instead: a batch that can't get a slot right now just skips
+// this cycle and gets picked up on the next cron tick (~1-3 min later) --
+// nothing is lost, only deferred, matching how backoff already works
+// elsewhere in this pipeline.
+async function waitForSpApiSlot(
+  supabase: any,
+  userId: string,
+  operation: string,
+  maxWaitMs = 2_000,
+): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (true) {
+    const slot = await acquireSpApiSlot(supabase, userId, operation);
+    if (slot.ok) return true;
+    if (Date.now() + slot.waitMs > deadline) return false;
+    await new Promise((r) => setTimeout(r, Math.min(slot.waitMs, 3_000)));
+  }
+}
+
 // Keepa API fallback for when SP-API is throttled
 async function fetchKeepaFallback(
   asin: string,
@@ -594,6 +682,13 @@ Deno.serve(async (req) => {
       let batchData: any;
       const MAX_BATCH_RETRIES = 2;
       for (let attempt = 0; attempt <= MAX_BATCH_RETRIES; attempt++) {
+        const gotSlot = await waitForSpApiSlot(supabase, userId!, 'getItemOffersBatch');
+        if (!gotSlot) {
+          console.warn(`[batch] rate_limit_slot_timeout for ${batchMarketplace}`);
+          return new Response(JSON.stringify({ success: false, error: 'rate_limit_slot_timeout' }), {
+            status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         batchResponse = await signedFetchPost(batchUrl, batchAccessToken, batchBody);
         batchData = await batchResponse.json();
         if (batchResponse.ok) break;
@@ -868,6 +963,7 @@ Deno.serve(async (req) => {
       endpoint,
       maxRetries: effectiveMaxRetries,
       supabase,
+      userId,
       lane: lane || 'COLD',
       isPriority: is_priority || false,
       lastSnapshotAgeMinutes: last_snapshot_age_minutes,
@@ -1004,6 +1100,7 @@ async function fetchCompetitivePricing(params: {
   endpoint: string;
   maxRetries?: number;
   supabase?: any;
+  userId?: string;
   lane?: string;
   isPriority?: boolean;
   lastSnapshotAgeMinutes?: number;
@@ -1026,7 +1123,7 @@ async function fetchCompetitivePricing(params: {
   pricingSource?: 'sp-api' | 'keepa' | 'empty';
   keepaNote?: string;
 }> {
-  const { asin, accessToken, marketplaceId, endpoint, maxRetries = 2 } = params;
+  const { asin, accessToken, marketplaceId, endpoint, maxRetries = 2, supabase, userId } = params;
   const itemCondition = params.itemCondition || 'New';
 
   const path = `/products/pricing/v0/items/${asin}/offers`;
@@ -1037,8 +1134,20 @@ async function fetchCompetitivePricing(params: {
   const MAX_RETRIES = maxRetries;
   let response: Response | null = null;
   let data: any = null;
-  
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (supabase && userId) {
+      const gotSlot = await waitForSpApiSlot(supabase, userId, 'getItemOffers');
+      if (!gotSlot) {
+        console.warn(`[fetchCompetitivePricing] rate_limit_slot_timeout for ${asin}`);
+        return {
+          buyboxPrice: null, buyboxSellerId: null, buyboxSellerType: null, buyboxIsFba: null,
+          isBuyboxEligible: false, bbSource: 'missing', lowestFbaPrice: null, lowestFbmPrice: null,
+          lowestOverallPrice: null, fbaOfferCount: 0, fbmOfferCount: 0, totalOfferCount: 0,
+          amazonSelling: false, offerBreakdown: [], pricingSource: 'empty', keepaNote: 'rate_limit_slot_timeout',
+        };
+      }
+    }
     response = await signedFetch(url, accessToken);
     data = await response.json();
     
