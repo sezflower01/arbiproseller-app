@@ -30,7 +30,7 @@ function forbid(status: number, msg: string): Response {
   });
 }
 
-function isInternalCaller(req: Request): boolean {
+export function isInternalCaller(req: Request): boolean {
   const secret = Deno.env.get("INTERNAL_SYNC_SECRET") ?? "";
   const provided = req.headers.get("x-internal-secret") ?? "";
   if (secret && provided && provided === secret) return true;

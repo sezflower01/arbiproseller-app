@@ -141,6 +141,68 @@ Deno.serve(async (req) => {
       return severity === 'ERROR' && issueActions(issue).includes('LISTING_SUPPRESSED');
     });
 
+    // This is a live, user-triggered check (the "Reactivate" button). Before
+    // this fix it was purely read-only -- even a confirmed clean read never
+    // touched repricer_assignments, so a listing the user actually fixed
+    // stayed stuck showing "Suppressed" until someone separately ran
+    // detect-pricing-suppressions (which only runs when a user clicks
+    // "Check now" on the suppressions panel, not from here). Feed a clean
+    // read into the SAME two-strike clear state machine detect-pricing-
+    // suppressions uses, so Reactivate can actually progress/finish clearing
+    // the flag instead of being purely informational.
+    if (response.ok && !isPricingSuppressed) {
+      try {
+        const { data: assignment } = await supabase
+          .from('repricer_assignments')
+          .select('id, is_pricing_suppression, pricing_suppression_pending_clear_at, pricing_suppression_detected_at, pricing_suppression_raw_code, pricing_suppression_raw_message, pricing_suppression_categories, pricing_suppression_enforcement_actions, pricing_suppression_severity')
+          .eq('user_id', user.id)
+          .eq('sku', sku)
+          .eq('marketplace', marketplace)
+          .maybeSingle();
+
+        if (assignment?.is_pricing_suppression) {
+          if (!assignment.pricing_suppression_pending_clear_at) {
+            await supabase.from('repricer_assignments').update({
+              pricing_suppression_pending_clear_at: new Date().toISOString(),
+              pricing_suppression_last_checked_at: new Date().toISOString(),
+            }).eq('id', assignment.id);
+          } else {
+            const clearedAt = new Date().toISOString();
+            await supabase.from('repricer_pricing_suppression_history').insert({
+              user_id: user.id,
+              sku,
+              asin: asin ?? null,
+              marketplace,
+              raw_code: assignment.pricing_suppression_raw_code,
+              raw_message: assignment.pricing_suppression_raw_message,
+              categories: assignment.pricing_suppression_categories,
+              enforcement_actions: assignment.pricing_suppression_enforcement_actions,
+              severity: assignment.pricing_suppression_severity,
+              was_pricing_suppression: true,
+              detected_at: assignment.pricing_suppression_detected_at || clearedAt,
+              cleared_at: clearedAt,
+            });
+            await supabase.from('repricer_assignments').update({
+              is_pricing_suppression: false,
+              pricing_suppression_raw_code: null,
+              pricing_suppression_raw_message: null,
+              pricing_suppression_categories: null,
+              pricing_suppression_enforcement_actions: null,
+              pricing_suppression_severity: null,
+              pricing_suppression_detected_at: null,
+              pricing_suppression_cleared_at: clearedAt,
+              pricing_suppression_pending_clear_at: null,
+              pricing_suppression_last_checked_at: clearedAt,
+            }).eq('id', assignment.id);
+          }
+        }
+      } catch (clearErr: any) {
+        console.error('[verify-listing-pricing] clear-state update failed:', clearErr?.message || clearErr);
+        // Non-fatal -- the live verification result below is still returned;
+        // nightly detection will pick up the clear on its next pass either way.
+      }
+    }
+
     return new Response(JSON.stringify({
       success: response.ok,
       httpStatus: response.status,

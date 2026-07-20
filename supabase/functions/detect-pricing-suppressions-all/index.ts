@@ -2,14 +2,18 @@
 // and invokes detect-pricing-suppressions per user with a small stagger.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { requireInternalCall } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
 };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  const forbidden = requireInternalCall(req);
+  if (forbidden) return forbidden;
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

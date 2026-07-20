@@ -16,6 +16,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from 'https://deno.land/std@0.177.0/node/crypto.ts';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -185,12 +186,18 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const targetUserId: string | null = body?.user_id ? String(body.user_id) : null;
 
-    // Auth: either service-role invocation with body.user_id (from fan-out cron)
-    // or an authenticated user request (self).
-    let userId = targetUserId;
-    if (!userId) {
+    // Auth: body.user_id is only trusted from an internal caller (the
+    // detect-pricing-suppressions-all fan-out cron, verified via
+    // x-internal-secret or service-role Bearer). Anyone else must be an
+    // authenticated user acting on their own account — a prior version
+    // trusted body.user_id unconditionally, letting any caller run
+    // detection (and Amazon SP-API calls + repricer_assignments writes)
+    // against an arbitrary user's account.
+    let userId: string;
+    if (body?.user_id && isInternalCaller(req)) {
+      userId = String(body.user_id);
+    } else {
       const authHeader = req.headers.get('Authorization');
       if (!authHeader) throw new Error('Missing authorization');
       const jwt = authHeader.replace('Bearer ', '');
@@ -217,14 +224,19 @@ Deno.serve(async (req) => {
       const sellerId = auth.seller_id || auth.selling_partner_id;
       if (!sellerId) return;
 
+      // Normal detection needs is_enabled+rule_id (only actively-repriced SKUs
+      // get NEW suppressions flagged). But a row ALREADY marked suppressed must
+      // stay eligible for re-check regardless of enabled/rule_id state, or it
+      // can never self-clear once disabled (e.g. the repricer paused it because
+      // it was suppressed in the first place) -- confirmed live: this exact gap
+      // was leaving fixed listings stuck showing as suppressed indefinitely.
       const { data: assignments } = await supabase
         .from('repricer_assignments')
         .select('id, sku, asin, marketplace, is_pricing_suppression, pricing_suppression_pending_clear_at, pricing_suppression_detected_at, pricing_suppression_raw_code, pricing_suppression_raw_message, pricing_suppression_categories, pricing_suppression_enforcement_actions, pricing_suppression_severity')
         .eq('user_id', userId)
         .eq('marketplace', mp.code)
-        .eq('is_enabled', true)
-        .not('rule_id', 'is', null)
-        .not('sku', 'is', null);
+        .not('sku', 'is', null)
+        .or('and(is_enabled.eq.true,rule_id.not.is.null),is_pricing_suppression.eq.true');
 
       const list = assignments || [];
       if (list.length === 0) return;
