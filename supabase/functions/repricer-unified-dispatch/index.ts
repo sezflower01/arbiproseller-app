@@ -201,7 +201,12 @@ async function processUser(
   const windowStart = setting.sp_api_window_start ? new Date(setting.sp_api_window_start).getTime() : 0;
   const windowAge = (Date.now() - windowStart) / 1000;
   let callsThisWindow = setting.sp_api_calls_this_window || 0;
-  const cap = setting.sp_api_calls_per_minute_cap || 30;
+  // Default matches EFFECTIVE_CHECKS_PER_HOUR (the gate-verified real ceiling),
+  // not the old stale 30/min value -- that number directly caps how many
+  // items maxDispatch (below) selects per cycle, and with ~1700+ eligible
+  // candidates competing, 30/min meant most items simply never got a turn
+  // regardless of how much real Amazon throughput was available.
+  const cap = setting.sp_api_calls_per_minute_cap || Math.round(EFFECTIVE_CHECKS_PER_HOUR / 60);
 
   if (windowAge >= RATE_WINDOW_SECONDS) {
     callsThisWindow = 0;

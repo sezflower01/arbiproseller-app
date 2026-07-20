@@ -182,7 +182,12 @@ Deno.serve(async (req) => {
         repricer_rules!repricer_assignments_rule_id_fkey(*)
       `)
       .eq('user_id', userId)
-      .eq('status', 'active')
+      // needs_attention is dispatch-eligible (unified-dispatch already treats it
+      // that way via .in('status', ['active','needs_attention'])) -- this query
+      // used to hardcode 'active' only, so any needs_attention assignment sent
+      // here by ID (via assignment_ids) silently matched zero rows and was
+      // never evaluated, no matter how many times it got dispatched.
+      .in('status', ['active', 'needs_attention'])
       .not('min_price_override', 'is', null)
       .gt('min_price_override', 0)
       .order('last_sp_api_check_at', { ascending: true, nullsFirst: true });
