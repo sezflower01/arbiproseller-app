@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { computeReplenishmentBreakdown, type ReplenishmentBreakdown } from "@/lib/replenishment";
@@ -16,6 +16,14 @@ import ReorderPlanningPanel, {
 } from "@/components/inventory/ReorderPlanningPanel";
 import { calculateEstimatedFeesFromCache } from "@/lib/salesCalculations";
 
+// Deliberately narrower than the canonical public.is_ghost_inventory_row()
+// SQL function used elsewhere (active_inventory / active_created_listings):
+// that function also treats zero-stock + non-"ACTIVE" listing_status as a
+// ghost, which is right for a general inventory view but wrong here -- this
+// page's entire purpose is surfacing real items that are *currently out of
+// stock* and need restocking, and listing_status isn't reliably kept fresh
+// enough to gate that safely. Only exclude rows that are definitively,
+// explicitly confirmed dead.
 const isHiddenInSyncedInventory = (item: { listing_status?: string | null; sku?: string | null }) => {
   const ls = (item.listing_status || "").toUpperCase();
   return ls === "NOT_IN_CATALOG" || ls === "DELETED" || (item.sku || "").toLowerCase().startsWith("amzn.gr.");
@@ -87,6 +95,8 @@ export default function NeedBuyAgain() {
   const [reorderStatusFilter, setReorderStatusFilter] = useState<"all" | "now" | "soon" | "low">("all");
   const [minRoiFilter, setMinRoiFilter] = useState<"all" | "0" | "10" | "20" | "30" | "50">("all");
   const [hideNegativeRoi, setHideNegativeRoi] = useState(false);
+  const [imagesEnriching, setImagesEnriching] = useState(false);
+  const imageEnrichAttemptedRef = useRef(false);
 
   // Load saved settings (or fall back to defaults)
   useEffect(() => {
@@ -436,6 +446,36 @@ export default function NeedBuyAgain() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, settingsLoaded]);
 
+  // Every ASIN shown here should have a real product image, not the generic
+  // package-icon placeholder. Once the list loads, quietly fetch any missing
+  // images from Amazon's catalog for exactly the ASINs on screen (bounded to
+  // this list, not an account-wide scan) and refresh in place. Runs once per
+  // successful load -- the refetch below re-populates `items`, which would
+  // otherwise re-trigger this effect in a loop.
+  useEffect(() => {
+    if (!lastFetchedAt || imageEnrichAttemptedRef.current || items.length === 0) return;
+    const missingImageAsins = [...new Set(items.filter((i) => !i.image_url).map((i) => i.asin))];
+    if (missingImageAsins.length === 0) return;
+    imageEnrichAttemptedRef.current = true;
+    (async () => {
+      setImagesEnriching(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("enrich-missing-titles", {
+          body: { asins: missingImageAsins },
+        });
+        if (error) throw error;
+        if ((data as any)?.enriched > 0) {
+          await fetchReplenishData();
+        }
+      } catch (err) {
+        console.error("Failed to enrich missing images:", err);
+      } finally {
+        setImagesEnriching(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastFetchedAt]);
+
   const handleSettingsChange = (next: ReorderPlanningSettings) => {
     setSettings(next);
     fetchReplenishData(next);
@@ -461,6 +501,12 @@ export default function NeedBuyAgain() {
               {!loading && (
                 <span className="text-sm font-normal text-muted-foreground">
                   ({items.length} items)
+                </span>
+              )}
+              {imagesEnriching && (
+                <span className="text-xs font-normal text-muted-foreground inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Fetching missing images…
                 </span>
               )}
             </div>

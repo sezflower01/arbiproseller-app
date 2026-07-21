@@ -201,7 +201,14 @@ Deno.serve(async (req) => {
     }
 
     const limit = body.limit || 50;
-    console.log(`[ENRICH_TITLES] Starting for user ${userId}, limit ${limit}`);
+    // Optional: target a specific, caller-supplied ASIN list (e.g. exactly the
+    // rows showing on a page right now) instead of an account-wide scan for
+    // bad titles. Any state (title/image already fine or not) is eligible --
+    // the caller already knows these specific rows need enrichment.
+    const rawAsins: unknown[] = Array.isArray(body.asins) ? body.asins : [];
+    const cleanedAsins = rawAsins.filter((a): a is string => typeof a === 'string' && a.length > 0);
+    const targetAsins: string[] | null = cleanedAsins.length > 0 ? [...new Set(cleanedAsins)] : null;
+    console.log(`[ENRICH_TITLES] Starting for user ${userId}, limit ${limit}, targetAsins=${targetAsins?.length ?? 'none'}`);
 
     // Get global refresh token
     const refreshToken = Deno.env.get('SPAPI_REFRESH_TOKEN');
@@ -211,27 +218,30 @@ Deno.serve(async (req) => {
       throw new Error('SPAPI_REFRESH_TOKEN not configured');
     }
 
-    // Find inventory items with missing or placeholder titles
-    const { data: missingTitleItems, error: fetchError } = await supabase
+    // Find inventory items to enrich: either the caller's specific ASIN list,
+    // or (default, backward-compatible) items with missing/placeholder titles.
+    let itemsQuery = supabase
       .from('inventory')
       .select('id, asin, sku, title, image_url')
-      .eq('user_id', userId)
-      .or('title.is.null,title.eq.,title.ilike.%unknown%,title.ilike.%untitled%')
-      .limit(limit);
+      .eq('user_id', userId);
+    itemsQuery = targetAsins
+      ? itemsQuery.in('asin', targetAsins)
+      : itemsQuery.or('title.is.null,title.eq.,title.ilike.%unknown%,title.ilike.%untitled%').limit(limit);
+    const { data: missingTitleItems, error: fetchError } = await itemsQuery;
 
     if (fetchError) {
       throw new Error(`Failed to fetch items: ${fetchError.message}`);
     }
 
     if (!missingTitleItems || missingTitleItems.length === 0) {
-      console.log('[ENRICH_TITLES] No items with missing titles found');
+      console.log('[ENRICH_TITLES] No items found to enrich');
       return new Response(
-        JSON.stringify({ success: true, enriched: 0, message: 'No items with missing titles' }),
+        JSON.stringify({ success: true, enriched: 0, message: 'No items to enrich' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[ENRICH_TITLES] Found ${missingTitleItems.length} items with missing/placeholder titles`);
+    console.log(`[ENRICH_TITLES] Found ${missingTitleItems.length} items to enrich`);
 
     // Get access token
     const accessToken = await getLwaAccessToken(refreshToken);
@@ -250,15 +260,18 @@ Deno.serve(async (req) => {
 
       try {
         const { title, imageUrl } = await fetchCatalogTitle(item.asin, accessToken, marketplaceId);
-        
-        if (title) {
-          const updateData: any = { title };
-          
-          // Also update image if missing
-          if (imageUrl && (!item.image_url || item.image_url === '')) {
-            updateData.image_url = imageUrl;
-          }
 
+        // Title and image are independent -- a catalog lookup can return an
+        // image even when title fetch/parsing comes back empty (or the item
+        // already has a fine title and only the image was missing).
+        const updateData: any = {};
+        const needsTitle = !item.title || /unknown|untitled/i.test(item.title);
+        if (title && needsTitle) updateData.title = title;
+        if (imageUrl && (!item.image_url || item.image_url === '')) {
+          updateData.image_url = imageUrl;
+        }
+
+        if (Object.keys(updateData).length > 0) {
           const { error: updateError } = await supabase
             .from('inventory')
             .update(updateData)
@@ -268,10 +281,10 @@ Deno.serve(async (req) => {
             console.error(`[ENRICH_TITLES] Failed to update ${item.asin}:`, updateError);
           } else {
             enrichedCount++;
-            console.log(`[ENRICH_TITLES] Updated ${item.asin}: "${title.substring(0, 50)}..."`);
+            console.log(`[ENRICH_TITLES] Updated ${item.asin}:`, Object.keys(updateData).join(', '));
           }
         } else {
-          console.log(`[ENRICH_TITLES] No title found for ${item.asin}`);
+          console.log(`[ENRICH_TITLES] No new data found for ${item.asin}`);
           skippedCount++;
         }
 
