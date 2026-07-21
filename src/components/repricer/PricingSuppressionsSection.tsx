@@ -37,6 +37,25 @@ interface Props {
   isAdmin: boolean;
 }
 
+// Amazon's raw issue category codes, translated to plain language for display.
+// Any code not listed here falls back to a humanized version of the code
+// itself (underscores -> spaces, title case) rather than showing it verbatim.
+const CATEGORY_LABELS: Record<string, string> = {
+  INVALID_PRICE: "Price flagged as invalid",
+  INVALID_ATTRIBUTE: "Listing detail needs fixing",
+  MISSING_ATTRIBUTE: "Missing required listing info",
+  QUALIFICATION_REQUIRED: "Requires seller qualification",
+};
+
+function humanizeCategory(code: string): string {
+  if (CATEGORY_LABELS[code]) return CATEGORY_LABELS[code];
+  return code
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 const AMAZON_DOMAIN: Record<string, string> = {
   US: 'https://www.amazon.com',
   CA: 'https://www.amazon.ca',
@@ -455,17 +474,19 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
                                 </a>
                               ) : "—"}
                             </td>
-                            <td className="px-2 py-1.5">
-                              <div className="flex flex-wrap gap-1">
-                                {(r.pricing_suppression_categories || []).map((c) => (
-                                  <Badge key={c} variant={c === "INVALID_PRICE" ? "destructive" : "secondary"} className="text-[10px]">{c}</Badge>
-                                ))}
-                              </div>
+                            <td className="px-2 py-1.5 max-w-xs">
                               {r.pricing_suppression_raw_message && (
-                                <div className="text-[10px] text-muted-foreground mt-0.5 max-w-xs truncate" title={r.pricing_suppression_raw_message}>
+                                <div className="text-xs text-amber-950">
                                   {r.pricing_suppression_raw_message}
                                 </div>
                               )}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {(r.pricing_suppression_categories || []).map((c) => (
+                                  <Badge key={c} variant={c === "INVALID_PRICE" ? "destructive" : "secondary"} className="text-[10px] font-normal">
+                                    {humanizeCategory(c)}
+                                  </Badge>
+                                ))}
+                              </div>
                             </td>
                             <td className="px-2 py-1.5">
                               <Input
@@ -544,7 +565,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
                 </div>
               ))}
               <div className="text-[11px] text-amber-900/70">
-                Raw Amazon issue codes and messages are stored verbatim. Detection = <code>categories</code> includes <code>INVALID_PRICE</code> AND <code>severity=ERROR</code>. Clears on the next clean read (checked nightly, or immediately via Check now / Reactivate) — if the issue recurs, it's re-flagged on the following check.
+                These are listings Amazon flagged with a pricing error. They clear automatically on the next clean check (run nightly, or immediately via Check now / Reactivate) — if the issue recurs, it's flagged again on the following check.
               </div>
             </div>
           )}
