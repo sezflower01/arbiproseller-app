@@ -475,7 +475,22 @@ export default function InventoryReview() {
                       const isBusy = busyId === r.id;
                       return (
                         <TableRow key={r.id}>
-                          <TableCell className="font-mono text-xs">{r.asin ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {r.asin ? (
+                              <a
+                                href={`https://www.amazon.com/dp/${r.asin}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline inline-flex items-center gap-1"
+                                title="Open this ASIN on Amazon"
+                              >
+                                {r.asin}
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
                           <TableCell className="font-mono text-xs">{r.sku ?? "—"}</TableCell>
                           <TableCell className="text-xs">{r.marketplace ?? "—"}</TableCell>
                           <TableCell className="text-xs max-w-[220px] truncate" title={r.reason ?? ""}>
