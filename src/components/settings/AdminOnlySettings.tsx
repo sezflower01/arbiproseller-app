@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -119,20 +119,6 @@ const STANDALONE_CARDS: StandaloneCard[] = [
     Icon: Search,
     accent: "from-blue-500/15 to-cyan-500/5 border-blue-400/30 text-blue-300",
   },
-  {
-    title: "Price History",
-    desc: "Track ASIN price changes over time with charts.",
-    path: "/tools/price-history",
-    Icon: LineChart,
-    accent: "from-purple-500/15 to-indigo-500/5 border-purple-400/30 text-purple-300",
-  },
-  {
-    title: "Health Center",
-    desc: "System Error Log — review flagged customer patterns (refunds, replacements, high volume + returns).",
-    path: "/tools/error-log",
-    Icon: HeartPulse,
-    accent: "from-red-500/15 to-rose-500/5 border-red-400/30 text-red-300",
-  },
 ];
 
 // The entire former "Sourcing & Product Research" category, moved as a group.
@@ -248,6 +234,88 @@ const CALCULATOR_CARDS: StandaloneCard[] = [
     path: "/tools/target-roi-price",
     Icon: Target,
     accent: "from-amber-500/15 to-yellow-500/5 border-amber-400/30 text-amber-300",
+  },
+];
+
+// Repricer admin tools -- moved out of the Repricer page's own tab bar so
+// Assignments/Rules/Settings stay the only tabs everyone sees there.
+const REPRICER_ADMIN_CARDS: StandaloneCard[] = [
+  {
+    title: "Activity Log",
+    desc: "Recent repricer scheduler and dispatch activity for your account.",
+    path: "/tools/repricer/activity-log",
+    Icon: Activity,
+    accent: "from-slate-500/15 to-zinc-500/5 border-slate-400/30 text-slate-300",
+  },
+  {
+    title: "Price History",
+    desc: "Review every automated price change the repricer has made over time.",
+    path: "/tools/price-history",
+    Icon: LineChart,
+    accent: "from-purple-500/15 to-indigo-500/5 border-purple-400/30 text-purple-300",
+  },
+  {
+    title: "AI Insights",
+    desc: "See the Smart Engine's reasoning behind recent pricing decisions.",
+    path: "/tools/ai-insights",
+    Icon: Brain,
+    accent: "from-fuchsia-500/15 to-purple-500/5 border-fuchsia-400/30 text-fuchsia-300",
+  },
+  {
+    title: "Change History",
+    desc: "A history of rule and settings changes made across your repricer.",
+    path: "/tools/repricer/change-history",
+    Icon: FileText,
+    accent: "from-blue-500/15 to-indigo-500/5 border-blue-400/30 text-blue-300",
+  },
+  {
+    title: "Rule Behavior",
+    desc: "How each rule is actually behaving in production.",
+    path: "/tools/repricer/rule-behavior",
+    Icon: FlaskConical,
+    accent: "from-violet-500/15 to-purple-500/5 border-violet-400/30 text-violet-300",
+  },
+  {
+    title: "Checked ASINs",
+    desc: "ASINs the repricer has evaluated most recently.",
+    path: "/tools/repricer/checked-asins",
+    Icon: Search,
+    accent: "from-cyan-500/15 to-blue-500/5 border-cyan-400/30 text-cyan-300",
+  },
+  {
+    title: "Simulation",
+    desc: "Test how a rule would behave before applying it live.",
+    path: "/tools/repricer/simulation",
+    Icon: TestTubes,
+    accent: "from-teal-500/15 to-cyan-500/5 border-teal-400/30 text-teal-300",
+  },
+  {
+    title: "Account Control",
+    desc: "Account-level repricer controls and overrides.",
+    path: "/tools/repricer/account-control",
+    Icon: Users,
+    accent: "from-rose-500/15 to-pink-500/5 border-rose-400/30 text-rose-300",
+  },
+  {
+    title: "Error Log",
+    desc: "System Error Log -- review flagged customer patterns (refunds, replacements, high volume + returns).",
+    path: "/tools/error-log",
+    Icon: HeartPulse,
+    accent: "from-red-500/15 to-rose-500/5 border-red-400/30 text-red-300",
+  },
+  {
+    title: "Analytics",
+    desc: "Preset queries to measure engine health, optimization impact, and business outcomes.",
+    path: "/tools/repricer/analytics",
+    Icon: TrendingUp,
+    accent: "from-emerald-500/15 to-green-500/5 border-emerald-400/30 text-emerald-300",
+  },
+  {
+    title: "Smart Engine",
+    desc: "Smart Engine self-review and learning over time.",
+    path: "/tools/repricer/smart-engine",
+    Icon: Sparkles,
+    accent: "from-indigo-500/15 to-blue-500/5 border-indigo-400/30 text-indigo-300",
   },
 ];
 
@@ -413,6 +481,14 @@ export default function AdminOnlySettings() {
 
       <section>
         <CardGrid cards={STANDALONE_CARDS} />
+      </section>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white">Repricer</h3>
+          <p className="text-sm text-gray-400">Diagnostics and internal tools moved out of the Repricer page's own tabs.</p>
+        </header>
+        <CardGrid cards={REPRICER_ADMIN_CARDS} />
       </section>
 
       <section>
