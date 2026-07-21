@@ -254,6 +254,9 @@ verify_jwt = false
 [functions.refresh-spapi-token]
 verify_jwt = false
 
+[functions.retry-listing-validation]
+verify_jwt = true
+
 [functions.sync-amazon-bounds]
 verify_jwt = true
 

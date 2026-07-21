@@ -86,6 +86,29 @@ function classify(available: number, reserved: number, inbound: number, fbaBlock
   return hasStock ? "at_risk_stock" : "dormant";
 }
 
+// Amazon rejected the listing outright during the post-submit validation
+// pipeline (FNSKU never assigned, or FBA inbound/hazmat/prep checks failed) --
+// a different issue class from the manufacturer-barcode exposure this page
+// otherwise tracks, so it's surfaced as its own section.
+type FailedRow = {
+  id: string;
+  asin: string;
+  sku: string;
+  title: string | null;
+  imageUrl: string | null;
+  failureCode: string;
+  failureReason: string | null;
+  completedAt: string | null;
+  attempts: number;
+};
+
+const FAILURE_LABELS: Record<string, string> = {
+  FNSKU_TIMEOUT: "FNSKU never assigned",
+  ITEM_PREVIEW_INELIGIBLE: "FBA inbound ineligible",
+  HAZMAT_BLOCKED: "Hazmat / dangerous goods",
+  PREP_BLOCKED: "Prep requirement unresolved",
+};
+
 export default function FbaEligibilityIssues() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
@@ -94,6 +117,8 @@ export default function FbaEligibilityIssues() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [showGhosts, setShowGhosts] = useState(false);
+  const [failedRows, setFailedRows] = useState<FailedRow[]>([]);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -117,7 +142,7 @@ export default function FbaEligibilityIssues() {
         if (data.length < PAGE) break;
       }
 
-      const [clRes, cacheRes] = await Promise.all([
+      const [clRes, cacheRes, failedRes] = await Promise.all([
         supabase
           .from("created_listings")
           .select("id, asin, title, image_url, fba_block_reason")
@@ -129,7 +154,26 @@ export default function FbaEligibilityIssues() {
           .select("asin, marketplace_id, checked_at")
           .eq("user_id", user.id)
           .limit(2000),
+        supabase
+          .from("created_listings")
+          .select("id, asin, sku, title, image_url, validation_failure_code, validation_failure_reason, validation_completed_at, validation_attempts")
+          .eq("user_id", user.id)
+          .eq("validation_status", "FAILED_VALIDATION")
+          .order("validation_completed_at", { ascending: false })
+          .limit(500),
       ]);
+
+      setFailedRows(((failedRes.data ?? []) as any[]).map((r) => ({
+        id: r.id,
+        asin: r.asin,
+        sku: r.sku,
+        title: r.title ?? null,
+        imageUrl: r.image_url ?? null,
+        failureCode: r.validation_failure_code ?? "UNKNOWN",
+        failureReason: r.validation_failure_reason ?? null,
+        completedAt: r.validation_completed_at ?? null,
+        attempts: r.validation_attempts ?? 0,
+      })));
 
       const cacheMap = new Map<string, { marketplace: string; checkedAt: string | null }>();
       for (const c of (cacheRes.data ?? []) as any[]) {
@@ -303,6 +347,22 @@ export default function FbaEligibilityIssues() {
     }
   };
 
+  const retryValidation = async (row: FailedRow) => {
+    setRetryingId(row.id);
+    try {
+      const { error } = await supabase.functions.invoke("retry-listing-validation", {
+        body: { listing_id: row.id },
+      });
+      if (error) throw error;
+      toast.success(`${row.asin} re-queued for validation.`);
+      setFailedRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (err: any) {
+      toast.error(err?.message ?? "Retry failed");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const openSellerCentral = (row: Row) => {
     const host = MARKETPLACE_HOSTS[row.marketplace] ?? MARKETPLACE_HOSTS.US;
     window.open(`https://${host}/abis/listing/edit?asin=${encodeURIComponent(row.asin)}`, "_blank", "noopener,noreferrer");
@@ -350,6 +410,108 @@ export default function FbaEligibilityIssues() {
             Refresh
           </Button>
         </div>
+
+        {failedRows.length > 0 && (
+          <Card className="overflow-hidden mb-5 border-red-200 dark:border-red-900">
+            <div className="p-4 pb-2 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold flex items-center gap-1.5">
+                  <ShieldAlert className="h-4 w-4 text-red-500" />
+                  Failed Listing Validation ({failedRows.length})
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Amazon rejected these during post-submit validation — FNSKU never propagated, or an
+                  FBA inbound / hazmat / prep check failed. These won't appear elsewhere until fixed and retried.
+                </p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[52px]">Image</TableHead>
+                    <TableHead>ASIN</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead className="text-right">Failed</TableHead>
+                    <TableHead className="text-right w-[180px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {failedRows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        {row.imageUrl ? (
+                          <img
+                            src={row.imageUrl}
+                            alt={row.title ?? row.asin}
+                            className="h-10 w-10 min-w-10 min-h-10 object-cover rounded border"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded border flex items-center justify-center bg-muted">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <a
+                          href={`https://www.amazon.com/dp/${row.asin}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline dark:text-blue-400 inline-flex items-center gap-1"
+                        >
+                          {row.asin}
+                          <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+                        </a>
+                      </TableCell>
+                      <TableCell className="font-mono text-[11px] text-muted-foreground">{row.sku}</TableCell>
+                      <TableCell className="max-w-[220px]">
+                        <span className="line-clamp-2 text-sm">{row.title ?? "—"}</span>
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[220px]">
+                        <Badge variant="outline" className="text-[10px] whitespace-nowrap bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400 border-red-200 dark:border-red-900">
+                          {FAILURE_LABELS[row.failureCode] ?? row.failureCode}
+                        </Badge>
+                        {row.failureReason && (
+                          <div className="text-muted-foreground truncate mt-1" title={row.failureReason}>{row.failureReason}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                        {row.completedAt ? new Date(row.completedAt).toLocaleDateString() : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => retryValidation(row)}
+                            disabled={retryingId === row.id}
+                            title="Retry validation"
+                          >
+                            {retryingId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(`https://sellercentral.amazon.com/abis/listing/edit?asin=${encodeURIComponent(row.asin)}`, "_blank", "noopener,noreferrer")}
+                            title="Open in Seller Central"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => copyAsin(row.asin)} title="Copy ASIN">
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
           <Card className="p-4">
