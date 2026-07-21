@@ -180,9 +180,20 @@ export default function NeedBuyAgain() {
             .range(from, to)
         ),
         fetchAllPaged((from, to) =>
-          // Phase 2: shared source-of-truth view (validation gate + ghost filter)
-          supabase.from("active_created_listings" as any)
-            .select("asin, sku, title, supplier_links, image_url, amount, cost, units, updated_at")
+          // Deliberately reads created_listings directly instead of the
+          // active_created_listings view. That view's ghost check also
+          // excludes rows whose linked inventory shows zero stock with a
+          // non-"ACTIVE" status (confirmed: 6,253 of 8,446 created_listings
+          // rows excluded for this account, 74%) -- correct for most
+          // consumers, but wrong here: this page's supplier-link/image/cost
+          // fallback data must survive for exactly the currently-out-of-
+          // stock items it exists to surface (e.g. every "Wilson" SKU was
+          // silently dropped this way). Only the validation-status gate is
+          // applied; isHiddenInSyncedInventory below still excludes
+          // genuinely dead rows from the final result.
+          supabase.from("created_listings")
+            .select("asin, sku, title, supplier_links, image_url, amount, cost, units, updated_at, validation_status")
+            .or("validation_status.is.null,validation_status.eq.ACTIVE")
             .eq("user_id", userId)
             .range(from, to)
         ),
