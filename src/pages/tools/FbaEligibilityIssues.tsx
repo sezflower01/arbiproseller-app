@@ -34,7 +34,18 @@ type Row = {
   fbaBlockReason: string | null;
   checkedAt: string | null;
   status: Status;
+  isGhost: boolean;
 };
+
+// Matches the ghost-ASIN definition already used in Inventory Valuation
+// (SyncedInventory.tsx): soft-deleted / no-longer-in-catalog rows that can
+// carry stale leftover available/reserved/inbound numbers. A "ghost" can't
+// actually get blocked going forward -- the listing itself is gone -- so
+// counting it as a live at-risk item is just stale data, not a real risk.
+function isGhostRow(listingStatus: string | null, sku: string | null): boolean {
+  const ls = (listingStatus || "").toUpperCase();
+  return ls === "NOT_IN_CATALOG" || ls === "DELETED" || (sku || "").toLowerCase().startsWith("amzn.gr.");
+}
 
 const STATUS_META: Record<Status, { label: string; className: string; priority: number }> = {
   blocked_stock: { label: "Blocked · has stock", className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border-red-300 dark:border-red-800", priority: 0 },
@@ -82,6 +93,7 @@ export default function FbaEligibilityIssues() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | Status>("all");
+  const [showGhosts, setShowGhosts] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -96,7 +108,7 @@ export default function FbaEligibilityIssues() {
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await supabase
           .from("inventory")
-          .select("id, asin, sku, fnsku, title, image_url, available, reserved, inbound, fba_blocked, fba_block_reason")
+          .select("id, asin, sku, fnsku, title, image_url, available, reserved, inbound, fba_blocked, fba_block_reason, listing_status")
           .eq("user_id", user.id)
           .range(from, from + PAGE - 1);
         if (error) throw error;
@@ -153,6 +165,7 @@ export default function FbaEligibilityIssues() {
           fbaBlockReason: r.fba_block_reason ?? null,
           checkedAt: meta?.checkedAt ?? null,
           status: classify(available, reserved, inbound, fbaBlocked),
+          isGhost: isGhostRow(r.listing_status, r.sku),
         };
       });
 
@@ -174,6 +187,7 @@ export default function FbaEligibilityIssues() {
           fbaBlockReason: r.fba_block_reason ?? null,
           checkedAt: meta?.checkedAt ?? null,
           status: "blocked" as Status,
+          isGhost: false,
         };
       });
 
@@ -203,15 +217,26 @@ export default function FbaEligibilityIssues() {
     void load();
   }, [load]);
 
+  const ghostCount = useMemo(() => rows.filter((r) => r.isGhost).length, [rows]);
+
+  // Ghost ASINs (soft-deleted / NOT_IN_CATALOG / amzn.gr.* SKUs) are hidden by
+  // default, same convention as Inventory Valuation's "Show Ghost ASINs"
+  // toggle -- a deleted listing can't actually get blocked going forward, so
+  // counting its stale leftover stock as a live risk is just noise.
+  const visibleRows = useMemo(
+    () => (showGhosts ? rows : rows.filter((r) => !r.isGhost)),
+    [rows, showGhosts],
+  );
+
   const counts = useMemo(() => {
     const c: Record<Status, number> = { blocked_stock: 0, blocked: 0, at_risk_stock: 0, dormant: 0 };
-    for (const r of rows) c[r.status]++;
+    for (const r of visibleRows) c[r.status]++;
     return c;
-  }, [rows]);
+  }, [visibleRows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    return visibleRows.filter((r) => {
       if (filter !== "all" && r.status !== filter) return false;
       if (!q) return true;
       return (
@@ -220,7 +245,7 @@ export default function FbaEligibilityIssues() {
         (r.title ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, filter, search]);
+  }, [visibleRows, filter, search]);
 
   const recheck = async (row: Row) => {
     setBusyId(row.rowId);
@@ -293,7 +318,7 @@ export default function FbaEligibilityIssues() {
   };
 
   const FILTERS: { key: "all" | Status; label: string }[] = [
-    { key: "all", label: `All (${rows.length})` },
+    { key: "all", label: `All (${visibleRows.length})` },
     { key: "blocked_stock", label: `Blocked + stock (${counts.blocked_stock})` },
     { key: "blocked", label: `Blocked (${counts.blocked})` },
     { key: "at_risk_stock", label: `At risk + stock (${counts.at_risk_stock})` },
@@ -328,7 +353,7 @@ export default function FbaEligibilityIssues() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
           <Card className="p-4">
-            <div className="text-2xl font-semibold tabular-nums">{rows.length}</div>
+            <div className="text-2xl font-semibold tabular-nums">{visibleRows.length}</div>
             <div className="text-xs text-muted-foreground mt-0.5">Total exposed</div>
           </Card>
           <Card className="p-4">
@@ -368,7 +393,18 @@ export default function FbaEligibilityIssues() {
               </Button>
             ))}
           </div>
-          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} of {rows.length} shown</span>
+          {ghostCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className={`h-9 text-xs ${showGhosts ? "border-violet-400 text-violet-600 dark:text-violet-300" : ""}`}
+              onClick={() => setShowGhosts((v) => !v)}
+              title="Soft-deleted / NOT_IN_CATALOG / amzn.gr.* rows, hidden by default -- same as Inventory Valuation"
+            >
+              {showGhosts ? `👻 Showing Ghost ASINs (${ghostCount})` : `👻 Show Ghost ASINs (${ghostCount})`}
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} of {visibleRows.length} shown</span>
         </div>
 
         <Card className="overflow-hidden">
@@ -380,7 +416,7 @@ export default function FbaEligibilityIssues() {
           ) : filtered.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
               <ShieldOff className="h-6 w-6 mx-auto mb-2 opacity-60" />
-              {rows.length === 0 ? "No listings use manufacturer-barcode mode. You're clear." : "No listings match this search / filter."}
+              {visibleRows.length === 0 ? "No listings use manufacturer-barcode mode. You're clear." : "No listings match this search / filter."}
             </div>
           ) : (
             <div className="overflow-x-auto">

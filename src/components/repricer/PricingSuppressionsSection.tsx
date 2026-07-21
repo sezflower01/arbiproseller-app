@@ -21,6 +21,7 @@ interface SuppressedRow {
   min_price_override: number | null;
   max_price_override: number | null;
   my_price: number | null;
+  isGhost: boolean;
 }
 
 interface UnknownRow {
@@ -60,6 +61,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
   const [edits, setEdits] = useState<Record<string, { min: string; max: string; price: string }>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [reactivationStatus, setReactivationStatus] = useState<Record<string, { type: "sending" | "success" | "error"; message: string }>>({});
+  const [showGhosts, setShowGhosts] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -76,16 +78,20 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
       const { data } = await q.order("pricing_suppression_detected_at", { ascending: false }).limit(500);
       let rawList = (data || []) as any[];
 
-      // ---- Ghost filter (intl) ----
-      // Ghost = listing no longer exists on that marketplace. Reactivating it will
-      // never succeed, so hide it from the delisted queue. `verify-intl-listings-existence`
-      // marks these as NOT_FOUND / DELETED / INACTIVE / UNKNOWN.
+      // ---- Ghost detection (per-marketplace-appropriate signal) ----
+      // Non-US: trust intl_listing_status -- a fresh, marketplace-specific
+      // existence check (`verify-intl-listings-existence`). NOT_FOUND / DELETED /
+      // INACTIVE / UNKNOWN means the listing genuinely doesn't exist there.
+      // US: inventory.listing_status is the shared/canonical field this app
+      // already uses everywhere else (Inventory Valuation's "Show Ghost ASINs"
+      // toggle) -- NOT_IN_CATALOG / DELETED, or an amzn.gr.* generated SKU.
+      // These two signals are NOT interchangeable: a SKU can show
+      // inventory.listing_status=NOT_IN_CATALOG (a US-scoped/shared field) while
+      // still being genuinely DISCOVERABLE and actively selling in CA/BR/MX --
+      // applying the US signal to intl rows would wrongly hide a real,
+      // actionable suppression. Tag rows here; hide/show is a display toggle
+      // below, not a silent drop, so nothing genuinely gone stays invisible.
       const GHOST_INTL = new Set(["NOT_FOUND", "DELETED", "INACTIVE", "UNKNOWN", "[]", ""]);
-      rawList = rawList.filter((r) => {
-        if (r.marketplace === "US") return true;
-        const s = String(r.intl_listing_status || "").toUpperCase();
-        return !GHOST_INTL.has(s);
-      });
 
       // ---- Current price per (sku, marketplace) ----
       // US price → inventory. Non-US price → asin_my_price_cache (marketplace-scoped).
@@ -95,13 +101,17 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
       const intlRows = rawList.filter(r => r.marketplace !== "US");
 
       const usPriceBySku: Record<string, number | null> = {};
+      const usListingStatusBySku: Record<string, string | null> = {};
       if (usSkus.length) {
         const { data: invRows } = await supabase
           .from("inventory")
-          .select("sku, my_price, price")
+          .select("sku, my_price, price, listing_status")
           .eq("user_id", user.user.id)
           .in("sku", usSkus);
-        for (const iv of invRows || []) usPriceBySku[iv.sku] = (iv as any).my_price ?? (iv as any).price ?? null;
+        for (const iv of invRows || []) {
+          usPriceBySku[iv.sku] = (iv as any).my_price ?? (iv as any).price ?? null;
+          usListingStatusBySku[iv.sku] = (iv as any).listing_status ?? null;
+        }
       }
 
       const MP_ID: Record<string, string> = {
@@ -127,13 +137,17 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
 
       const list: SuppressedRow[] = rawList.map((r) => {
         let px: number | null = null;
+        let isGhost: boolean;
         if (r.marketplace === "US") {
           px = usPriceBySku[r.sku] ?? r.last_applied_price ?? null;
+          const ls = String(usListingStatusBySku[r.sku] || "").toUpperCase();
+          isGhost = ls === "NOT_IN_CATALOG" || ls === "DELETED" || String(r.sku || "").toLowerCase().startsWith("amzn.gr.");
         } else {
           const mpId = MP_ID[r.marketplace];
           px = (mpId && r.asin ? intlPriceMap[intlPriceKey(r.asin, mpId, r.sku)] : null) ?? r.last_applied_price ?? null;
+          isGhost = GHOST_INTL.has(String(r.intl_listing_status || "").toUpperCase());
         }
-        return { ...r, my_price: px };
+        return { ...r, my_price: px, isGhost };
       });
       setRows(list);
       // Seed edit buffer with current overrides + price
@@ -316,13 +330,25 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
     }
   };
 
+  const ghostCount = useMemo(() => rows.filter((r) => r.isGhost).length, [rows]);
+
+  // Ghost ASINs (no longer in catalog / genuinely gone from that marketplace)
+  // can never be successfully reactivated, so they're hidden by default --
+  // same "hidden unless toggled" convention as Inventory Valuation's
+  // "Show Ghost ASINs" button, rather than being silently dropped forever.
+  const visibleRows = useMemo(
+    () => (showGhosts ? rows : rows.filter((r) => !r.isGhost)),
+    [rows, showGhosts],
+  );
+
   const groups = useMemo(() => {
     const g: Record<string, SuppressedRow[]> = {};
-    for (const r of rows) (g[r.marketplace] = g[r.marketplace] || []).push(r);
+    for (const r of visibleRows) (g[r.marketplace] = g[r.marketplace] || []).push(r);
     return g;
-  }, [rows]);
+  }, [visibleRows]);
 
   const totalCount = rows.length;
+  const visibleCount = visibleRows.length;
 
   if (totalCount === 0 && unknown.length === 0 && !isAdmin) return null;
 
@@ -338,28 +364,44 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
               {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               <AlertTriangle className="h-5 w-5 text-amber-700" />
               <span className="font-bold text-amber-950 text-sm">
-                Delisted for pricing policy ({totalCount})
+                Delisted for pricing policy ({visibleCount})
               </span>
               <span className="text-xs text-amber-900/80">
                 Listings suppressed by Amazon for price rule violations (min/max, fair pricing)
               </span>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              onClick={(e) => { e.stopPropagation(); runNow(); }}
-              disabled={running}
-              className="h-9 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-md border border-amber-700"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
-              {running ? "Checking…" : "Check now"}
-            </Button>
+            <div className="flex items-center gap-2">
+              {ghostCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => { e.stopPropagation(); setShowGhosts((v) => !v); }}
+                  className={`h-9 gap-1.5 text-xs ${showGhosts ? "border-violet-400 text-violet-700" : "border-amber-700 text-amber-900"}`}
+                  title="Ghost ASINs (no longer in that marketplace's catalog) can never be successfully reactivated -- hidden by default"
+                >
+                  {showGhosts ? `👻 Showing Ghost ASINs (${ghostCount})` : `👻 Show Ghost ASINs (${ghostCount})`}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); runNow(); }}
+                disabled={running}
+                className="h-9 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-md border border-amber-700"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
+                {running ? "Checking…" : "Check now"}
+              </Button>
+            </div>
           </button>
           {expanded && (
             <div className="border-t border-amber-300/50 px-4 py-3 space-y-3">
               {loading && <div className="text-xs text-muted-foreground">Loading…</div>}
-              {!loading && totalCount === 0 && (
-                <div className="text-xs text-muted-foreground">No pricing-policy suppressions right now.</div>
+              {!loading && visibleCount === 0 && (
+                <div className="text-xs text-muted-foreground">
+                  {totalCount > 0 ? "All current suppressions are ghost ASINs — toggle above to review them." : "No pricing-policy suppressions right now."}
+                </div>
               )}
               {Object.entries(groups).map(([mp, list]) => (
                 <div key={mp} className="space-y-1.5">
