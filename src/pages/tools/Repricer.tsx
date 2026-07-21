@@ -228,12 +228,16 @@ export default function Repricer() {
                     <Shield className="h-3.5 w-3.5" /> Monitor
                   </TabsTrigger>
                 )}
-                <TabsTrigger value="price-history" className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" /> Price History
-                </TabsTrigger>
-                <TabsTrigger value="ai-insights" className="flex items-center gap-1">
-                  <Brain className="h-3.5 w-3.5" /> AI Insights
-                </TabsTrigger>
+                {isAdmin && (
+                  <TabsTrigger value="price-history" className="flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" /> Price History
+                  </TabsTrigger>
+                )}
+                {isAdmin && (
+                  <TabsTrigger value="ai-insights" className="flex items-center gap-1">
+                    <Brain className="h-3.5 w-3.5" /> AI Insights
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               {isAdmin && (
