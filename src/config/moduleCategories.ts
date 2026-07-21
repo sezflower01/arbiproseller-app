@@ -125,7 +125,7 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
         path: "/tools/fba-eligibility-issues",
         label: "FBA Eligibility Issues",
         description:
-          "Review ASINs blocked from FBA because of manufacturer barcode, missing FNSKU, or listing restrictions.",
+          "See what's already blocked and what's exposed to Amazon's manufacturer-barcode / brand-registry rule before it costs you a listing.",
         icon: ShieldAlert,
         color: "from-red-500 to-rose-600",
         ga: "tool_menu_fba_eligibility_issues",
