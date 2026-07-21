@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import HealthPresets from "@/components/analytics/HealthPresets";
 import OptimizationPresets from "@/components/analytics/OptimizationPresets";
 import OutcomePresets from "@/components/analytics/OutcomePresets";
+import AnalyticsKpiSummary from "@/components/analytics/AnalyticsKpiSummary";
+import ValidationView from "@/components/analytics/ValidationView";
 
 export default function RepricerAnalytics() {
   const { user } = useAuth();
@@ -68,15 +70,19 @@ export default function RepricerAnalytics() {
             </p>
           </div>
 
+          <AnalyticsKpiSummary />
+
           <Tabs defaultValue="health" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 max-w-lg">
+            <TabsList className="grid w-full grid-cols-4 max-w-xl">
               <TabsTrigger value="health">🏥 Health</TabsTrigger>
               <TabsTrigger value="optimization">⚙️ Optimization</TabsTrigger>
               <TabsTrigger value="outcomes">💰 Outcomes</TabsTrigger>
+              <TabsTrigger value="validation">🔍 72h Check</TabsTrigger>
             </TabsList>
             <TabsContent value="health"><HealthPresets /></TabsContent>
             <TabsContent value="optimization"><OptimizationPresets /></TabsContent>
             <TabsContent value="outcomes"><OutcomePresets /></TabsContent>
+            <TabsContent value="validation"><ValidationView /></TabsContent>
           </Tabs>
         </main>
         <Footer />

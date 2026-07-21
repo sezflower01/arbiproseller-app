@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import HistoricalGraphsPanel from "@/components/monitor/HistoricalGraphsPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/lib/edgeFunctionClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,28 +6,9 @@ import { useSubscription } from "@/hooks/use-subscription";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Helmet } from "react-helmet-async";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
-} from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Shield, Download, ExternalLink, History, FlaskConical, Eye, TestTubes, Clock, Users, AlertTriangle, Sparkles, Brain, ChevronDown, MoreHorizontal, BarChart3 } from "lucide-react";
 import { usePageFavicon } from "@/hooks/use-page-favicon";
-import OptimizationReportDialog from "@/components/repricer/OptimizationReportDialog";
 import AppliedSuggestionsPanel from "@/components/repricer/AppliedSuggestionsPanel";
 import PushBoundsToAmazonButton from "@/components/repricer/PushBoundsToAmazonButton";
 import ProbeListingsIssuesButton from "@/components/repricer/ProbeListingsIssuesButton";
@@ -42,78 +22,23 @@ import OffersViewer from "@/components/repricer/OffersViewer";
 import RepricerSettings from "@/components/repricer/RepricerSettings";
 import AutoOnboardingSettings from "@/components/settings/AutoOnboardingSettings";
 import SchedulerToggle from "@/components/repricer/SchedulerToggle";
-import ActivityLog from "@/components/repricer/ActivityLog";
 import AiRuleTestDialog from "@/components/repricer/AiRuleTestDialog";
-import ChangeHistoryPanel from "@/components/repricer/ChangeHistoryPanel";
-import RuleBehaviorPanel from "@/components/repricer/RuleBehaviorPanel";
-import CheckedRecentlyPanel from "@/components/repricer/CheckedRecentlyPanel";
-import SkippedAsinWorkQueue from "@/components/monitor/SkippedAsinWorkQueue";
-import MonitorTabLayout from "@/components/monitor/MonitorTabLayout";
-import { useMonitorData } from "@/hooks/use-monitor-data";
-import SimulationTab from "@/components/repricer/SimulationTab";
-import PriceHistoryTab from "@/components/repricer/PriceHistoryTab";
 import { SyncReadinessBanner } from "@/components/SyncReadinessBanner";
-import AccountControlPanel from "@/components/admin/AccountControlPanel";
-import ErrorLog from "@/pages/tools/ErrorLog";
-import { lazy, Suspense } from "react";
-const AiActionInsightsEmbed = lazy(() => import("@/pages/tools/AiActionInsights"));
-import SmartEngineReview from "@/components/repricer/SmartEngineReview";
-import SmartEngineLearning from "@/components/repricer/SmartEngineLearning";
-import HealthPresets from "@/components/analytics/HealthPresets";
 import AsinInventoryLookupDialog from "@/components/inventory/AsinInventoryLookupDialog";
 import BulkLiveInventorySyncButton from "@/components/repricer/BulkLiveInventorySyncButton";
-import OptimizationPresets from "@/components/analytics/OptimizationPresets";
-import OutcomePresets from "@/components/analytics/OutcomePresets";
-import AnalyticsKpiSummary from "@/components/analytics/AnalyticsKpiSummary";
-import ValidationView from "@/components/analytics/ValidationView";
-
-const monitorLogLinks = [
-  { label: "Unified Dispatch", fn: "repricer-unified-dispatch" },
-  { label: "Scheduler", fn: "repricer-scheduler" },
-  { label: "AI Evaluate", fn: "repricer-ai-evaluate" },
-  { label: "SP-API Pricing", fn: "repricer-sp-api-pricing" },
-  { label: "Sequential Sweep", fn: "repricer-sequential-sweep" },
-  { label: "Auto Turbo", fn: "repricer-auto-turbo" },
-  { label: "Cleanup", fn: "repricer-cleanup" },
-  { label: "Save Rules", fn: "save-repricer-rules" },
-  { label: "Sync Bounds", fn: "sync-amazon-bounds" },
-  { label: "Bulk Bounds", fn: "bulk-update-repricer-bounds" },
-  { label: "Push Bounds→AMZ Logs", fn: "push-bounds-to-amazon" },
-  { label: "Update Price", fn: "update-amazon-price" },
-  { label: "Sync Inventory", fn: "sync-inventory-report" },
-  { label: "Sync Sales", fn: "sync-sales-orders" },
-  { label: "Enrich Orders", fn: "enrich-pending-orders" },
-  { label: "Enrich Titles", fn: "enrich-missing-titles" },
-  { label: "Keepa Finder", fn: "keepa-product-finder" },
-  { label: "Calculate ROI", fn: "calculate-roi" },
-  { label: "ROI Range", fn: "calculate-roi-range" },
-];
 
 export default function Repricer() {
   const { user } = useAuth();
   const { isAdmin } = useSubscription();
   usePageFavicon("R");
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [rules, setRules] = useState<RepricerRule[]>([]);
   const [rulesLoaded, setRulesLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState("assignments");
   const hasRules = rules.length > 0;
 
-  // Deep-link support for admin-only tabs reached via a module directory
-  // card (e.g. /tools/repricer?tab=price-history) rather than the in-page tab bar.
-  useEffect(() => {
-    const requestedTab = searchParams.get("tab");
-    if (requestedTab && isAdmin && (requestedTab === "price-history" || requestedTab === "ai-insights")) {
-      setActiveTab(requestedTab);
-    }
-  }, [searchParams, isAdmin]);
-  
   // Marketplace selector state
   const [selectedMarketplace, setSelectedMarketplace] = useState("US");
 
-  const monitorData = useMonitorData(selectedMarketplace);
-  
   // Offers viewer state
   const [viewingAsin, setViewingAsin] = useState<string | null>(null);
   const [viewingMarketplace, setViewingMarketplace] = useState("US");
@@ -156,10 +81,6 @@ export default function Repricer() {
       setActiveTab("rules");
     }
   }, [rulesLoaded, hasRules, activeTab]);
-
-  useEffect(() => {
-    fetchRules();
-  }, [fetchRules]);
 
   const handleViewOffers = (asin: string, marketplace: string) => {
     setViewingAsin(asin);
@@ -231,81 +152,13 @@ export default function Repricer() {
               <TabsList className="bg-white/80 backdrop-blur-sm border border-white/30 text-[hsl(221,100%,10%)] font-bold">
                 {hasRules && <TabsTrigger value="assignments">Assignments</TabsTrigger>}
                 <TabsTrigger value="rules">Rules</TabsTrigger>
-                {isAdmin && <TabsTrigger value="activity">Activity Log</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
-                {isAdmin && (
-                  <TabsTrigger value="monitor" className="flex items-center gap-1">
-                    <Shield className="h-3.5 w-3.5" /> Monitor
-                  </TabsTrigger>
-                )}
-                {isAdmin && (
-                  <TabsTrigger value="price-history" className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> Price History
-                  </TabsTrigger>
-                )}
-                {isAdmin && (
-                  <TabsTrigger value="ai-insights" className="flex items-center gap-1">
-                    <Brain className="h-3.5 w-3.5" /> AI Insights
-                  </TabsTrigger>
-                )}
               </TabsList>
 
               {isAdmin && (
                 <>
                   <PushBoundsToAmazonButton className="h-10 bg-white/60 backdrop-blur-sm border-white/20 text-[hsl(221,90%,22%)] font-bold" label="Push Bounds→AMZ" />
                   <ProbeListingsIssuesButton />
-
-                  {/* Admin Tools dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-10 bg-white/60 backdrop-blur-sm border-white/20 text-[hsl(221,90%,22%)] font-bold gap-1">
-                        <MoreHorizontal className="h-3.5 w-3.5" /> More
-                        <ChevronDown className="h-3 w-3 opacity-50" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuLabel className="text-xs text-muted-foreground">Admin Tools</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => setActiveTab("history")}>
-                        <History className="h-3.5 w-3.5 mr-2" /> Change History
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("behavior")}>
-                        <FlaskConical className="h-3.5 w-3.5 mr-2" /> Rule Behavior
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("checked")}>
-                        <Eye className="h-3.5 w-3.5 mr-2" /> Checked ASINs
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("simulation")}>
-                        <TestTubes className="h-3.5 w-3.5 mr-2" /> Simulation
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("account-control")}>
-                        <Users className="h-3.5 w-3.5 mr-2" /> Account Control
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("error-log")}>
-                        <AlertTriangle className="h-3.5 w-3.5 mr-2" /> Error Log
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("analytics")}>
-                        <BarChart3 className="h-3.5 w-3.5 mr-2" /> Analytics
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  {/* Smart Engine dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-10 bg-white/60 backdrop-blur-sm border-white/20 text-[hsl(221,90%,22%)] font-bold gap-1">
-                        <Sparkles className="h-3.5 w-3.5" /> Smart Engine
-                        <ChevronDown className="h-3 w-3 opacity-50" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem onClick={() => setActiveTab("smart-review")}>
-                        <Sparkles className="h-3.5 w-3.5 mr-2" /> Smart Review
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab("learning")}>
-                        <Brain className="h-3.5 w-3.5 mr-2" /> Learning
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </>
               )}
             </div>
@@ -313,9 +166,9 @@ export default function Repricer() {
             {hasRules && (
               <TabsContent value="assignments" className="space-y-6">
                 <PricingSuppressionsSection marketplace={selectedMarketplace} isAdmin={isAdmin} />
-                <AssignmentsTable 
-                  rules={rules} 
-                  onViewOffers={handleViewOffers} 
+                <AssignmentsTable
+                  rules={rules}
+                  onViewOffers={handleViewOffers}
                   marketplace={selectedMarketplace}
                   onMarketplaceChange={setSelectedMarketplace}
                   onViewAppliedSuggestions={() => setAppliedSuggestionsOpen(true)}
@@ -336,10 +189,6 @@ export default function Repricer() {
               <RuleBuilder onRulesChange={fetchRules} onTestRule={isAdmin ? handleTestRule : undefined} isAdmin={isAdmin} />
             </TabsContent>
 
-            <TabsContent value="activity" className="space-y-6">
-              <ActivityLog />
-            </TabsContent>
-
             <TabsContent value="settings" className="space-y-6">
               <div className="max-w-xl space-y-6">
                 {!isAdmin && <SchedulerToggle />}
@@ -348,85 +197,6 @@ export default function Repricer() {
                 <IntlRoiSweepCard />
               </div>
             </TabsContent>
-
-            <TabsContent value="monitor" className="space-y-6">
-              <HistoricalGraphsPanel />
-              {isAdmin && (
-                <div className="flex justify-end">
-                  <OptimizationReportDialog />
-                </div>
-              )}
-              <MonitorTabLayout
-                monitorData={monitorData}
-                marketplace={selectedMarketplace}
-                logLinks={monitorLogLinks}
-              />
-            </TabsContent>
-
-            <TabsContent value="history" className="space-y-6">
-              <ChangeHistoryPanel />
-            </TabsContent>
-
-
-            <TabsContent value="behavior" className="space-y-6">
-              <RuleBehaviorPanel />
-            </TabsContent>
-
-            <TabsContent value="checked" className="space-y-6">
-              <CheckedRecentlyPanel />
-            </TabsContent>
-
-            <TabsContent value="simulation" className="space-y-6">
-              <SimulationTab />
-            </TabsContent>
-
-            <TabsContent value="price-history" className="space-y-6">
-              <PriceHistoryTab marketplace={selectedMarketplace} />
-            </TabsContent>
-
-            <TabsContent value="ai-insights" className="space-y-6">
-              <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
-                <AiActionInsightsEmbed />
-              </Suspense>
-            </TabsContent>
-
-            {isAdmin && (
-              <TabsContent value="account-control" className="space-y-6">
-                <AccountControlPanel />
-              </TabsContent>
-            )}
-            {isAdmin && (
-              <TabsContent value="smart-review" className="space-y-6">
-                <SmartEngineReview />
-              </TabsContent>
-            )}
-            {isAdmin && (
-              <TabsContent value="learning" className="space-y-6">
-                <SmartEngineLearning />
-              </TabsContent>
-            )}
-            {isAdmin && (
-              <TabsContent value="error-log" className="space-y-6">
-                <ErrorLog embedded />
-              </TabsContent>
-            )}
-            {isAdmin && (
-              <TabsContent value="analytics" className="space-y-6">
-                <AnalyticsKpiSummary />
-                <Tabs defaultValue="health" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4 max-w-xl">
-                    <TabsTrigger value="health">🏥 Health</TabsTrigger>
-                    <TabsTrigger value="optimization">⚙️ Optimization</TabsTrigger>
-                    <TabsTrigger value="outcomes">💰 Outcomes</TabsTrigger>
-                    <TabsTrigger value="validation">🔍 72h Check</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="health"><HealthPresets /></TabsContent>
-                  <TabsContent value="optimization"><OptimizationPresets /></TabsContent>
-                  <TabsContent value="outcomes"><OutcomePresets /></TabsContent>
-                  <TabsContent value="validation"><ValidationView /></TabsContent>
-                </Tabs>
-              </TabsContent>
-            )}
           </Tabs>
         </main>
         <Footer />

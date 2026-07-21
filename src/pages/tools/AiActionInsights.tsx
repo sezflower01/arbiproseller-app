@@ -29,7 +29,7 @@ export default function AiActionInsights() {
   const [filterType, setFilterType] = useState<string>("all");
   const [aiReviewedOnly, setAiReviewedOnly] = useState(false);
   const [sortMode, setSortMode] = useState<"recent" | "ai_first">("recent");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [signalMap, setSignalMap] = useState<Record<string, { bb_loss: number; raised: number; constrained: number; winner: number }>>({});
   const [liveStateItems, setLiveStateItems] = useState<LiveAiStateItem[]>([]);
   const [schedulerState, setSchedulerState] = useState<LiveAiSchedulerState | null>(null);
@@ -59,7 +59,7 @@ export default function AiActionInsights() {
 
   // Check admin
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setIsAdmin(false); return; }
     supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle()
       .then(({ data }) => setIsAdmin(!!data));
   }, [user]);
@@ -627,7 +627,7 @@ export default function AiActionInsights() {
               key={e.id}
               event={e}
               signalSummary={signalMap[e.asin]}
-              isAdmin={isAdmin}
+              isAdmin={!!isAdmin}
               latestForAsin={latestByAsin[e.asin]}
             />
           ))}
@@ -641,9 +641,25 @@ export default function AiActionInsights() {
     </>
   );
 
-  // When used as embedded tab, skip Navbar/Footer/Helmet wrapper
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/tools/repricer")) {
-    return content;
+  if (isAdmin === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
+          <h1 className="text-2xl font-bold text-foreground">Access Restricted</h1>
+          <p className="text-muted-foreground">You need the <strong>admin</strong> role to view this page.</p>
+        </div>
+        <Footer />
+      </>
+    );
   }
 
   return (

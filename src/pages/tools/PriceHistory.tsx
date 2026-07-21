@@ -75,6 +75,7 @@ const DATE_RANGES = [
 
 const PriceHistory = () => {
   const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [asin, setAsin] = useState("");
   const [marketplace, setMarketplace] = useState("US");
   const [dateRange, setDateRange] = useState("30");
@@ -88,6 +89,12 @@ const PriceHistory = () => {
   const [productImage, setProductImage] = useState<string | null>(null);
 
   const selectedMarketplace = MARKETPLACES.find(m => m.value === marketplace);
+
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle()
+      .then(({ data }) => setIsAdmin(!!data));
+  }, [user]);
 
   const fetchData = async () => {
     if (!user || !asin.trim()) return;
@@ -227,6 +234,27 @@ const PriceHistory = () => {
     e.preventDefault();
     fetchData();
   };
+
+  if (isAdmin === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
+          <h1 className="text-2xl font-bold text-foreground">Access Restricted</h1>
+          <p className="text-muted-foreground">You need the <strong>admin</strong> role to view this page.</p>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

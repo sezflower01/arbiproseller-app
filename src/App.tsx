@@ -203,6 +203,13 @@ const ShipmentTracking = lazyWithRetry(() => import("./pages/tools/ShipmentTrack
 const ShipmentAccounting = lazyWithRetry(() => import("./pages/tools/ShipmentAccounting"));
 const Repricer = lazyWithRetry(() => import("./pages/tools/Repricer"));
 const RepricerMonitor = lazyWithRetry(() => import("./pages/tools/RepricerMonitor"));
+const RepricerActivityLog = lazyWithRetry(() => import("./pages/tools/RepricerActivityLog"));
+const RepricerChangeHistory = lazyWithRetry(() => import("./pages/tools/RepricerChangeHistory"));
+const RepricerRuleBehavior = lazyWithRetry(() => import("./pages/tools/RepricerRuleBehavior"));
+const RepricerCheckedAsins = lazyWithRetry(() => import("./pages/tools/RepricerCheckedAsins"));
+const RepricerSimulation = lazyWithRetry(() => import("./pages/tools/RepricerSimulation"));
+const RepricerAccountControl = lazyWithRetry(() => import("./pages/tools/RepricerAccountControl"));
+const RepricerSmartEngine = lazyWithRetry(() => import("./pages/tools/RepricerSmartEngine"));
 const OperatorQueue = lazyWithRetry(() => import("./pages/tools/OperatorQueue"));
 const CommercialTimeline = lazyWithRetry(() => import("./pages/tools/CommercialTimeline"));
 const ExecutiveDashboard = lazyWithRetry(() => import("./pages/tools/ExecutiveDashboard"));
@@ -341,6 +348,13 @@ function App() {
                   <Route path="/tools/shipment-accounting" element={<ProtectedRoute><ShipmentAccounting /></ProtectedRoute>} />
                   <Route path="/tools/repricer" element={<ProtectedRoute><Repricer /></ProtectedRoute>} />
                   <Route path="/tools/repricer/monitor" element={<ProtectedRoute><RepricerMonitor /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/activity-log" element={<ProtectedRoute><RepricerActivityLog /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/change-history" element={<ProtectedRoute><RepricerChangeHistory /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/rule-behavior" element={<ProtectedRoute><RepricerRuleBehavior /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/checked-asins" element={<ProtectedRoute><RepricerCheckedAsins /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/simulation" element={<ProtectedRoute><RepricerSimulation /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/account-control" element={<ProtectedRoute><RepricerAccountControl /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/smart-engine" element={<ProtectedRoute><RepricerSmartEngine /></ProtectedRoute>} />
                   <Route path="/tools/repricer/operator-queue" element={<ProtectedRoute><OperatorQueue /></ProtectedRoute>} />
                   <Route path="/tools/repricer/timeline/:asin" element={<ProtectedRoute><CommercialTimeline /></ProtectedRoute>} />
                   <Route path="/tools/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
