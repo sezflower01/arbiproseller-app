@@ -1,6 +1,7 @@
 // READ-ONLY scan: detects suspicious inventory cases and populates
 // inventory_missing_review. NEVER writes to the inventory table.
 import { createClient } from 'npm:@supabase/supabase-js@2.49.4';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -53,13 +54,22 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Resolve user from the JWT
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData?.user?.id) {
-      console.error('[inventory-review-scan] auth.getUser failed', userErr?.message);
-      return json({ error: 'Unauthorized' }, 401);
+    // Resolve user: trust body.user_id only from a verified internal caller
+    // (cron fan-out via inventory-review-scan-all). Everyone else --
+    // including the "Scan Now" button -- resolves userId from their own JWT,
+    // unchanged from before.
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    let userId: string;
+    if (isInternalCaller(req) && typeof body?.user_id === 'string' && body.user_id) {
+      userId = body.user_id;
+    } else {
+      const { data: userData, error: userErr } = await admin.auth.getUser(token);
+      if (userErr || !userData?.user?.id) {
+        console.error('[inventory-review-scan] auth.getUser failed', userErr?.message);
+        return json({ error: 'Unauthorized' }, 401);
+      }
+      userId = userData.user.id;
     }
-    const userId = userData.user.id;
     console.log(`[inventory-review-scan] user=${userId}`);
 
     // Pull current inventory for this user (read only)

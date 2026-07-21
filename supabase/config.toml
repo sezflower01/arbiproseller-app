@@ -242,6 +242,9 @@ verify_jwt = false
 [functions.repricer-sp-api-pricing]
 verify_jwt = true
 
+[functions.inventory-review-scan-all]
+verify_jwt = false
+
 [functions.enrich-missing-titles]
 verify_jwt = false
 
