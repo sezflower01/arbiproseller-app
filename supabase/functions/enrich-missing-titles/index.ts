@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -181,7 +182,7 @@ Deno.serve(async (req) => {
       // No body
     }
 
-    if (body.internal === true && body.user_id) {
+    if (body.internal === true && body.user_id && isInternalCaller(req)) {
       userId = body.user_id;
       console.log(`[ENRICH_TITLES] Internal call for user ${userId}`);
     } else {
@@ -226,7 +227,11 @@ Deno.serve(async (req) => {
       .eq('user_id', userId);
     itemsQuery = targetAsins
       ? itemsQuery.in('asin', targetAsins)
-      : itemsQuery.or('title.is.null,title.eq.,title.ilike.%unknown%,title.ilike.%untitled%').limit(limit);
+      // Also catches rows with a perfectly fine title but no image -- these
+      // were previously invisible to this scan entirely (title-only filter),
+      // which is exactly why real, cataloged ASINs could sit with a null
+      // image_url indefinitely with nothing ever picking them up.
+      : itemsQuery.or('title.is.null,title.eq.,title.ilike.%unknown%,title.ilike.%untitled%,image_url.is.null').limit(limit);
     const { data: missingTitleItems, error: fetchError } = await itemsQuery;
 
     if (fetchError) {
