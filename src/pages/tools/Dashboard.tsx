@@ -410,8 +410,23 @@ export default function Dashboard() {
   const [ship, setShip] = useState<Loadable<ShipmentsActivity>>({ loading: true, data: null });
   const [src, setSrc] = useState<Loadable<SourcingActivity>>({ loading: true, data: null });
   const [alerts, setAlerts] = useState<Loadable<AlertsCounts>>({ loading: true, data: null });
+  const [invReview, setInvReview] = useState<Loadable<{ pending: number }>>({ loading: true, data: null });
+  const [isAdmin, setIsAdmin] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const didKickSalesSyncRef = useRef(false);
+
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!data);
+    })();
+  }, [user]);
 
   useEffect(() => {
     if (!user?.id || didKickSalesSyncRef.current) return;
@@ -840,6 +855,20 @@ export default function Dashboard() {
       }
     })();
 
+    // ---- Inventory Review Queue (suspicious inventory pending review) ----
+    (async () => {
+      try {
+        const { count } = await supabase
+          .from("inventory_missing_review")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("status", "needs_review");
+        if (!cancel) setInvReview({ loading: false, data: { pending: count || 0 } });
+      } catch (e: any) {
+        if (!cancel) setInvReview({ loading: false, data: null, error: e.message });
+      }
+    })();
+
     // ---- Sourcing ----
     (async () => {
       try {
@@ -1232,6 +1261,37 @@ export default function Dashboard() {
               </Link>
             </div>
           </GlassCard>
+
+          {isAdmin && (
+            <GlassCard className="p-4 lg:col-span-1">
+              <SectionHeader
+                icon={AlertTriangle}
+                title="Inventory Review"
+                subtitle="Suspicious stock flagged for review"
+                accent="from-amber-500 to-orange-600"
+                rightSlot={
+                  <Link to="/tools/inventory-review" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    Review <ArrowRight className="h-3 w-3" />
+                  </Link>
+                }
+              />
+              <Link
+                to="/tools/inventory-review"
+                className="block rounded-xl border border-white/10 bg-black/20 p-3 hover:border-amber-400/40 hover:bg-amber-500/5 transition"
+                title="SKUs with suspicious stock (inactive listings with leftover stock, stale snapshots) pending manual review"
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-white/50">Pending Review</div>
+                {invReview.loading ? (
+                  <Skeleton className="h-6 w-12 mt-1 bg-white/10" />
+                ) : (
+                  <div className={`text-xl font-bold mt-0.5 tabular-nums ${invReview.data && invReview.data.pending > 0 ? "text-amber-400" : "text-white"}`}>
+                    {fmtInt(invReview.data?.pending || 0)}
+                  </div>
+                )}
+                <div className="text-[10px] text-primary mt-1">View →</div>
+              </Link>
+            </GlassCard>
+          )}
 
           {/* Alerts */}
           <GlassCard className="p-4 lg:col-span-2" >
