@@ -7,6 +7,8 @@ export type ToolLink = {
 
 export const TOOLS: ToolLink[] = [
   { path: '/tools/repricer', label: 'Advanced Repricer', ga: 'tool_menu_repricer' },
+  { path: '/tools/repricer?tab=price-history', label: 'Repricer Price History', ga: 'tool_menu_repricer_price_history', adminOnly: true },
+  { path: '/tools/repricer?tab=ai-insights', label: 'Repricer AI Insights', ga: 'tool_menu_repricer_ai_insights', adminOnly: true },
   { path: '/tools/product-analyzer', label: 'Product Analyzer', ga: 'tool_menu_product_analyzer' },
   { path: '/tools/seller-analyzer', label: 'Seller Analyzer', ga: 'tool_menu_seller_analyzer' },
   { path: '/tools/sales', label: 'Sales Report', ga: 'tool_menu_sales', adminOnly: true },

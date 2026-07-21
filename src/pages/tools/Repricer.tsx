@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Shield, Download, ExternalLink, History, FlaskConical, Eye, TestTubes, Clock, Users, AlertTriangle, Sparkles, Brain, ChevronDown, MoreHorizontal, BarChart3 } from "lucide-react";
 import { usePageFavicon } from "@/hooks/use-page-favicon";
 import OptimizationReportDialog from "@/components/repricer/OptimizationReportDialog";
@@ -94,10 +94,20 @@ export default function Repricer() {
   const { isAdmin } = useSubscription();
   usePageFavicon("R");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [rules, setRules] = useState<RepricerRule[]>([]);
   const [rulesLoaded, setRulesLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState("assignments");
   const hasRules = rules.length > 0;
+
+  // Deep-link support for admin-only tabs reached via a module directory
+  // card (e.g. /tools/repricer?tab=price-history) rather than the in-page tab bar.
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    if (requestedTab && isAdmin && (requestedTab === "price-history" || requestedTab === "ai-insights")) {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams, isAdmin]);
   
   // Marketplace selector state
   const [selectedMarketplace, setSelectedMarketplace] = useState("US");
