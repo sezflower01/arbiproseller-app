@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowDown,
-  TrendingDown,
   Loader2,
   ChevronDown,
   ChevronUp,
@@ -173,12 +172,6 @@ export default function SmartSuggestionBanner({
       ? Math.max(Math.round((lowestCompetitor - 0.02) * 100) / 100, 0.99)
       : null;
 
-  const liquidationRule = rules.find(
-    (r) =>
-      (r as any).smart_profile === "LIQUIDATION" ||
-      r.name?.toLowerCase().includes("liquidation")
-  );
-
   const handleLowerMin = async () => {
     if (!item.assignment_id || suggestedMin == null) return;
     setLoading(true);
@@ -214,16 +207,6 @@ export default function SmartSuggestionBanner({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSwitchLiquidation = async () => {
-    if (!liquidationRule) {
-      toast.error(
-        "No Liquidation rule found. Create one first in the Rules tab."
-      );
-      return;
-    }
-    onAssignRule(item as any, liquidationRule.id);
   };
 
   const severityColors = {
@@ -286,32 +269,7 @@ export default function SmartSuggestionBanner({
                     Lower min to {formatPrice(suggestedMin, marketplace)}
                   </Button>
                 )}
-                {liquidationRule && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-5 text-[10px] px-1.5 gap-0.5"
-                    disabled={loading}
-                    onClick={handleSwitchLiquidation}
-                  >
-                    <TrendingDown className="h-2.5 w-2.5" />
-                    Switch to Liquidation
-                  </Button>
-                )}
               </>
-            )}
-
-            {suggestion.type === "profit_guard_block" && liquidationRule && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-5 text-[10px] px-1.5 gap-0.5"
-                disabled={loading}
-                onClick={handleSwitchLiquidation}
-              >
-                <TrendingDown className="h-2.5 w-2.5" />
-                Switch to Liquidation
-              </Button>
             )}
           </div>
         </div>

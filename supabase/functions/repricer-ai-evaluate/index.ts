@@ -183,11 +183,11 @@ interface RaiseOffsetContext {
   fbaCompetitorCount: number;     // FBA sellers near the target price
   isOnlySeller: boolean;
   isMonopoly: boolean;            // monopoly mode would fire
-  smartProfile: string;           // VELOCITY_DOMINATOR, LIQUIDATION, etc.
+  smartProfile: string;           // VELOCITY_DOMINATOR, MOMENTUM_BUILDER, etc.
 }
 
 function computeRaiseOffset(ctx: RaiseOffsetContext): { offset: number; reason: string } {
-  const isAggressive = ['VELOCITY_DOMINATOR', 'LIQUIDATION'].includes(ctx.smartProfile);
+  const isAggressive = ctx.smartProfile === 'VELOCITY_DOMINATOR';
 
   // ── Priority 0: CLUSTER MATCH PROTECTION ──
   // In a tight rotating cluster, undercutting by $0.01 does NOT meaningfully
@@ -208,7 +208,7 @@ function computeRaiseOffset(ctx: RaiseOffsetContext): { offset: number; reason: 
   // FBM sellers: respect profile intent for match-only profiles (Margin Protection, Profit Extractor)
   // Only force undercut for profiles that are NOT match-only
   if (ctx.myFulfillment === 'FBM') {
-    const isMatchOnlyProfile = ['MARGIN_BUILDER', 'PROFIT_EXTRACTOR'].includes(ctx.smartProfile);
+    const isMatchOnlyProfile = ctx.smartProfile === 'PROFIT_EXTRACTOR';
     if (isMatchOnlyProfile) {
       return { offset: 0.00, reason: 'match:fbm_match_only_profile' };
     }
@@ -2104,7 +2104,7 @@ function computeAiWinSalesBoosterPrice(
   if (!isBuyboxEligible) {
     const currentSmartProfile = rule.smart_profile || 'CUSTOM';
     const isFbmSoftBypass = context.yourFulfillmentType === 'FBM';
-    const aggressiveProfiles = ['VELOCITY_DOMINATOR', 'LIQUIDATION'];
+    const aggressiveProfiles = ['VELOCITY_DOMINATOR'];
     const isAggressiveBypass = aggressiveProfiles.includes(currentSmartProfile);
 
     if (isFbmSoftBypass) {
@@ -2795,7 +2795,7 @@ function computeAiWinSalesBoosterPrice(
     const lowestEligibleValid = lowestEligible && lowestEligible < Infinity ? lowestEligible : null;
 
     // Determine rule class for anchor selection
-    const aggressiveProfiles = ['VELOCITY_DOMINATOR', 'LIQUIDATION'];
+    const aggressiveProfiles = ['VELOCITY_DOMINATOR'];
     const currentFbmProfile = rule.smart_profile || 'CUSTOM';
     const isAggressiveFbm = aggressiveProfiles.includes(currentFbmProfile);
     
@@ -3134,8 +3134,8 @@ function computeAiWinSalesBoosterPrice(
     const actualGap = currentPrice - buyboxPrice; // positive = we are above BB
     const gapSufficient = actualGap >= fbmCompetitiveGap || currentPrice <= buyboxPrice;
     
-    const conservativeProfiles = ['BALANCED_PRO', 'MARGIN_BUILDER', 'PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER'];
-    const aggressiveProfilesFbm = ['VELOCITY_DOMINATOR', 'LIQUIDATION'];
+    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER'];
+    const aggressiveProfilesFbm = ['VELOCITY_DOMINATOR'];
     const isConservative = conservativeProfiles.includes(currentSmartProfile);
     const isAggressive = aggressiveProfilesFbm.includes(currentSmartProfile);
     
@@ -3200,7 +3200,7 @@ function computeAiWinSalesBoosterPrice(
   // the Buy Box among sellers at near-identical prices.
   // Only applies when NOT in active BB recapture / recovery mode.
   // ═══════════════════════════════════════════════════════════════════
-  const isAggressiveProfile = ['VELOCITY_DOMINATOR', 'LIQUIDATION'].includes(rule.smart_profile || '');
+  const isAggressiveProfile = (rule.smart_profile || '') === 'VELOCITY_DOMINATOR';
   const bbLossDurationMin = (intelligence as any).bbLossDurationMinutes ?? 0;
   const bbRecoveryEscalation = (intelligence as any).bbRecoveryEscalation ?? 0;
   const isActiveRecapture = bbLossDurationMin > 30 && bbRecoveryEscalation > 0;
@@ -5703,12 +5703,7 @@ Deno.serve(async (req) => {
     const PROFILE_KEY_TO_LABEL: Record<string, string> = {
       VELOCITY_DOMINATOR: 'Aggressive Capture',
       MOMENTUM_BUILDER: 'Momentum Builder',
-      BALANCED_PRO: 'Balanced',
-      BUYBOX_HOLD: 'Buy Box Hold (Legacy)',
-      MARGIN_BUILDER: 'Margin Protection',
       PROFIT_EXTRACTOR: 'Profit Extractor',
-      // LIQUIDATION preset removed (Profit Guard removal — no longer needed).
-      PRECISION_MATCH: 'Precision Match (Legacy)',
     };
     if (smartProfile !== 'CUSTOM') {
 
@@ -5745,54 +5740,6 @@ Deno.serve(async (req) => {
           only_raise_when_buybox_owner: true,
           ignore_fbm_unless_buybox_owner: true,
         },
-        BALANCED_PRO: {
-          undercut_amount: 0.005,
-          enable_smart_raise: true,
-          raise_trigger_percent: 2,
-          max_raise_step_dollars: 0.75,
-          max_raise_step_percent: 4,
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'conservative',
-          monopoly_cooldown_minutes: 90,
-          use_ai_tuning: true,
-          cooldown_minutes: 20,
-          skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: false,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: true,
-        },
-        BUYBOX_HOLD: {
-          undercut_amount: 0.005,
-          enable_smart_raise: true,
-          raise_trigger_percent: 2.5,
-          max_raise_step_dollars: 0.50,
-          max_raise_step_percent: 3,
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'conservative',
-          monopoly_cooldown_minutes: 120,
-          use_ai_tuning: true,
-          cooldown_minutes: 25,
-          skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: false,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: false,
-        },
-        MARGIN_BUILDER: {
-          undercut_amount: 0.00,           // Match-only — key differentiator from Balanced
-          enable_smart_raise: true,
-          raise_trigger_percent: 3.0,      // Slower raise trigger
-          max_raise_step_dollars: 0.40,    // Smaller raise steps
-          max_raise_step_percent: 2.5,     // Tighter cap
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'conservative',
-          monopoly_cooldown_minutes: 60,
-          use_ai_tuning: true,
-          cooldown_minutes: 35,            // Longer cooldown for stability
-          skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: false,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: true,   // FBM competition is user-controlled, not preset-defined
-        },
         PROFIT_EXTRACTOR: {
           undercut_amount: 0,
           enable_smart_raise: true,
@@ -5809,8 +5756,6 @@ Deno.serve(async (req) => {
           only_raise_when_buybox_owner: true,
           ignore_fbm_unless_buybox_owner: true,
         },
-        // LIQUIDATION preset removed — its sole purpose was Profit Guard bypass.
-
       };
       
       const preset = profilePresets[smartProfile];
@@ -7209,7 +7154,7 @@ Deno.serve(async (req) => {
         // FBM→FBM non-aggressive cap: never raise above the real FBM Buy Box
         const peIsFbmSeller = context.yourFulfillmentType === 'FBM';
         const peBbIsFbm = (buyboxSellerType as any) === 'FBM' || buyboxSellerType === null || (buyboxSellerType as any) === 'unknown';
-        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'BALANCED_PRO', 'MARGIN_BUILDER', 'PROFIT_EXTRACTOR'];
+        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR'];
         const peCurrentProfile = rule.smart_profile || 'CUSTOM';
         const peIsFbmFbmCapped = peIsFbmSeller && peBbIsFbm && peNonAggressiveProfiles.includes(peCurrentProfile) && peBbPrice && peBbPrice > 0;
         

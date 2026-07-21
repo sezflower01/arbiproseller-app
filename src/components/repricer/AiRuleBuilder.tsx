@@ -79,55 +79,30 @@ const SCENARIO_BEHAVIORS = {
   ],
 };
 
-export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'BALANCED_PRO' | 'PRECISION_MATCH' | 'MARGIN_BUILDER' | 'PROFIT_EXTRACTOR' | 'BUYBOX_HOLD' | 'LIQUIDATION' | 'WAR_SAFE' | 'WAR_BALANCED' | 'WAR_AGGRESSIVE';
+export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'PROFIT_EXTRACTOR';
 
 // Profiles hidden by default (advanced/high-risk) — unlockable via toggle
-const ADVANCED_PROFILES: SmartProfile[] = ['VELOCITY_DOMINATOR', 'MARGIN_BUILDER'];
-const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'BALANCED_PRO', 'PROFIT_EXTRACTOR', 'LIQUIDATION'];
+const ADVANCED_PROFILES: SmartProfile[] = ['VELOCITY_DOMINATOR'];
+const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR'];
 
 // Behavior metrics per profile for the summary card
 const PROFILE_BEHAVIOR: Record<SmartProfile, { salesSpeed: number; marginProtection: number; raiseAggression: number; bbDefense: number; riskLevel: number; tags: string[] }> = {
   VELOCITY_DOMINATOR: { salesSpeed: 5, marginProtection: 1, raiseAggression: 0, bbDefense: 0, riskLevel: 9, tags: ['Clearance', 'Rank building', 'Cash flow'] },
   MOMENTUM_BUILDER: { salesSpeed: 4, marginProtection: 3, raiseAggression: 3, bbDefense: 3, riskLevel: 4, tags: ['OA / Arbitrage', 'Competitive wholesale', 'Growth phase'] },
-  BALANCED_PRO: { salesSpeed: 3, marginProtection: 4, raiseAggression: 2, bbDefense: 4, riskLevel: 3, tags: ['Default for most sellers', 'Stable wholesale', 'Broad catalog'] },
-  PRECISION_MATCH: { salesSpeed: 3, marginProtection: 4, raiseAggression: 2, bbDefense: 4, riskLevel: 2, tags: ['Margin-first', 'No price wars', 'Stable competition'] },
-  BUYBOX_HOLD: { salesSpeed: 2, marginProtection: 4, raiseAggression: 2, bbDefense: 5, riskLevel: 3, tags: ['Established winners', 'BB defense', 'Reduce churn'] },
-  MARGIN_BUILDER: { salesSpeed: 2, marginProtection: 5, raiseAggression: 3, bbDefense: 4, riskLevel: 3, tags: ['Expensive inventory', 'Low competition', 'Profit-first'] },
   PROFIT_EXTRACTOR: { salesSpeed: 2, marginProtection: 5, raiseAggression: 5, bbDefense: 3, riskLevel: 8, tags: ['Private label', 'Low competition', 'Ceiling discovery'] },
-  LIQUIDATION: { salesSpeed: 5, marginProtection: 0, raiseAggression: 0, bbDefense: 0, riskLevel: 10, tags: ['Dead stock', 'Aged inventory', 'Seasonal exit'] },
-  WAR_SAFE: { salesSpeed: 3, marginProtection: 5, raiseAggression: 2, bbDefense: 4, riskLevel: 2, tags: ['Price war protection', 'Hold & wait', 'Margin safety'] },
-  WAR_BALANCED: { salesSpeed: 4, marginProtection: 3, raiseAggression: 3, bbDefense: 3, riskLevel: 4, tags: ['Limited reactions', 'Controlled competition', 'Balanced risk'] },
-  WAR_AGGRESSIVE: { salesSpeed: 5, marginProtection: 2, raiseAggression: 4, bbDefense: 2, riskLevel: 7, tags: ['Keep competing', 'Price war fighter', 'Maximum aggression'] },
 };
 
 export const SMART_PROFILES: { value: SmartProfile; label: string; description: string; bestFor: string; salesStars: number; profitStars: number; icon: string; recommended?: boolean; advanced?: boolean; badge?: string; badgeColor?: string; microLabel?: string; keyDiff?: string; legacy?: boolean; safetyScore?: number; salesImpactLabel?: string; salesImpactDesc?: string; salesImpactLevel?: 'strong' | 'balanced' | 'lower' | 'clearance' }[] = [
   { value: 'VELOCITY_DOMINATOR', label: 'Aggressive Capture', description: 'Win more often with lower profit per sale.', bestFor: 'Heavy competition & fast-moving items', salesStars: 5, profitStars: 1, icon: '🚀', safetyScore: 3, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often, but may reduce profit', salesImpactLevel: 'strong', microLabel: 'Get more sales fast' },
   { value: 'MOMENTUM_BUILDER', label: 'Momentum Builder', description: 'Stay competitive while protecting your margins.', bestFor: 'Arbitrage, wholesale, most products', salesStars: 4, profitStars: 2, icon: '📈', recommended: true, safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often while keeping strong sales volume', salesImpactLevel: 'strong', microLabel: 'Best balance of sales and profit' },
-  { value: 'BALANCED_PRO', label: 'Balanced', description: 'Avoid price wars and keep prices steady.', bestFor: 'Large catalogs & consistent products', salesStars: 3, profitStars: 3, icon: '⚖️', safetyScore: 9, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Stays competitive while protecting profit', salesImpactLevel: 'balanced', microLabel: 'Stable and low-risk pricing' },
-  { value: 'MARGIN_BUILDER', label: 'Margin Protection', description: 'Prioritizes margin over speed.', bestFor: 'Expensive or low-competition items', salesStars: 2, profitStars: 4, icon: '💰', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Stays competitive while focusing on higher profit', salesImpactLevel: 'balanced', microLabel: 'Higher profit, slower sales' },
   { value: 'PROFIT_EXTRACTOR', label: 'Profit Extractor', description: 'Raises prices to capture more profit, but may reduce sales.', bestFor: 'Private label & exclusive products', salesStars: 1, profitStars: 5, icon: '🏆', safetyScore: 7, salesImpactLabel: 'Lower Sales', salesImpactDesc: 'May lose Buy Box and reduce sales if prices increase', salesImpactLevel: 'lower', microLabel: 'Maximize profit when competition is low' },
-  { value: 'LIQUIDATION', label: 'Liquidation', description: 'Move products fast, even at lower margins.', bestFor: 'Old stock & urgent clearance', salesStars: 5, profitStars: 0, icon: '🔥', safetyScore: 2, salesImpactLabel: 'Clearance Mode', salesImpactDesc: 'Prioritizes selling fast over profit', salesImpactLevel: 'clearance', microLabel: 'Sell inventory quickly' },
-  // Legacy entries — kept so existing rules using these profiles still display correctly (hidden from creation grid)
-  { value: 'PRECISION_MATCH', label: 'Precision Match', description: 'Matches competitor prices exactly — avoids price wars while staying competitive.', bestFor: 'Margin-first sellers & stable competitive listings', salesStars: 3, profitStars: 4, icon: '🧠', badge: 'Legacy', badgeColor: 'bg-gray-500 text-white', microLabel: 'Match, never undercut', legacy: true },
-  { value: 'BUYBOX_HOLD', label: 'Buy Box Hold', description: 'Defend current Buy Box position without overreacting to small changes.', bestFor: 'Healthy ASINs where you already win BB frequently', salesStars: 3, profitStars: 4, icon: '🛡️', badge: 'Legacy', badgeColor: 'bg-gray-500 text-white', microLabel: 'Protect Buy Box position', legacy: true },
-  { value: 'WAR_SAFE', label: 'Avoid Price War', description: 'Holds price during market instability — waits for bots to settle before reacting.', bestFor: 'Volatile markets, multi-bot competition & margin protection', salesStars: 3, profitStars: 5, icon: '🕊️', badge: 'Legacy', badgeColor: 'bg-gray-500 text-white', microLabel: 'Hold & protect margins', legacy: true },
-  { value: 'WAR_BALANCED', label: 'Limited Reaction', description: 'Reacts a limited number of times during price wars, then enters cooldown.', bestFor: 'Moderate competition & controlled risk tolerance', salesStars: 4, profitStars: 3, icon: '⚖️', badge: 'Legacy', badgeColor: 'bg-gray-500 text-white', microLabel: 'Controlled competition', legacy: true },
-  { value: 'WAR_AGGRESSIVE', label: 'Continue Competing', description: 'Keeps competing even during price oscillation — only pauses after repeated losses.', bestFor: 'High-competition ASINs & aggressive sellers', salesStars: 5, profitStars: 2, icon: '⚔️', badge: 'Legacy', badgeColor: 'bg-gray-500 text-white', microLabel: 'Fight through price wars', legacy: true },
 ];
 
 // Profile key → UI label mapping (canonical source of truth)
 export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   VELOCITY_DOMINATOR: 'Aggressive Capture',
   MOMENTUM_BUILDER: 'Momentum Builder',
-  BALANCED_PRO: 'Balanced',
-  BUYBOX_HOLD: 'Buy Box Hold (Legacy)',
-  MARGIN_BUILDER: 'Margin Protection',
   PROFIT_EXTRACTOR: 'Profit Extractor',
-  LIQUIDATION: 'Liquidation',
-  PRECISION_MATCH: 'Precision Match (Legacy)',
-  WAR_SAFE: 'Avoid Price War (Legacy)',
-  WAR_BALANCED: 'Limited Reaction (Legacy)',
-  WAR_AGGRESSIVE: 'Continue Competing (Legacy)',
 };
 
 // Profile preset configurations - these override specific settings
@@ -164,70 +139,6 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
   },
-  BALANCED_PRO: {
-    undercut_amount: 0.005,
-    enable_smart_raise: true,
-    raise_trigger_percent: 2,
-    max_raise_step_dollars: 0.75,
-    max_raise_step_percent: 4,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 90,
-    use_ai_tuning: true,
-    cooldown_minutes: 20,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-  },
-  PRECISION_MATCH: {
-    undercut_amount: 0.00,
-    enable_smart_raise: true,
-    raise_trigger_percent: 2,
-    max_raise_step_dollars: 0.75,
-    max_raise_step_percent: 4,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 90,
-    use_ai_tuning: true,
-    cooldown_minutes: 20,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-  },
-  BUYBOX_HOLD: {
-    undercut_amount: 0.005,
-    enable_smart_raise: true,
-    raise_trigger_percent: 2.5,
-    max_raise_step_dollars: 0.50,
-    max_raise_step_percent: 3,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 120,
-    use_ai_tuning: true,
-    cooldown_minutes: 25,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-  },
-  MARGIN_BUILDER: {
-    undercut_amount: 0.00,           // ← Was $0.005, now match-only to clearly differentiate from Balanced
-    enable_smart_raise: true,
-    raise_trigger_percent: 3.0,      // ← Was 1.25%, now slower to trigger raises
-    max_raise_step_dollars: 0.40,    // ← Was $0.75, smaller steps for margin protection
-    max_raise_step_percent: 2.5,     // ← Was 4%, tighter cap
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 60,
-    use_ai_tuning: true,
-    cooldown_minutes: 35,            // ← Was 30, longer cooldown for stability
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,  // ← Competes with ALL seller types (key differentiator from Balanced)
-  },
   PROFIT_EXTRACTOR: {
     undercut_amount: 0.00,
     enable_smart_raise: true,
@@ -243,89 +154,6 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
-  },
-  LIQUIDATION: {
-    undercut_amount: 0.03,
-    enable_smart_raise: false,
-    enable_monopoly_mode: false,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 60,
-    use_ai_tuning: true,
-    cooldown_minutes: 5,
-    skip_lower_when_bb_owner: false,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: false,
-    ignore_fbm_unless_buybox_owner: false,
-    raise_trigger_percent: 2,
-    max_raise_step_dollars: 0.50,
-    max_raise_step_percent: 3,
-  },
-  // --- Oscillation / Price War Protection Strategies (based on Momentum Builder) ---
-  WAR_SAFE: {
-    undercut_amount: 0.01,
-    enable_smart_raise: true,
-    raise_trigger_percent: 1.5,
-    max_raise_step_dollars: 1.00,
-    max_raise_step_percent: 5,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 60,
-    use_ai_tuning: true,
-    cooldown_minutes: 15,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-    // Oscillation: Safe — hold price, long cooldown, minimal reactions
-    oscillation_mode: 'safe',
-    oscillation_cooldown_minutes: 30,
-    oscillation_max_reactions: 0,
-    oscillation_bb_loss_limit: 1,
-    war_protection_minutes: 60,
-  },
-  WAR_BALANCED: {
-    undercut_amount: 0.01,
-    enable_smart_raise: true,
-    raise_trigger_percent: 1.5,
-    max_raise_step_dollars: 1.00,
-    max_raise_step_percent: 5,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 60,
-    use_ai_tuning: true,
-    cooldown_minutes: 15,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-    // Oscillation: Balanced — limited reactions then cooldown
-    oscillation_mode: 'balanced',
-    oscillation_cooldown_minutes: 20,
-    oscillation_max_reactions: 3,
-    oscillation_bb_loss_limit: 3,
-    war_protection_minutes: 30,
-  },
-  WAR_AGGRESSIVE: {
-    undercut_amount: 0.01,
-    enable_smart_raise: true,
-    raise_trigger_percent: 1.5,
-    max_raise_step_dollars: 1.00,
-    max_raise_step_percent: 5,
-    enable_monopoly_mode: true,
-    monopoly_mode_type: 'conservative',
-    monopoly_cooldown_minutes: 60,
-    use_ai_tuning: true,
-    cooldown_minutes: 10,
-    skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: true,
-    only_raise_when_buybox_owner: true,
-    ignore_fbm_unless_buybox_owner: false,
-    // Oscillation: Aggressive — keep competing, high tolerance
-    oscillation_mode: 'aggressive',
-    oscillation_cooldown_minutes: 10,
-    oscillation_max_reactions: 10,
-    oscillation_bb_loss_limit: 8,
-    war_protection_minutes: 10,
   },
 };
 
@@ -644,7 +472,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
 
   const isLegacyProfile = ADVANCED_PROFILES.includes(settings.smart_profile) && !showAdvancedStrategies;
 
-  const activeProfile = SMART_PROFILES.find(p => p.value === settings.smart_profile) || SMART_PROFILES.find(p => p.value === 'BALANCED_PRO')!;
+  const activeProfile = SMART_PROFILES.find(p => p.value === settings.smart_profile) || SMART_PROFILES.find(p => p.value === 'MOMENTUM_BUILDER')!;
 
   return (
     <div className="space-y-6">
@@ -773,15 +601,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           <div>
             <span className="font-medium text-orange-600">Margin Erosion Warning:</span>{' '}
             <span className="text-muted-foreground">This profile aggressively lowers prices with no raise mechanism. Prices will trend toward your floor. Best for short-term clearance — not recommended as a permanent strategy.</span>
-          </div>
-        </div>
-      )}
-      {settings.smart_profile === 'LIQUIDATION' && (
-        <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/5 text-sm">
-          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-medium text-red-600">Fire Sale Warning:</span>{' '}
-            <span className="text-muted-foreground">This profile will drive prices toward your minimum floor as fast as possible. No raises, no BB protection, reacts to all sellers including FBM. Only use for inventory you need to exit quickly.</span>
           </div>
         </div>
       )}

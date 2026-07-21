@@ -168,27 +168,6 @@ async function classifyAssignments(
   const alertedAsins = new Set((recentAlerts || []).map((a: any) => a.asin));
   const tAlerts = Date.now();
 
-  // Fetch LIQUIDATION rule IDs — these assignments get auto-HOT priority for faster liquidation cycles
-  const liquidationRuleIds = new Set<string>();
-  const allRuleIds = [...new Set(assignments.map((a: any) => a.rule_id).filter(Boolean))];
-  if (allRuleIds.length > 0) {
-    const RULE_BATCH = 100;
-    for (let i = 0; i < allRuleIds.length; i += RULE_BATCH) {
-      const batch = allRuleIds.slice(i, i + RULE_BATCH);
-      const { data: rules } = await supabase
-        .from('repricer_rules')
-        .select('id, smart_profile')
-        .in('id', batch)
-        .eq('smart_profile', 'LIQUIDATION');
-      for (const r of rules || []) {
-        liquidationRuleIds.add(r.id);
-      }
-    }
-    if (liquidationRuleIds.size > 0) {
-      console.log(`[cron-trigger] Liquidation auto-HOT: ${liquidationRuleIds.size} liquidation rules found`);
-    }
-  }
-
   const todayStr = new Date().toISOString().split('T')[0];
   const { data: todaySales } = await supabase
     .from('asin_sales_daily')
@@ -266,11 +245,6 @@ async function classifyAssignments(
     // ALWAYS HOT: Explicitly starred by user
     if (signals.starred) {
       hotQualifyReasons.push('starred');
-    }
-
-    // ALWAYS HOT: Liquidation rule — needs fast cycles for inventory clearance
-    if (a.rule_id && liquidationRuleIds.has(a.rule_id)) {
-      hotQualifyReasons.push('liquidation_rule');
     }
 
     // ALWAYS HOT: Active Buy Box price alert (recent drop detected)

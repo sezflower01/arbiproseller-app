@@ -5928,59 +5928,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     }
   };
 
-  // ── Bulk: Apply Liquidation Rule ──
-  const bulkApplyLiquidation = async () => {
-    if (selectedIds.size === 0) return;
-    const liqRule = rules.find(
-      r => (r as any).smart_profile === "LIQUIDATION" || r.name?.toLowerCase().includes("liquidation")
-    );
-    if (!liqRule) {
-      toast.error("No Liquidation rule found. Create one first in the Rules tab.");
-      return;
-    }
-    const selected = items.filter(i => selectedIds.has(i.id));
-    const confirmed = window.confirm(
-      `Apply "${liqRule.name}" rule to ${selected.length} item(s)?\n\nThis will disable profit guard and prioritize sell-through.`
-    );
-    if (!confirmed) return;
-
-    const targetMp = marketplace || "US";
-    setSavingAll(true);
-    try {
-      const BATCH_SIZE = 200;
-      const upsertRows = selected.map(item => {
-        const isFba = item.source?.includes("fba") || item.source === "amazon_sync";
-        return {
-          user_id: user!.id,
-          asin: item.asin,
-          sku: item.sku,
-          rule_id: liqRule.id,
-          marketplace: targetMp,
-          is_enabled: true,
-          fulfillment_type: isFba ? "FBA" : "FBM",
-        };
-      });
-      for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
-        const batch = upsertRows.slice(i, i + BATCH_SIZE);
-        await supabase.from("repricer_assignments").upsert(batch, {
-          onConflict: "user_id,sku,marketplace",
-          ignoreDuplicates: false,
-        });
-      }
-      setItems(prev => prev.map(i => {
-        if (!selectedIds.has(i.id)) return i;
-        return { ...i, rule_id: liqRule.id, rule_name: liqRule.name, saved_rule_id: liqRule.id };
-      }));
-      toast.success(`Liquidation rule applied to ${selected.length} items`);
-    } catch (e: any) {
-      toast.error("Failed: " + e.message);
-    } finally {
-      setSavingAll(false);
-    }
-  };
-
-
-
 
 
   const runScheduler = async () => {
@@ -7836,10 +7783,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
                   "Apply"
                 )}
               </Button>
-              <Button size="sm" variant="outline" onClick={bulkApplyLiquidation} className="text-xs gap-1">
-                <Zap className="h-3 w-3" />
-                Apply Liquidation
-              </Button>
               <Button size="sm" variant="outline" onClick={async () => {
                 const selected = items.filter(i => selectedIds.has(i.id) && i.assignment_id);
                 if (selected.length === 0) { toast.error("No assignments selected"); return; }
@@ -7979,30 +7922,11 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
                   {suggestionFilter === "blocked_review_soon" && "Blocked by min/ROI but either still selling or no clear competitive pressure. Monitor these — they may need attention later."}
                   {suggestionFilter === "blocked_auto" && "Auto-floor is active or waiting. The system will lower the min automatically — no action needed from you right now."}
                   {suggestionFilter === "blocked_by_min" && "Auto-lowering stops after 5 drops, 30% total drop, or when no competitor data is available. Select items below to manually intervene."}
-                  {suggestionFilter === "bb_suppressed" && "No active Buy Box on these listings. The system competes on lowest price. Consider lowering your min or switching to a Liquidation rule."}
-                  {suggestionFilter === "profit_guard_block" && "Your profit rules are preventing price drops. The system is protecting your margins. Switch to Liquidation if you need to sell faster."}
+                  {suggestionFilter === "bb_suppressed" && "No active Buy Box on these listings. The system competes on lowest price. Consider lowering your min or adjusting your rule."}
+                  {suggestionFilter === "profit_guard_block" && "Your profit rules are preventing price drops. The system is protecting your margins."}
                   {suggestionFilter === "HAS_ANY" && "These items have alerts that may need your review. Select items and use bulk actions to resolve."}
                   {suggestionFilter === "NONE" && "These items are repricing normally with no issues detected."}
                 </p>
-                {suggestionFilter !== "NONE" && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {(suggestionFilter === "profit_guard_block" || suggestionFilter === "bb_suppressed" || suggestionFilter === "HAS_ANY") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs gap-1"
-                        onClick={() => {
-                          const all = sortedItems.map(i => i.id);
-                          setSelectedIds(new Set(all));
-                          setTimeout(() => bulkApplyLiquidation(), 100);
-                        }}
-                      >
-                        <Zap className="h-3 w-3" />
-                        Switch All to Liquidation
-                      </Button>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           </div>

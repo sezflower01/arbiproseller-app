@@ -497,7 +497,7 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
 
       // Add AI-specific fields
       if (isAiRule) {
-        ruleData.smart_profile = isCustomRule ? 'CUSTOM' : ((formData as any).smart_profile || 'BALANCED_PRO');
+        ruleData.smart_profile = isCustomRule ? 'CUSTOM' : ((formData as any).smart_profile || 'MOMENTUM_BUILDER');
         ruleData.when_only_seller = formData.when_only_seller || "CUSTOM_PRICE";
         ruleData.when_not_buybox_eligible = formData.when_not_buybox_eligible || "CUSTOM_PRICE";
         ruleData.when_buybox_suppressed = formData.when_buybox_suppressed || "AI_REPRICE";

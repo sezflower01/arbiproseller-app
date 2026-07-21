@@ -169,8 +169,7 @@ Deno.serve(async (req) => {
 
       const preferred =
         userRules?.find((r: any) => r.smart_profile === "MOMENTUM_BUILDER") ||
-        userRules?.find((r: any) => r.smart_profile === "BALANCED_PRO") ||
-        userRules?.find((r: any) => r.smart_profile !== "VELOCITY_DOMINATOR" && r.smart_profile !== "LIQUIDATION") ||
+        userRules?.find((r: any) => r.smart_profile !== "VELOCITY_DOMINATOR") ||
         null;
 
       if (!preferred) {
