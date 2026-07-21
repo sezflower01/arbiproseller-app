@@ -713,6 +713,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
     lastSkipDetails?: string | null;
     lastEvalAttempt?: string | null;
     assignmentUpdatedAt?: string | null;
+    lastDispatchAt?: string | null;
     minFetchInterval?: number | null;
     lastAppliedPrice?: number | null;
     lastBuyboxPrice?: number | null;
@@ -1259,6 +1260,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
           lastSkipDetails: assignmentRes.data.last_skip_details,
           lastEvalAttempt: assignmentRes.data.last_evaluation_attempt_at,
           assignmentUpdatedAt: assignmentRes.data.updated_at,
+          lastDispatchAt: (assignmentRes.data as any).last_dispatch_at ?? null,
           minFetchInterval: assignmentRes.data.min_fetch_interval_minutes,
           lastAppliedPrice,
           lastBuyboxPrice,
@@ -1350,9 +1352,13 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
     latestActionAt,
     diagnostics.latestAckAt,
   );
-  const schedulerHeartbeatAt = diagnostics.assignmentUpdatedAt &&
-    (!lastCheckedAt || new Date(diagnostics.assignmentUpdatedAt).getTime() > new Date(lastCheckedAt).getTime())
-      ? diagnostics.assignmentUpdatedAt
+  // Uses last_dispatch_at (touched only by the actual scheduler/dispatcher)
+  // rather than the row's generic updated_at, which also gets bumped by
+  // manual UI edits (e.g. a min/max change) and would otherwise be
+  // misread as "the priority scheduler just ran."
+  const schedulerHeartbeatAt = diagnostics.lastDispatchAt &&
+    (!lastCheckedAt || new Date(diagnostics.lastDispatchAt).getTime() > new Date(lastCheckedAt).getTime())
+      ? diagnostics.lastDispatchAt
       : null;
   const isPriorityHeartbeatNewer = Boolean(
     diagnostics.effectivePriority &&
