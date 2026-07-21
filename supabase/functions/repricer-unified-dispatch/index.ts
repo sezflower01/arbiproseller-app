@@ -667,16 +667,20 @@ async function scoreAllCandidates(
   cap: number = 30,
 ): Promise<{ candidates: ScoredCandidate[]; metrics: { inactiveFiltered: number; mktScheduleSkipped: number; capacityUtilRatio: number; capBlockedCount: number }; staleInventoryItems: Array<{ sku: string; asin: string; marketplace: string }> }> {
 
-  // ── Fetch marketplace schedules from rules ──
+  // ── Fetch marketplace schedules + enabled state from rules ──
   const { data: rulesData } = await supabase
     .from('repricer_rules')
-    .select('id, marketplace_schedule')
+    .select('id, marketplace_schedule, is_enabled')
     .eq('user_id', userId);
 
   const ruleScheduleMap = new Map<string, Record<string, any>>();
+  const disabledRuleIds = new Set<string>();
   for (const rule of rulesData || []) {
     if (rule.marketplace_schedule) {
       ruleScheduleMap.set(rule.id, rule.marketplace_schedule);
+    }
+    if (rule.is_enabled === false) {
+      disabledRuleIds.add(rule.id);
     }
   }
 
@@ -709,6 +713,7 @@ async function scoreAllCandidates(
   // Filter: must have rule + min_price, skip restricted, skip intl with NULL or non-active status
   const withRule = assignments.filter((a: any) => {
     if (!a.rule_id || !a.min_price_override || a.min_price_override <= 0) return false;
+    if (disabledRuleIds.has(a.rule_id)) return false;
     if (a.is_restricted) return false;
     // For international markets: only exclude confirmed-bad statuses; NULL = unverified = allow
     if (a.marketplace !== 'US' && a.intl_listing_status) {
@@ -719,8 +724,9 @@ async function scoreAllCandidates(
   });
   const noRule = assignments.length - withRule.length;
   const restrictedCount = assignments.filter((a: any) => a.is_restricted).length;
+  const rulePausedCount = assignments.filter((a: any) => a.rule_id && disabledRuleIds.has(a.rule_id)).length;
   if (noRule > 0) {
-    console.log(`[unified-dispatch] ${userId}: ${noRule} assignments skipped (no rule or min_price or restricted), restricted=${restrictedCount}`);
+    console.log(`[unified-dispatch] ${userId}: ${noRule} assignments skipped (no rule or min_price or restricted), restricted=${restrictedCount}, rule_paused=${rulePausedCount}`);
   }
   const effectiveChecksPerHour = EFFECTIVE_CHECKS_PER_HOUR;
   const capacityRatio = withRule.length / Math.max(effectiveChecksPerHour, 1);

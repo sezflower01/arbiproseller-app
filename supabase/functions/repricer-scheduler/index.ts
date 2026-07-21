@@ -233,6 +233,21 @@ Deno.serve(async (req) => {
       allAssignments = assignments || [];
     }
 
+    // Rule-level pause: the "Active/Paused" toggle in the Rules tab sets
+    // repricer_rules.is_enabled, but this join was previously fetched and
+    // never checked -- pausing a rule had no actual effect on pricing.
+    // Skip any assignment whose rule is paused; assignments with no rule
+    // (rule_id null) are unaffected.
+    const preRulePauseCount = allAssignments.length;
+    allAssignments = allAssignments.filter((a: any) => {
+      const rule = a.repricer_rules;
+      return !rule || rule.is_enabled !== false;
+    });
+    const rulePausedSkipped = preRulePauseCount - allAssignments.length;
+    if (rulePausedSkipped > 0) {
+      console.log(`[repricer-scheduler] Skipped ${rulePausedSkipped} assignments — rule paused`);
+    }
+
     console.log(`[repricer-scheduler] Processing ${allAssignments.length} active assignments`);
 
     // Get total active assignment count for hybrid threshold (≤1000 = all Smart, >1000 = allow Basic)
