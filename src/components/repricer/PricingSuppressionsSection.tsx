@@ -322,10 +322,12 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
       }
 
       const successMessage = `Amazon accepted ${row.marketplace} ${row.sku}: price ${priceVal}, min ${minVal}, max ${maxVal}${subId ? ` (submission ${String(subId).slice(0, 8)}…)` : ""}. ${verificationMessage}`;
+      // Full detail lives in the inline row status below -- the toast is just
+      // a brief "it's done" pulse, not a second copy of the same long message.
       if (statusType === "error") {
-        toast.error(successMessage, { id: toastId, duration: 14000 });
+        toast.error(`${row.marketplace} ${row.sku}: still shows a pricing suppression — see details in the row.`, { id: toastId, duration: 6000 });
       } else {
-        toast.success(successMessage, { id: toastId, duration: 10000 });
+        toast.success(`${row.marketplace} ${row.sku} reactivated.`, { id: toastId, duration: 5000 });
       }
       setReactivationStatus((prev) => ({
         ...prev,
@@ -339,7 +341,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
     } catch (e: any) {
       console.error("[PricingSuppressions] Save failed:", e);
       const message = `Reactivate failed: ${e?.message || e}`;
-      toast.error(message, { id: toastId, duration: 12000 });
+      toast.error(`${row.marketplace} ${row.sku}: reactivate failed — see details in the row.`, { id: toastId, duration: 6000 });
       setReactivationStatus((prev) => ({
         ...prev,
         [row.id]: { type: "error", message },
