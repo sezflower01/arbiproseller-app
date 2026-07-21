@@ -251,6 +251,9 @@ verify_jwt = false
 [functions.enrich-missing-titles-all]
 verify_jwt = false
 
+[functions.refresh-spapi-token]
+verify_jwt = false
+
 [functions.sync-amazon-bounds]
 verify_jwt = true
 
