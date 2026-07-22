@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { usePageFavicon } from "@/hooks/use-page-favicon";
 import AppliedSuggestionsPanel from "@/components/repricer/AppliedSuggestionsPanel";
-import PushBoundsToAmazonButton from "@/components/repricer/PushBoundsToAmazonButton";
 import IntlRoiSweepCard from "@/components/repricer/IntlRoiSweepCard";
 
 // Import repricer components
@@ -153,10 +152,6 @@ export default function Repricer() {
                 <TabsTrigger value="rules">Rules</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
-
-              {isAdmin && (
-                <PushBoundsToAmazonButton className="h-10 bg-white/60 backdrop-blur-sm border-white/20 text-[hsl(221,90%,22%)] font-bold" label="Push Bounds→AMZ" />
-              )}
             </div>
 
             {hasRules && (
