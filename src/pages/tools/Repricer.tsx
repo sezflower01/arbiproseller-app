@@ -21,8 +21,6 @@ import AutoOnboardingSettings from "@/components/settings/AutoOnboardingSettings
 import SchedulerToggle from "@/components/repricer/SchedulerToggle";
 import AiRuleTestDialog from "@/components/repricer/AiRuleTestDialog";
 import { SyncReadinessBanner } from "@/components/SyncReadinessBanner";
-import AsinInventoryLookupDialog from "@/components/inventory/AsinInventoryLookupDialog";
-import BulkLiveInventorySyncButton from "@/components/repricer/BulkLiveInventorySyncButton";
 
 export default function Repricer() {
   const { user } = useAuth();
@@ -143,8 +141,6 @@ export default function Repricer() {
           <SyncReadinessBanner module="repricer" />
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="flex items-center gap-2 mb-6 flex-wrap">
-              <AsinInventoryLookupDialog />
-              <BulkLiveInventorySyncButton />
               <TabsList className="bg-white/80 backdrop-blur-sm border border-white/30 text-[hsl(221,100%,10%)] font-bold">
                 {hasRules && <TabsTrigger value="assignments">Assignments</TabsTrigger>}
                 <TabsTrigger value="rules">Rules</TabsTrigger>
