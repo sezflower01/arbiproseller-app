@@ -24,6 +24,13 @@ interface UpdatePriceRequest {
   // ('manual' / 'rule_change') when omitted.
   triggerSource?: string;
   reason?: string;
+  // True pre-edit min/max, captured by the caller BEFORE it writes the new
+  // values to repricer_assignments/inventory. Callers that pre-write the DB
+  // (AssignmentsTable, PricingSuppressionsSection) must pass these — otherwise
+  // this function's own `item` load already reflects the new value by the
+  // time it runs, and old_min_price/old_max_price would just echo the new one.
+  previousMinPrice?: number | null;
+  previousMaxPrice?: number | null;
 }
 
 Deno.serve(async (req) => {
@@ -389,9 +396,13 @@ Deno.serve(async (req) => {
     // Log to audit trail (repricer_price_actions) if this was a direct manual call
     // Scheduler already logs its own actions, but manual UI updates should be logged too
     if (!body.fromScheduler) {
-      // For non-US marketplaces, don't log US min/max or US price as old values
-      const oldMinPrice = isUS ? item.min_price : null;
-      const oldMaxPrice = isUS ? item.max_price : null;
+      // For non-US marketplaces, don't log US min/max or US price as old values.
+      // Prefer the caller-supplied pre-edit value (captured before it wrote the
+      // new value to the DB) over item.min_price/max_price, which may already
+      // reflect the new value if the caller pre-writes the assignment/inventory
+      // row before invoking this function.
+      const oldMinPrice = isUS ? (body.previousMinPrice !== undefined ? body.previousMinPrice : item.min_price) : null;
+      const oldMaxPrice = isUS ? (body.previousMaxPrice !== undefined ? body.previousMaxPrice : item.max_price) : null;
       
       // For non-US, fetch old price from marketplace-specific cache instead of US inventory
       let oldPrice = item.my_price || item.price;

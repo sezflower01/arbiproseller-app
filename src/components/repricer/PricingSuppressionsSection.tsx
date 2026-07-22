@@ -268,6 +268,8 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
         newPrice: priceVal,
         newMinPrice: minVal,
         newMaxPrice: maxVal,
+        previousMinPrice: row.min_price_override,
+        previousMaxPrice: row.max_price_override,
         marketplace: row.marketplace,
         updateMinMaxOnly: false,
       };

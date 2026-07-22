@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { RefreshCw, CheckCircle, XCircle, ArrowUp, ArrowDown, Shield, TrendingUp, TrendingDown, AlertTriangle, Clock, PauseCircle, Lightbulb, Wrench, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { translateErrorMessage } from "@/lib/errorTranslator";
@@ -208,6 +210,111 @@ function buildExplainLine(action: PriceAction): string {
   if (safeguards.length > 0) parts.push(`guards: ${safeguards.join(', ')}`);
 
   return parts.join(', ') + '.';
+}
+
+// Plain-English label for the raw trigger_source value shown on every log entry.
+function humanizeTriggerSource(trigger: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    manual: "Manual edit",
+    manual_run_selected: "Manual run",
+    rule_change: "Rule/limit update",
+    bounds_changed: "Price limits changed",
+    priority_cron: "Automatic (priority check)",
+    scheduler: "Automatic (scheduled check)",
+    priority_eval: "Automatic (priority check)",
+  };
+  if (!trigger) return "Automatic";
+  return labels[trigger] || trigger.replace(/_/g, " ");
+}
+
+// Plain-English label for a safeguard code, for use outside the colored badges.
+function humanizeSafeguard(code: string): string {
+  const labels: Record<string, string> = {
+    CLAMPED_MAX: "capped at your max price",
+    CLAMPED_MIN: "raised to your min price",
+    FINAL_CLAMP_MAX: "capped at your max price",
+    FINAL_CLAMP_MIN: "raised to your min price",
+    JUMP_LIMITED: "limited to a smaller step to avoid a big jump",
+    STEP_LIMITED: "limited to a smaller step",
+    COOLDOWN: "held back by a cooldown period",
+    SAFETY_ABORT: "stopped by a safety check",
+    PROFIT_GUARD: "protected by your profit guard",
+  };
+  return labels[code] || code.toLowerCase().replace(/_/g, " ");
+}
+
+// Plain-English one-line summary of what happened, for regular (non-technical)
+// users. This replaces the dense, jargon-heavy buildExplainLine() as the
+// default view — the technical trace is still available by switching the
+// panel to "Detailed" view.
+function buildPlainSummary(action: PriceAction, marketplace: string): string {
+  const formatCurrency = (val: number | null) => {
+    if (val == null) return "—";
+    const config = getMarketplaceConfig(marketplace);
+    return `${config.currencySymbol}${val.toFixed(2)}`;
+  };
+
+  if (action.action_type === 'priority_eval') {
+    return humanizePriorityEval(action.reason);
+  }
+
+  const f = action.intelligence_factors || {};
+  const safeguards = extractSafeguards(action.reason, f);
+  const safeguardSuffix = safeguards.length > 0
+    ? ` (${safeguards.map(humanizeSafeguard).join(', ')})`
+    : '';
+
+  if (!action.success) {
+    return `Update failed${action.error_message ? ` — ${action.error_message}` : ''}.`;
+  }
+
+  // Plain-English source of the target price (competitor anchor), when relevant.
+  const anchorKey = f.anchor_source || f.reason_codes?.anchor_source || f.bb_source;
+  const anchorPrice = f.anchor_price;
+  let anchorPhrase = '';
+  if (anchorKey && anchorPrice != null) {
+    const anchorAmount = formatCurrency(Number(anchorPrice));
+    const label = String(anchorKey).includes('buybox') ? `the Buy Box price (${anchorAmount})`
+      : String(anchorKey).includes('fba') ? `the lowest FBA competitor (${anchorAmount})`
+      : String(anchorKey).includes('fbm') ? `the lowest FBM competitor (${anchorAmount})`
+      : `the lowest competitor price (${anchorAmount})`;
+    anchorPhrase = ` to match ${label}`;
+  }
+
+  if (action.action_type === 'minmax_change') {
+    const minChanged = action.new_min_price != null && action.old_min_price !== action.new_min_price;
+    const maxChanged = action.new_max_price != null && action.old_max_price !== action.new_max_price;
+    if (minChanged && maxChanged) {
+      return `Price limits updated: Min ${formatCurrency(action.old_min_price)} → ${formatCurrency(action.new_min_price)}, Max ${formatCurrency(action.old_max_price)} → ${formatCurrency(action.new_max_price)}.`;
+    }
+    if (minChanged) {
+      return `Min price limit changed from ${formatCurrency(action.old_min_price)} to ${formatCurrency(action.new_min_price)}.`;
+    }
+    if (maxChanged) {
+      return `Max price limit changed from ${formatCurrency(action.old_max_price)} to ${formatCurrency(action.new_max_price)}.`;
+    }
+    return `Price limits saved — no change from the current value.`;
+  }
+
+  if (action.action_type === 'blocked_by_profit_guard') {
+    return `Price change blocked — it would have dropped profit below your safety limit.`;
+  }
+
+  if (action.action_type === 'hold') {
+    return `Checked — price is already competitive, no change needed.`;
+  }
+
+  if (action.old_price != null && action.new_price != null) {
+    if (action.new_price > action.old_price) {
+      return `Price raised from ${formatCurrency(action.old_price)} to ${formatCurrency(action.new_price)}${anchorPhrase}${safeguardSuffix}.`;
+    }
+    if (action.new_price < action.old_price) {
+      return `Price lowered from ${formatCurrency(action.old_price)} to ${formatCurrency(action.new_price)}${anchorPhrase}${safeguardSuffix}.`;
+    }
+    return `Price re-confirmed at ${formatCurrency(action.new_price)}${anchorPhrase}${safeguardSuffix}.`;
+  }
+
+  return humanizeTriggerSource(action.trigger_source) + (safeguardSuffix || '.');
 }
 
 // Convert priority_eval reason into plain English
@@ -623,6 +730,20 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
   const { user } = useAuth();
   const [priceActions, setPriceActions] = useState<PriceAction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreActions, setHasMoreActions] = useState(false);
+  const ACTION_LOG_PAGE_SIZE = 50;
+  const [simpleView, setSimpleView] = useState(() => {
+    try {
+      const v = localStorage.getItem("actionLog.simpleView");
+      if (v != null) return v === "true";
+    } catch { /* ignore */ }
+    return true;
+  });
+  const toggleSimpleView = (next: boolean) => {
+    setSimpleView(next);
+    try { localStorage.setItem("actionLog.simpleView", String(next)); } catch { /* ignore */ }
+  };
   const [activeRuleName, setActiveRuleName] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
   const [localResumed, setLocalResumed] = useState(false);
@@ -1060,6 +1181,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
       if (actionsRes.error) throw actionsRes.error;
       
       const rawActions = (actionsRes.data || []) as unknown as PriceAction[];
+      setHasMoreActions(rawActions.length === ACTION_LOG_PAGE_SIZE);
       const currentRuleId = assignmentRes.data?.rule_id;
       
       // Resolve current rule name from the assignment's rule_id so log always shows the live name
@@ -1334,7 +1456,35 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
       setLoading(false);
     }
   };
-  
+
+  // Fetches the next page of older history rows and appends them, so the full
+  // history is reachable by scrolling/clicking "Load more" rather than being
+  // capped at the initial 50.
+  const loadMoreActions = async () => {
+    if (!asin || !user || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { data, error } = await supabase
+        .from("repricer_price_actions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("asin", asin)
+        .eq("marketplace", marketplace)
+        .order("created_at", { ascending: false })
+        .range(priceActions.length, priceActions.length + ACTION_LOG_PAGE_SIZE - 1);
+      if (error) throw error;
+      const more = ((data || []) as unknown as PriceAction[]).map((a) =>
+        activeRuleName ? { ...a, rule_name: activeRuleName } : a
+      );
+      setPriceActions((prev) => [...prev, ...more]);
+      setHasMoreActions(more.length === ACTION_LOG_PAGE_SIZE);
+    } catch (error) {
+      console.error("Error loading more action log history:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const formatCurrency = (val: number | null) => {
     if (val == null) return "—";
     const config = getMarketplaceConfig(marketplace);
@@ -2485,13 +2635,25 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
 
         {/* RIGHT PANEL — Action Log */}
         <div className="w-1/2 min-w-0 flex flex-col">
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-sm font-semibold text-muted-foreground">Action Log</h3>
-          {activeRuleName && (
-            <Badge className="bg-emerald-500/90 hover:bg-emerald-500 text-white border-0 text-xs font-bold px-2.5 py-0.5 shadow-sm shadow-emerald-500/25">
-              🎯 {activeRuleName}
-            </Badge>
-          )}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-muted-foreground">Action Log</h3>
+            {activeRuleName && (
+              <Badge className="bg-emerald-500/90 hover:bg-emerald-500 text-white border-0 text-xs font-bold px-2.5 py-0.5 shadow-sm shadow-emerald-500/25">
+                🎯 {activeRuleName}
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="action-log-simple-toggle" className="text-xs text-muted-foreground cursor-pointer">
+              {simpleView ? "Simple" : "Detailed"}
+            </Label>
+            <Switch
+              id="action-log-simple-toggle"
+              checked={!simpleView}
+              onCheckedChange={(checked) => toggleSimpleView(!checked)}
+            />
+          </div>
         </div>
         <ScrollArea className="flex-1 pr-4">
           {loading ? (
@@ -2521,12 +2683,12 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                           {action.success ? <CheckCircle className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
                           {action.success ? "Applied" : "Failed"}
                         </Badge>
-                        <Badge variant="outline" className="text-xs">{action.trigger_source}</Badge>
+                        <Badge variant="outline" className="text-xs">{humanizeTriggerSource(action.trigger_source)}</Badge>
                         {action.rule_name && (
                           <Badge variant="secondary" className="text-xs">{action.rule_name}</Badge>
                         )}
-                        {/* Strategy Visibility — shows if strategy or override drove the decision */}
-                        {(() => {
+                        {/* Strategy Visibility — shows if strategy or override drove the decision (technical; Detailed view only) */}
+                        {!simpleView && (() => {
                           const sv = action.intelligence_factors?.strategy_visibility;
                           if (!sv) return null;
                           return (
@@ -2542,8 +2704,8 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                             </>
                           );
                         })()}
-                        {/* Fulfillment Visibility — shows FBM vs FBA path */}
-                        {(() => {
+                        {/* Fulfillment Visibility — shows FBM vs FBA path (technical; Detailed view only) */}
+                        {!simpleView && (() => {
                           const fv = action.intelligence_factors?.fulfillment_visibility;
                           if (!fv || fv.my_offer_type === 'unknown') return null;
                           const pathColors: Record<string, string> = {
@@ -2588,11 +2750,18 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                       </div>
                     </div>
                     
-                    {/* Human-readable explain line */}
-                    <div className="text-sm italic text-muted-foreground bg-muted/50 rounded px-2 py-1 mb-2 font-mono">
-                      {buildExplainLine(action)}
+                    {/* Plain-English summary — always shown, this is the primary explanation for regular users */}
+                    <div className="text-sm text-foreground bg-muted/50 rounded px-2 py-1 mb-2">
+                      {buildPlainSummary(action, marketplace)}
                     </div>
-                    
+
+                    {/* Technical trace — raw guard codes, anchor/undercut math (Detailed view only) */}
+                    {!simpleView && (
+                      <div className="text-sm italic text-muted-foreground bg-muted/50 rounded px-2 py-1 mb-2 font-mono">
+                        {buildExplainLine(action)}
+                      </div>
+                    )}
+
                     {/* Hide Price/Min/Max grid for priority_eval with no changes */}
                     {action.action_type !== 'priority_eval' && (
                     <div className="grid grid-cols-3 gap-4 text-sm mb-2">
@@ -2638,17 +2807,20 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                     </div>
                     )}
                     
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Reason:</span>
-                      <p className="text-foreground">
-                        {action.action_type === 'priority_eval' 
-                          ? humanizePriorityEval(action.reason)
-                          : (action.reason || "—")}
-                      </p>
-                    </div>
-                    
-                    {/* Structured Reason Codes */}
-                    {action.intelligence_factors?.reason_codes && (
+                    {/* Raw reason text — this is the same jargon buildPlainSummary already translates above, so only show it in Detailed view */}
+                    {!simpleView && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Reason:</span>
+                        <p className="text-foreground">
+                          {action.action_type === 'priority_eval'
+                            ? humanizePriorityEval(action.reason)
+                            : (action.reason || "—")}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Structured Reason Codes (Detailed view only) */}
+                    {!simpleView && action.intelligence_factors?.reason_codes && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         <Badge variant="outline" className="text-xs font-mono">
                           anchor: {action.intelligence_factors.reason_codes.anchor_source}
@@ -2750,12 +2922,25 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                       </div>
                     )}
                     
-                    {action.intelligence_factors && Object.keys(action.intelligence_factors).length > 0 && (
+                    {!simpleView && action.intelligence_factors && Object.keys(action.intelligence_factors).length > 0 && (
                       <EvalDiagnosticsPanels factors={action.intelligence_factors} marketplace={marketplace} livePrice={diagnostics.myPrice ?? null} />
                     )}
                   </div>
                 );
               })}
+              {hasMoreActions && (
+                <div className="flex justify-center pt-1 pb-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    disabled={loadingMore}
+                    onClick={loadMoreActions}
+                  >
+                    {loadingMore ? "Loading…" : "Load more history"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </ScrollArea>
