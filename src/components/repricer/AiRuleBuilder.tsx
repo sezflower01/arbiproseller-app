@@ -885,21 +885,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                     />
                   </div>
 
-                  {/* Guidance table */}
-                  <div className="rounded-lg border border-border/50 overflow-hidden">
-                    <div className="grid grid-cols-2 text-xs">
-                      <div className="p-2 bg-muted/30 border-b border-r border-border/30 font-medium text-muted-foreground">Amount</div>
-                      <div className="p-2 bg-muted/30 border-b border-border/30 font-medium text-muted-foreground">Effect</div>
-                      <div className="p-2 border-b border-r border-border/30 text-muted-foreground">$0.00</div>
-                      <div className="p-2 border-b border-border/30 text-muted-foreground">Match price (no undercut)</div>
-                      <div className="p-2 border-b border-r border-border/30 text-green-400">$0.01</div>
-                      <div className="p-2 border-b border-border/30 text-green-400">✅ Recommended — safe & competitive</div>
-                      <div className="p-2 border-b border-r border-border/30 text-yellow-400">$0.02–$0.05</div>
-                      <div className="p-2 border-b border-border/30 text-yellow-400">More aggressive</div>
-                      <div className="p-2 border-r border-border/30 text-red-400">$0.10+</div>
-                      <div className="p-2 text-red-400">⚠️ Risk of price wars</div>
-                    </div>
-                  </div>
                 </div>
               )}
 
