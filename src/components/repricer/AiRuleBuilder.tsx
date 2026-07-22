@@ -80,6 +80,9 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     // (exact-match-anchor, no undercut) would defeat the point of it, so
     // this is the one profile that turns it OFF.
     strict_match_mode: false,
+    // Chase the absolute cheapest offer (FBA + FBM) — matches this profile's
+    // whole purpose of maximizing Buy Box wins over margin per sale.
+    target_anchor: 'lowest_offer',
   },
   MOMENTUM_BUILDER: {
     undercut_amount: 0.01,
@@ -97,6 +100,10 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
     strict_match_mode: true,
+    // Hold position when already lowest, switch to chasing the lowest FBA
+    // seller when undercut — the balanced/recapture behavior this profile
+    // is built around.
+    target_anchor: 'smart_recapture',
   },
   PROFIT_EXTRACTOR: {
     undercut_amount: 0.00,
@@ -114,6 +121,9 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
     strict_match_mode: true,
+    // Anchor to Buy Box price — no reason to chase the cheapest offer when
+    // the goal is capturing margin in a low-competition category.
+    target_anchor: 'buybox',
   },
 };
 
@@ -1674,8 +1684,11 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
       </Card>
       )}
 
-      {/* Target Price Anchor — Admin only */}
-      {isAdmin && <Card className="border-cyan-500/30">
+      {/* Target Price Anchor — Admin + Advanced only. Each profile now sets its
+          own fitting anchor (Aggressive Capture: lowest offer, Momentum
+          Builder: smart recapture, Profit Extractor: Buy Box), so this no
+          longer needs to be a routine per-rule decision. */}
+      {isAdmin && advancedMode && <Card className="border-cyan-500/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-cyan-500" />
