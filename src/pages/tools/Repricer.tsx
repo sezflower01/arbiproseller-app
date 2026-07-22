@@ -31,8 +31,20 @@ export default function Repricer() {
   const [activeTab, setActiveTab] = useState("assignments");
   const hasRules = rules.length > 0;
 
-  // Marketplace selector state
-  const [selectedMarketplace, setSelectedMarketplace] = useState("US");
+  // Marketplace selector state — persisted so returning to this page lands
+  // back on the same marketplace (and therefore hits its cached data)
+  // instead of always resetting to US.
+  const [selectedMarketplace, setSelectedMarketplaceRaw] = useState<string>(() => {
+    try {
+      const v = localStorage.getItem("repricer.selectedMarketplace");
+      if (v) return v;
+    } catch { /* ignore */ }
+    return "US";
+  });
+  const setSelectedMarketplace = useCallback((mp: string) => {
+    setSelectedMarketplaceRaw(mp);
+    try { localStorage.setItem("repricer.selectedMarketplace", mp); } catch { /* ignore */ }
+  }, []);
 
   // Offers viewer state
   const [viewingAsin, setViewingAsin] = useState<string | null>(null);
