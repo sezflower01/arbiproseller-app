@@ -9,7 +9,6 @@ import { Helmet } from "react-helmet-async";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { usePageFavicon } from "@/hooks/use-page-favicon";
-import AppliedSuggestionsPanel from "@/components/repricer/AppliedSuggestionsPanel";
 import IntlRoiSweepCard from "@/components/repricer/IntlRoiSweepCard";
 
 // Import repricer components
@@ -45,7 +44,6 @@ export default function Repricer() {
   // AI test dialog state
   const [testingRule, setTestingRule] = useState<RepricerRule | null>(null);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [appliedSuggestionsOpen, setAppliedSuggestionsOpen] = useState(false);
 
   const fetchRules = useCallback(async () => {
     if (!user) return;
@@ -162,7 +160,6 @@ export default function Repricer() {
                   onViewOffers={handleViewOffers}
                   marketplace={selectedMarketplace}
                   onMarketplaceChange={setSelectedMarketplace}
-                  onViewAppliedSuggestions={() => setAppliedSuggestionsOpen(true)}
                   isAdmin={isAdmin}
                 />
               </TabsContent>
@@ -208,12 +205,6 @@ export default function Repricer() {
         onOpenChange={setTestDialogOpen}
       />
 
-      {/* Applied Suggestions History */}
-      <AppliedSuggestionsPanel
-        open={appliedSuggestionsOpen}
-        onOpenChange={setAppliedSuggestionsOpen}
-        marketplace={selectedMarketplace}
-      />
     </>
   );
 }

@@ -83,19 +83,16 @@ import {
   Users,
   Lightbulb,
   Ban,
-  ClipboardList,
   Brain,
   CheckSquare,
   Check,
   Settings2,
   DollarSign,
   Loader2,
-  ShoppingCart,
   ChevronDown,
   Trash2,
   Lock,
   Unlock,
-  Rocket,
   TrendingUp,
 } from "lucide-react";
 import type { RepricerRule } from "./RuleBuilder";
@@ -240,7 +237,6 @@ interface AssignmentsTableProps {
   onViewOffers?: (asin: string, marketplace: string) => void;
   marketplace?: string; // Selected marketplace filter
   onMarketplaceChange?: (marketplace: string) => void;
-  onViewAppliedSuggestions?: () => void;
   isAdmin?: boolean;
 }
 
@@ -1352,7 +1348,7 @@ const _assignmentsFilterCache = {
   pageSize: 50 as 50 | 250,
 };
 
-export default function AssignmentsTable({ rules, onViewOffers, marketplace = "US", onMarketplaceChange, onViewAppliedSuggestions, isAdmin = false }: AssignmentsTableProps) {
+export default function AssignmentsTable({ rules, onViewOffers, marketplace = "US", onMarketplaceChange, isAdmin = false }: AssignmentsTableProps) {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { syncState: globalSyncState } = useSalesSync();
@@ -1549,175 +1545,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
   // Live Sales Popup
   const [liveSalesOpen, setLiveSalesOpen] = useState(false);
 
-  // Assign Missing — find active inventory without assignments
-  const [assigningMissing, setAssigningMissing] = useState(false);
-  const handleAssignMissing = async () => {
-    setAssigningMissing(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("Please log in first"); return; }
-      const { data, error } = await supabase.functions.invoke('auto-assign-bulk', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { marketplace },
-      });
-      if (error) throw error;
-      const created = data?.created || 0;
-      const skipped = data?.skipped || 0;
-      if (created > 0) {
-        toast.success(`Created ${created} new assignments${skipped > 0 ? `, skipped ${skipped}` : ''}`);
-        fetchData();
-      } else {
-        toast.info("All active items already have assignments");
-      }
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to assign missing items");
-    } finally {
-      setAssigningMissing(false);
-    }
-  };
-
-  // Resume eligible "Needs review" legacy rows
-  const [resumeReviewOpen, setResumeReviewOpen] = useState(false);
-  const [resumeReviewLoading, setResumeReviewLoading] = useState(false);
-  const [resumeReviewStats, setResumeReviewStats] = useState<any>(null);
-  const openResumeReviewPreview = async () => {
-    setResumeReviewOpen(true);
-    setResumeReviewStats(null);
-    setResumeReviewLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("Please log in first"); return; }
-      const { data, error } = await supabase.functions.invoke('resume-needs-review', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { mode: 'preview', marketplace },
-      });
-      if (error) throw error;
-      setResumeReviewStats(data?.stats || null);
-    } catch (e: any) {
-      toast.error(e?.message || 'Preview failed');
-      setResumeReviewOpen(false);
-    } finally {
-      setResumeReviewLoading(false);
-    }
-  };
-  const applyResumeReview = async () => {
-    setResumeReviewLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("Please log in first"); return; }
-      const { data, error } = await supabase.functions.invoke('resume-needs-review', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { mode: 'apply', marketplace },
-      });
-      if (error) throw error;
-      toast.success(`Resumed ${data?.updated || 0} assignment(s)`);
-      setResumeReviewOpen(false);
-      fetchData();
-    } catch (e: any) {
-      toast.error(e?.message || 'Resume failed');
-    } finally {
-      setResumeReviewLoading(false);
-    }
-  };
-
-  // ── Sync Reactivated Listing (immediate single-ASIN bring-into-repricer) ──
-  const [syncReactOpen, setSyncReactOpen] = useState(false);
-  const [syncReactBusy, setSyncReactBusy] = useState(false);
-  const [syncReactForm, setSyncReactForm] = useState({
-    asin: "",
-    sku: "",
-    ruleId: "",
-    minPrice: "",
-    maxPrice: "",
-    fulfillment: "FBA" as "FBA" | "FBM",
-  });
-  const openSyncReact = () => {
-    const defaultRule = rules.find(r => r.is_enabled) || rules[0];
-    setSyncReactForm({
-      asin: "",
-      sku: "",
-      ruleId: defaultRule?.id || "",
-      minPrice: "",
-      maxPrice: "",
-      fulfillment: "FBA",
-    });
-    setSyncReactOpen(true);
-  };
-  const submitSyncReact = async () => {
-    const asin = syncReactForm.asin.trim().toUpperCase();
-    const sku = syncReactForm.sku.trim();
-    if (!asin || !sku) {
-      toast.error("ASIN and SKU are required");
-      return;
-    }
-    if (!syncReactForm.ruleId) {
-      toast.error("Please select a repricer rule");
-      return;
-    }
-    const minNum = syncReactForm.minPrice ? Number(syncReactForm.minPrice) : null;
-    const maxNum = syncReactForm.maxPrice ? Number(syncReactForm.maxPrice) : null;
-    if (minNum !== null && (!Number.isFinite(minNum) || minNum <= 0)) {
-      toast.error("Min price must be a positive number");
-      return;
-    }
-    if (maxNum !== null && (!Number.isFinite(maxNum) || maxNum <= 0)) {
-      toast.error("Max price must be a positive number");
-      return;
-    }
-    if (minNum !== null && maxNum !== null && maxNum < minNum) {
-      toast.error("Max price must be greater than or equal to min price");
-      return;
-    }
-
-    setSyncReactBusy(true);
-    const toastId = toast.loading(`Pulling live SP-API data for ${asin}…`);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("Please log in first", { id: toastId }); return; }
-
-      // 1) Live pull from Amazon for this ASIN/SKU so inventory reflects the reactivated listing.
-      const targetMp = marketplace || "US";
-      const { error: rescueErr } = await supabase.functions.invoke('rescue-inventory-asin', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { asin, sku, marketplace: targetMp },
-      });
-      if (rescueErr) {
-        console.warn("[SyncReact] rescue-inventory-asin failed (continuing):", rescueErr);
-      }
-
-      // 2) Upsert the repricer assignment with rule + min/max + enabled.
-      toast.loading("Creating repricer assignment…", { id: toastId });
-      const upsertRow: Record<string, any> = {
-        user_id: user!.id,
-        asin,
-        sku,
-        marketplace: targetMp,
-        rule_id: syncReactForm.ruleId,
-        fulfillment_type: syncReactForm.fulfillment,
-        is_enabled: true,
-        manual_paused: false,
-        last_enabled_by: 'sync_reactivated_listing',
-        last_enabled_at: new Date().toISOString(),
-      };
-      if (minNum !== null) upsertRow.min_price_override = minNum;
-      if (maxNum !== null) upsertRow.max_price_override = maxNum;
-
-      const { error: upsertErr } = await supabase
-        .from('repricer_assignments')
-        .upsert(upsertRow as any, { onConflict: 'user_id,sku,marketplace', ignoreDuplicates: false });
-      if (upsertErr) throw upsertErr;
-
-      toast.success(`${asin} is now in the repricer`, { id: toastId });
-      setSyncReactOpen(false);
-      fetchData();
-    } catch (e: any) {
-      console.error("[SyncReact] failed:", e);
-      toast.error(e?.message || "Failed to sync listing", { id: toastId });
-    } finally {
-      setSyncReactBusy(false);
-    }
-  };
-
   const salesEnrichmentDoneRef = useRef<string | null>(null);
   useEffect(() => {
     if (!user?.id || !cachedItems || cachedItems.length === 0) return;
@@ -1856,15 +1683,13 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     }
   };
 
-  const [runningScheduler, setRunningScheduler] = useState(false);
   const [runningSelected, setRunningSelected] = useState(false);
-  const [runningForceAll, setRunningForceAll] = useState(false);
   const [runningStaleInStock, setRunningStaleInStock] = useState(false);
   const [runningBulkDisable, setRunningBulkDisable] = useState(false);
   const [bulkRuleId, setBulkRuleId] = useState<string>("");
   const [bulkApplying, setBulkApplying] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
-  
+
   // Inline editing state
   const [editingMinPrice, setEditingMinPrice] = useState<Record<string, string>>({});
   const [editingMaxPrice, setEditingMaxPrice] = useState<Record<string, string>>({});
@@ -5666,62 +5491,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     }
   };
 
-  const saveAllRepricing = async () => {
-    try {
-      setSavingAll(true);
-      const enabledItems = items.filter(i => i.is_enabled && i.rule_id);
-      
-      if (enabledItems.length === 0) {
-        toast.error("No enabled items with rules to save");
-        return;
-      }
-
-      // This would trigger the actual repricing save logic
-      toast.success(`Saved ${enabledItems.length} repricing configurations`);
-    } catch (error: any) {
-      toast.error("Failed to save: " + error.message);
-    } finally {
-      setSavingAll(false);
-    }
-  };
-
-  const runForceAll = async () => {
-    const confirmed = window.confirm(
-      `⚠️ Force Re-evaluate ALL active assignments.\n\nThis bypasses cooldowns and minimum-change guards, forcing every ASIN to be re-evaluated and price-submitted even if the market is stable.\n\nThis will consume significant SP-API quota. Continue?`
-    );
-    if (!confirmed) return;
-
-    try {
-      setRunningForceAll(true);
-      toast.info("Force re-evaluating all ASINs — this may take a few minutes...", { duration: 10000 });
-
-      const result = await invokeEdgeFunction({
-        functionName: "repricer-scheduler",
-        body: { dry_run: false, force_all: true },
-        maxRetries: 1,
-        context: { source: "force_reevaluate_all" },
-      });
-
-      if (!result.ok) {
-        const msg = result.errorCategory === "auth_error"
-          ? "Authentication failed — please refresh the page"
-          : `Force re-evaluate failed (${result.httpStatus || "unknown"}): ${result.errorMessage}`;
-        toast.error(msg, { description: result.errorBody?.code || result.errorCategory });
-        return;
-      }
-
-      const summary = result.data?.summary ?? { evaluated: 0, applied: 0 };
-      toast.success(
-        `Force re-evaluate complete: ${summary.evaluated} evaluated, ${summary.applied} price changes applied`,
-        { duration: 8000 }
-      );
-    } catch (error: any) {
-      toast.error("Force re-evaluate failed: " + error.message);
-    } finally {
-      setRunningForceAll(false);
-    }
-  };
-
   const runStaleInStock = async () => {
     try {
       setRunningStaleInStock(true);
@@ -5929,38 +5698,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
   };
 
 
-
-  const runScheduler = async () => {
-    try {
-      setRunningScheduler(true);
-      toast.info("Running scheduler...");
-
-      const result = await invokeEdgeFunction({
-        functionName: "repricer-scheduler",
-        body: { dry_run: false },
-        maxRetries: 1,
-        context: { source: "manual_run_all" },
-      });
-
-      if (!result.ok) {
-        const msg = result.errorCategory === "auth_error"
-          ? "Authentication failed — please refresh the page"
-          : `Scheduler failed (${result.httpStatus || "unknown"}): ${result.errorMessage}`;
-        toast.error(msg, { description: result.errorBody?.code || result.errorCategory });
-        return;
-      }
-
-      const summary = result.data?.summary ?? { evaluated: 0, applied: 0, rainforestCreditsUsed: 0 };
-      toast.success(
-        `Scheduler complete: ${summary.evaluated} evaluated, ${summary.applied} applied, ${summary.rainforestCreditsUsed} credits used`,
-        { duration: 6000 }
-      );
-    } catch (error: any) {
-      toast.error("Scheduler failed: " + error.message);
-    } finally {
-      setRunningScheduler(false);
-    }
-  };
 
   const runSelectedScheduler = async () => {
     if (selectedIds.size === 0) {
@@ -6850,226 +6587,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
             );
           })()}
 
-          {/* Assign Missing button — admin only */}
-          {isAdmin && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={handleAssignMissing}
-                  disabled={assigningMissing || loading}
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-8 border-blue-500/50 hover:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                >
-                  {assigningMissing ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Assigning...</>
-                  ) : (
-                    <><Zap className="h-3.5 w-3.5" /> Assign Missing</>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs">
-                <p className="text-sm">
-                  Find active inventory items without repricer assignments and create them using your default rule.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          )}
-
-          {/* Resume Needs Review (legacy paused rows) */}
-          <Button
-            onClick={openResumeReviewPreview}
-            disabled={loading}
-            variant="outline"
-            size="sm"
-            className="gap-1.5 h-8 border-amber-500/50 hover:bg-amber-500/10 text-amber-700 dark:text-amber-400"
-            title="Re-enable legacy disabled rows that have a rule + matching inventory and were never user-paused"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Resume Needs Review
-          </Button>
-
-          {/* Sync Reactivated Listing — pull live SP-API + create assignment immediately */}
-          <Button
-            onClick={openSyncReact}
-            disabled={loading || rules.length === 0}
-            variant="outline"
-            size="sm"
-            className="gap-1.5 h-8 border-sky-500/50 hover:bg-sky-500/10 text-sky-700 dark:text-sky-400"
-            title="Just reactivated a listing in Seller Central? Pull it live from Amazon and add it to the repricer with a rule + min/max."
-          >
-            <Rocket className="h-3.5 w-3.5" />
-            Sync Reactivated Listing
-          </Button>
-
-          <Dialog open={syncReactOpen} onOpenChange={setSyncReactOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Sync reactivated listing into repricer</DialogTitle>
-                <DialogDescription>
-                  Pulls this ASIN/SKU live from Amazon ({marketplace || "US"}) and creates an enabled repricer
-                  assignment with the rule and min/max you choose. Use this right after reactivating a listing
-                  in Seller Central that was paused due to a pricing error.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">ASIN</label>
-                    <Input
-                      value={syncReactForm.asin}
-                      onChange={(e) => setSyncReactForm(f => ({ ...f, asin: e.target.value }))}
-                      placeholder="B0XXXXXXXX"
-                      className="h-8 mt-1"
-                      maxLength={10}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">SKU</label>
-                    <Input
-                      value={syncReactForm.sku}
-                      onChange={(e) => setSyncReactForm(f => ({ ...f, sku: e.target.value }))}
-                      placeholder="Your seller SKU"
-                      className="h-8 mt-1"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Repricer rule</label>
-                  <Select
-                    value={syncReactForm.ruleId}
-                    onValueChange={(v) => setSyncReactForm(f => ({ ...f, ruleId: v }))}
-                  >
-                    <SelectTrigger className="h-8 mt-1">
-                      <SelectValue placeholder="Select a rule" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rules.map(r => (
-                        <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Min price</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={syncReactForm.minPrice}
-                      onChange={(e) => setSyncReactForm(f => ({ ...f, minPrice: e.target.value }))}
-                      placeholder="optional"
-                      className="h-8 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Max price</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={syncReactForm.maxPrice}
-                      onChange={(e) => setSyncReactForm(f => ({ ...f, maxPrice: e.target.value }))}
-                      placeholder="optional"
-                      className="h-8 mt-1"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Fulfillment</label>
-                  <Select
-                    value={syncReactForm.fulfillment}
-                    onValueChange={(v) => setSyncReactForm(f => ({ ...f, fulfillment: v as "FBA" | "FBM" }))}
-                  >
-                    <SelectTrigger className="h-8 mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FBA">FBA</SelectItem>
-                      <SelectItem value="FBM">FBM</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setSyncReactOpen(false)} disabled={syncReactBusy}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={submitSyncReact}
-                  disabled={syncReactBusy}
-                  className="bg-sky-600 hover:bg-sky-700 text-white"
-                >
-                  {syncReactBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Rocket className="h-3.5 w-3.5 mr-1" />}
-                  Sync & add to repricer
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={resumeReviewOpen} onOpenChange={setResumeReviewOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Resume eligible "Needs Review"</DialogTitle>
-                <DialogDescription>
-                  Safely re-enables legacy rows that were disabled before audit tracking existed.
-                  Only rows with a rule, matching inventory, and no manual/system disable are touched.
-                </DialogDescription>
-              </DialogHeader>
-              {resumeReviewLoading && !resumeReviewStats ? (
-                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Analyzing…
-                </div>
-              ) : resumeReviewStats ? (
-                <div className="space-y-2 text-sm">
-                  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-400 font-medium">
-                    {resumeReviewStats.eligible} eligible to resume
-                  </div>
-                  <div className="text-muted-foreground">Skipped:</div>
-                  <ul className="text-xs space-y-1 ml-4 list-disc">
-                    <li>{resumeReviewStats.skip_no_rule} no rule attached</li>
-                    <li>{resumeReviewStats.skip_no_inventory} no matching inventory</li>
-                    <li>{resumeReviewStats.skip_intl_ineligible} intl ineligible</li>
-                    <li>{resumeReviewStats.skip_system_disabled} system / cleanup disabled</li>
-                    <li>{resumeReviewStats.skip_manual_paused} manually paused</li>
-                  </ul>
-                  <div className="text-xs text-muted-foreground pt-1">
-                    Scope: marketplace {marketplace} • {resumeReviewStats.total_disabled} disabled rows scanned
-                  </div>
-                </div>
-              ) : null}
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setResumeReviewOpen(false)} disabled={resumeReviewLoading}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={applyResumeReview}
-                  disabled={resumeReviewLoading || !resumeReviewStats || (resumeReviewStats?.eligible ?? 0) === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  {resumeReviewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-                  Resume {resumeReviewStats?.eligible ?? 0}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Live Sales button */}
-          <Button
-            onClick={() => window.location.href = '/tools/repricer/live-sales'}
-            variant="outline"
-            size="sm"
-            className="gap-1.5 h-8 border-emerald-500/50 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-          >
-            <ShoppingCart className="h-3.5 w-3.5" />
-            ArbiPro Repricer in Action
-          </Button>
-
           {visibleMarketplaces.length >= 1 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-1.5 shadow-sm">
               {visibleMarketplaces.map((mp) => {
@@ -7397,38 +6914,9 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
         <div className="flex gap-1.5 flex-wrap">
           {isAdmin && (
           <>
-          {onViewAppliedSuggestions && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onViewAppliedSuggestions}
-              className="h-7 text-xs px-2"
-            >
-              <ClipboardList className="h-3 w-3 mr-1" />
-              Suggestion Decisions
-            </Button>
-          )}
-          {/* Review Suggestions hidden — Auto Floor permanently disabled */}
-          <Button
-            size="sm"
-            onClick={runForceAll}
-            disabled={runningForceAll || runningScheduler}
-            className="bg-red-600 hover:bg-red-700 text-white text-xs h-7 px-2"
-          >
-            {runningForceAll ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : <Zap className="h-3 w-3 mr-1" />}
-            Force Re-evaluate All
-          </Button>
-          {/* Refresh Stale In-Stock hidden — refresh-stale-inventory disabled (Suspicious Zero Guard) */}
-          {/* Bulk Disable Zero-Stock hidden — contradicts Missing-from-Report No Auto-zero policy */}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={runScheduler}
-            disabled={runningScheduler}
-          >
-            {runningScheduler ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-            Run Now
-          </Button>
+          {/* Suggestion Decisions hidden — Auto Floor permanently disabled */}
+          {/* Force Re-evaluate All hidden — automated dispatch (unified-dispatch/priority-cron) confirmed healthy, manual full-catalog re-evaluation no longer needed */}
+          {/* Run Now hidden — same automated dispatch already covers this; unbounded manual trigger was a pre-automation safety net */}
           {selectedIds.size > 0 && (
             <Button 
               variant="outline" 
@@ -7452,15 +6940,7 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
               Sync Intl ({selectedIds.size})
             </Button>
           )}
-          <Button 
-            variant="default" 
-            size="sm" 
-            onClick={saveAllRepricing}
-            disabled={savingAll}
-          >
-            {savingAll ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-            Run All
-          </Button>
+          {/* Run All hidden — handler (saveAllRepricing) was a non-functional stub that only showed a fake success toast, never actually did anything */}
           </>
           )}
           
