@@ -334,6 +334,15 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
     try { return localStorage.getItem('repricer_advanced_strategies') === 'true'; } catch { return false; }
   });
   const [showAdvancedWarning, setShowAdvancedWarning] = useState(false);
+  // Whether the FBM-specific undercut override is expanded. Derived from
+  // whether this rule already has one set, so existing overrides stay
+  // visible; defaults collapsed for everyone else since leaving it blank
+  // (reusing the shared Undercut Amount) is the common case.
+  const [showFbmOverride, setShowFbmOverride] = useState(() => settings.fbm_undercut_amount != null);
+  useEffect(() => {
+    setShowFbmOverride(settings.fbm_undercut_amount != null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -832,9 +841,9 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               ) : (
                 <div className="space-y-3 mt-2">
                   <div className="space-y-2">
-                    <Label htmlFor="undercut">FBA Undercut Amount ($)</Label>
+                    <Label htmlFor="undercut">Undercut Amount ($)</Label>
                     <p className="text-xs text-muted-foreground">
-                      Applied when your listing is <strong>FBA</strong>.
+                      Used for FBA listings, and for FBM listings too unless you set a different amount below.
                     </p>
                     <Input
                       id="undercut"
@@ -861,29 +870,47 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                     )}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="fbm-undercut">FBM Undercut Amount ($)</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Applied only when your listing is <strong>FBM</strong> and competing against the lowest FBM seller. Leave blank to reuse the FBA undercut. Enter <code>0.00</code> to match exactly.
-                    </p>
-                    <Input
-                      id="fbm-undercut"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      placeholder="(uses FBA undercut)"
-                      value={settings.fbm_undercut_amount == null ? "" : settings.fbm_undercut_amount}
-                      onChange={(e) => {
-                        if (e.target.value === "") {
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="fbm-undercut-toggle"
+                      checked={showFbmOverride}
+                      onCheckedChange={(checked) => {
+                        const wantsOverride = checked === true;
+                        setShowFbmOverride(wantsOverride);
+                        if (!wantsOverride) {
                           updateSetting("fbm_undercut_amount" as any, null as any);
-                          return;
                         }
-                        const v = parseFloat(e.target.value);
-                        updateSetting("fbm_undercut_amount" as any, (isNaN(v) ? null : Math.max(0, v)) as any);
                       }}
                     />
+                    <Label htmlFor="fbm-undercut-toggle" className="text-xs font-normal text-muted-foreground cursor-pointer">
+                      Set a different amount for FBM listings
+                    </Label>
                   </div>
+
+                  {showFbmOverride && (
+                    <div className="space-y-2">
+                      <Label htmlFor="fbm-undercut">FBM Undercut Amount ($)</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Applied only when your listing is <strong>FBM</strong> and competing against the lowest FBM seller. Enter <code>0.00</code> to match exactly.
+                      </p>
+                      <Input
+                        id="fbm-undercut"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        value={settings.fbm_undercut_amount == null ? "" : settings.fbm_undercut_amount}
+                        onChange={(e) => {
+                          if (e.target.value === "") {
+                            updateSetting("fbm_undercut_amount" as any, null as any);
+                            return;
+                          }
+                          const v = parseFloat(e.target.value);
+                          updateSetting("fbm_undercut_amount" as any, (isNaN(v) ? null : Math.max(0, v)) as any);
+                        }}
+                      />
+                    </div>
+                  )}
 
                 </div>
               )}
