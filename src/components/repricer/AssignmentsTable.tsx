@@ -2604,6 +2604,12 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
   // "Show Hidden" mode: invert all filters to show only excluded items
   const [showHiddenOnly, setShowHiddenOnly] = useState(false);
 
+  // US marketplace defaults to showing only items with available > 0 (hides
+  // reserved/inbound-only rows with zero sellable stock). "Expand" reveals
+  // everything, matching the prior default behavior. Always starts collapsed
+  // on load — intentionally not persisted.
+  const [showZeroAvailable, setShowZeroAvailable] = useState(false);
+
   // Manual "Verify {marketplace} listings" admin action — calls verify-intl-listings-existence
   const [verifyingIntl, setVerifyingIntl] = useState(false);
   const [intlAuthWarning, setIntlAuthWarning] = useState<null | {
@@ -2896,7 +2902,7 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
   const hasActiveFilters = fulfillmentFilter !== "ALL" || stockFilter !== "ALL" || priceFilter !== "ALL" || ruleFilter !== "ALL" || suggestionFilter !== "ALL" || restrictedFilter !== "HIDE" || offerFilter !== "ALL" || roiMin !== "" || roiMax !== "";
 
   // Sorted and filtered items
-  const { sortedItems, hiddenByFilters, hiddenItemIds } = useMemo(() => {
+  const { sortedItems, hiddenByFilters, hiddenItemIds, hiddenZeroAvailableCount } = useMemo(() => {
     const qRaw = searchTerm.trim();
 
     // Support multi-ASIN search: split by comma, newline, or whitespace when input looks like a list
@@ -2983,6 +2989,15 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
 
     const visibleItems: InventoryWithAssignment[] = [];
     const hiddenItems: InventoryWithAssignment[] = [];
+    let hiddenZeroAvailableCount = 0;
+
+    // US marketplace default: only items with available > 0 count as eligible,
+    // hiding reserved/inbound-only rows with nothing sellable right now.
+    // "Expand" (showZeroAvailable) restores the prior any-stock behavior.
+    // Non-US marketplaces are unaffected — available is a shared physical
+    // stock count, not scoped per marketplace, but the collapse was requested
+    // specifically for the US view.
+    const zeroAvailableCollapsed = marketplace === "US" && !showZeroAvailable;
 
     items.forEach(i => {
       const exactIdentifierMatch =
@@ -2993,8 +3008,13 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
         // (offers, rule, price, stock, etc.) would otherwise hide it.
         // Stock-based visibility: show if any available/reserved/inbound stock exists.
       if (isExactIdentifierSearch && exactIdentifierMatch) {
-        const isRepriceEligible = (i.available ?? 0) > 0 || (i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0;
-        if (!isRepriceEligible) return;
+        const isRepriceEligible = zeroAvailableCollapsed
+          ? (i.available ?? 0) > 0
+          : (i.available ?? 0) > 0 || (i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0;
+        if (!isRepriceEligible) {
+          if (zeroAvailableCollapsed && ((i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0)) hiddenZeroAvailableCount++;
+          return;
+        }
         const lsEarly = (i.listing_status || "").toUpperCase();
         if (lsEarly === "INACTIVE" || lsEarly === "NOT_FOUND" || lsEarly.includes("INACTIVE")) return;
         if (marketplace !== "US" && i.intl_listing_status) {
@@ -3026,9 +3046,15 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
 
       if (!matchesSearch) return;
 
-      // Repricer visibility: include available, reserved, and inbound stock by default.
-      const isRepriceEligible = (i.available ?? 0) > 0 || (i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0;
-      if (!isRepriceEligible) return;
+      // Repricer visibility: include available, reserved, and inbound stock by default,
+      // unless zero-available items are collapsed (see zeroAvailableCollapsed above).
+      const isRepriceEligible = zeroAvailableCollapsed
+        ? (i.available ?? 0) > 0
+        : (i.available ?? 0) > 0 || (i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0;
+      if (!isRepriceEligible) {
+        if (zeroAvailableCollapsed && ((i.reserved ?? 0) > 0 || (i.inbound ?? 0) > 0)) hiddenZeroAvailableCount++;
+        return;
+      }
 
 
       // Apply dropdown filters — in "showHiddenOnly" mode we invert: keep items
@@ -3208,8 +3234,9 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
       sortedItems: mergedItems,
       hiddenByFilters: hasActiveFilters ? hiddenItems.length : 0,
       hiddenItemIds: new Set(hiddenItems.map(item => item.id)),
+      hiddenZeroAvailableCount,
     };
-  }, [items, searchTerm, sortKey, sortDir, fulfillmentFilter, stockFilter, priceFilter, ruleFilter, suggestionFilter, restrictedFilter, offerFilter, roiMin, roiMax, liveTodayUnitsByAsin, isExactIdentifierSearch, showHiddenOnly, rules, marketplace, hasActiveFilters, stickyTick]);
+  }, [items, searchTerm, sortKey, sortDir, fulfillmentFilter, stockFilter, priceFilter, ruleFilter, suggestionFilter, restrictedFilter, offerFilter, roiMin, roiMax, liveTodayUnitsByAsin, isExactIdentifierSearch, showHiddenOnly, showZeroAvailable, rules, marketplace, hasActiveFilters, stickyTick]);
 
   const resetAllFilters = useCallback(() => {
     setFulfillmentFilter("ALL");
@@ -7076,6 +7103,19 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
               className="pl-10"
             />
           </div>
+          {marketplace === "US" && (
+            <Button
+              variant={showZeroAvailable ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowZeroAvailable(prev => !prev)}
+              className="text-xs h-9"
+              title={showZeroAvailable ? "Hide items with 0 available again" : "Show items with reserved/inbound stock but 0 available right now"}
+            >
+              {showZeroAvailable
+                ? "Collapse"
+                : `Expand${hiddenZeroAvailableCount > 0 ? ` (${hiddenZeroAvailableCount})` : ""}`}
+            </Button>
+          )}
           {isAdmin && (<>
           <Button
             variant="outline"
