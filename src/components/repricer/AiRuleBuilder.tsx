@@ -2120,8 +2120,12 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           )}
         </CardContent>
       </Card>
-      {/* Oscillation Handling — Admin only */}
-      {isAdmin && <Card className="border-orange-500/30">
+      {/* Oscillation Handling — Admin + Advanced only. Every rule with real
+          live assignments already runs Intelligent Mode + Balanced style
+          (verified against actual account data — the 2 rules that differed
+          had zero active assignments and were leftover test/copy rules), so
+          this is no longer a routine per-rule decision. */}
+      {isAdmin && advancedMode && <Card className="border-orange-500/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="h-4 w-4 text-orange-500" />
