@@ -285,9 +285,9 @@ export const defaultAiRuleSettings: AiRuleSettings = {
   monopoly_raise_step_percent: 1,
   monopoly_cooldown_minutes: 60, // 1 hour between raises
   monopoly_mode_type: 'conservative', // Start conservative
-  // FBM Handling - compete with all sellers (aggressive mode by default)
-  ignore_fbm_unless_buybox_owner: false, // All Sellers (Aggressive) is default
-  fbm_competition_mode: 'all_sellers',
+  // FBM Handling - FBA Priority by default (ignore FBM unless they own the Buy Box)
+  ignore_fbm_unless_buybox_owner: true,
+  fbm_competition_mode: 'fba_priority',
   // Target Price Anchor
   target_anchor: 'smart_recapture' as const, // Smart + Lowest FBA Recapture by default
   // Competitor Quality Filtering - clean inputs, eliminate noise (beats BQool)
@@ -720,7 +720,13 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                 }
                 onCheckedChange={(checked) => {
                   const wantsFbm = checked === true;
-                  const mode: 'fba_priority' | 'all_sellers' = wantsFbm ? 'all_sellers' : 'fba_priority';
+                  // Turning this ON moves to "lowest_seller" (compete with FBM, but not
+                  // maximum-aggressive) rather than jumping straight to "all_sellers" —
+                  // that value is also what the "FBM Seller: Compete Against All" checkbox
+                  // below checks for, so setting it here made checking this one also show
+                  // that one as checked. "All Sellers" is now reached only by explicitly
+                  // turning that checkbox on too.
+                  const mode: 'fba_priority' | 'lowest_seller' = wantsFbm ? 'lowest_seller' : 'fba_priority';
                   onChange({
                     ...settings,
                     fbm_competition_mode: mode,
@@ -734,7 +740,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               <Label htmlFor="fba-compete-with-fbm" className="cursor-pointer text-xs text-muted-foreground leading-relaxed">
                 <span className="font-medium text-foreground">Yes — as an FBA seller, compete with FBM too.</span>
                 <br />
-                Enabling this treats FBM offers as real competitors and mirrors <strong>All Sellers (Aggressive)</strong> mode above.
+                Enabling this treats FBM offers as real competitors. Check <strong>FBM Seller: Compete Against All</strong> below too if you want maximum-aggressive All Sellers mode.
                 Leave off to keep <strong>FBA Priority</strong> — ignoring FBM unless they own the Buy Box.
               </Label>
             </div>
