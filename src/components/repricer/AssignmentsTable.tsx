@@ -3554,6 +3554,14 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     }
     const rulePatch = getRuleStatePatch(ruleId);
 
+    // Capture BEFORE this call touches anything: if the row already had an
+    // unrelated unsaved edit pending (e.g. the user just lowered Min and
+    // hasn't clicked Save yet), we must not clear that flag just because the
+    // rule assignment itself auto-saved — otherwise the next background poll
+    // (refreshPricesAndAssignments) sees hasLocalMinEdit=false and overwrites
+    // the staged Min with the still-old value from the DB.
+    const hadUnrelatedPendingEdit = pendingChanges.has(item.id);
+
     // If markPendingOnly, just track the change without saving
     if (markPendingOnly) {
       capturePendingSnapshot(item);
@@ -3616,13 +3624,16 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
         )
       );
       
-      // Clear pending change after successful save
-      clearPendingSnapshot(item.id);
-      setPendingChanges(prev => {
-        const next = new Set(prev);
-        next.delete(item.id);
-        return next;
-      });
+      // Clear pending change after successful save — but only if nothing else
+      // (e.g. an unsaved Min/Max edit) was already relying on that flag.
+      if (!hadUnrelatedPendingEdit) {
+        clearPendingSnapshot(item.id);
+        setPendingChanges(prev => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }
       // Rule change saved — user must manually trigger eval via the toggle/button
     } catch (error: any) {
       toast.error("Failed to assign rule");
