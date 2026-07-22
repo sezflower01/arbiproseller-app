@@ -89,7 +89,6 @@ import {
   Settings2,
   DollarSign,
   Loader2,
-  ChevronDown,
   Trash2,
   Lock,
   Unlock,
@@ -2571,7 +2570,6 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
   
   // Suggestion type filter
   const [suggestionFilter, setSuggestionFilter] = useState<"ALL" | "blocked_by_min" | "blocked_needs_you" | "no_sales_30d" | "blocked_review_soon" | "blocked_auto" | "bb_suppressed" | "profit_guard_block" | "HAS_ANY" | "NONE">(_assignmentsFilterCache.suggestionFilter);
-  const [showAdvancedChips, setShowAdvancedChips] = useState(false);
 
   // Stickiness: when filtering by a "blocked/review" chip, keep rows that just
   // transitioned out of the chip visible for 60s so users don't think the UI
@@ -6690,18 +6688,7 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
                  <div className="h-6 w-px bg-border/60" />
                  {renderGroup("Analytics", analytics)}
                  <div className="h-6 w-px bg-border/60" />
-                 <button
-                   onClick={() => setShowAdvancedChips((v) => !v)}
-                   className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                 >
-                   Advanced
-                   <ChevronDown className={`h-3 w-3 transition-transform ${showAdvancedChips ? "rotate-180" : ""}`} />
-                 </button>
-                 {showAdvancedChips && (
-                   <div className="flex items-center gap-1.5">
-                     {advanced.map(renderChip)}
-                   </div>
-                 )}
+                 {renderGroup("Advanced", advanced)}
                </div>
              );
            })()}
