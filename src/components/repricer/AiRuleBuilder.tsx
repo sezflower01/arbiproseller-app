@@ -831,17 +831,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                 </p>
               ) : (
                 <div className="space-y-3 mt-2">
-                  {/* Warning banner */}
-                  <div className="flex items-start gap-2.5 p-4 rounded-lg border-2 border-amber-400 bg-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-                    <span className="text-2xl mt-0.5">⚠️</span>
-                    <div>
-                      <p className="text-base font-bold text-amber-400 mb-1">Custom undercut = more control, more risk</p>
-                      <p className="text-sm text-white leading-relaxed">
-                        Higher values can <span className="font-bold text-amber-400">lower your profit</span> and <span className="font-bold text-amber-400">start price wars</span>.
-                      </p>
-                    </div>
-                  </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="undercut">FBA Undercut Amount ($)</Label>
                     <p className="text-xs text-muted-foreground">
