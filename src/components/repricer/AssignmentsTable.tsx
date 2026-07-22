@@ -95,6 +95,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { RepricerRule } from "./RuleBuilder";
+import { resolveRuleMinRoiEnabledForMarketplace } from "./RuleBuilder";
 import { getMarketplaceConfig, formatPrice, MARKETPLACE_LIST } from "@/lib/marketplaceCurrency";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import ActionLogDialog, { SafeguardBadge } from "./ActionLogDialog";
@@ -771,7 +772,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       max_price_override: assignment?.max_price_override || null,
       min_roi_override: assignment?.min_roi_override ?? null,
       rule_min_roi_percent: rule?.min_roi_percent ?? null,
-      rule_min_roi_enabled: rule?.min_roi_enabled ?? false,
+      rule_min_roi_enabled: resolveRuleMinRoiEnabledForMarketplace(rule as any, targetMarketplace),
       rule_min_roi_marketplace_overrides: rule?.min_roi_marketplace_overrides ?? {},
       last_evaluated_at: assignment?.last_evaluated_at || null,
       last_applied_price: assignment?.last_applied_price || null,
@@ -981,7 +982,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
           max_price_override: a.max_price_override || null,
           min_roi_override: a.min_roi_override ?? null,
           rule_min_roi_percent: rule?.min_roi_percent ?? null,
-          rule_min_roi_enabled: rule?.min_roi_enabled ?? false,
+          rule_min_roi_enabled: resolveRuleMinRoiEnabledForMarketplace(rule as any, targetMarketplace),
           rule_min_roi_marketplace_overrides: rule?.min_roi_marketplace_overrides ?? {},
           last_evaluated_at: a.last_evaluated_at || null,
           last_applied_price: a.last_applied_price || null,
@@ -3533,7 +3534,7 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
 
   const getRuleStatePatch = (ruleId: string | null): Partial<InventoryWithAssignment> => {
     const targetRule = ruleId ? rules.find(r => r.id === ruleId) : null;
-    const ruleMinRoiEnabled = (targetRule as any)?.min_roi_enabled ?? false;
+    const ruleMinRoiEnabled = resolveRuleMinRoiEnabledForMarketplace(targetRule as any, marketplace);
 
     return {
       rule_id: ruleId,

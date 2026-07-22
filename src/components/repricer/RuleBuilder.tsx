@@ -194,6 +194,23 @@ export interface RepricerRule {
   war_protection_minutes?: number;
 }
 
+// "Respect minimum ROI" is toggled per marketplace via
+// min_roi_enabled_marketplace_overrides; a marketplace without its own entry
+// falls back to the legacy global min_roi_enabled boolean. Mirrors
+// supabase/functions/_shared/min-roi-enabled.ts (Deno can't share code with
+// the frontend bundle, so the same small resolution logic lives here too).
+export function resolveRuleMinRoiEnabledForMarketplace(
+  rule: { min_roi_enabled?: boolean | null; min_roi_enabled_marketplace_overrides?: Record<string, boolean> | null } | null | undefined,
+  marketplace: string,
+): boolean {
+  if (!rule) return false;
+  const overrides = rule.min_roi_enabled_marketplace_overrides;
+  if (overrides && Object.prototype.hasOwnProperty.call(overrides, marketplace)) {
+    return !!overrides[marketplace];
+  }
+  return rule.min_roi_enabled ?? false;
+}
+
 interface RuleBuilderProps {
   onRulesChange?: () => void;
   onTestRule?: (rule: RepricerRule) => void;
