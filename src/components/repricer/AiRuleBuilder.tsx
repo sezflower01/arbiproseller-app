@@ -61,12 +61,15 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
   VELOCITY_DOMINATOR: {
     undercut_amount: 0.02,
     enable_smart_raise: true,        // ← Was false. Limited raise to recover margin after winning.
-    enable_monopoly_mode: false,
-    monopoly_mode_type: 'aggressive',
+    // Matches Momentum Builder — Smart Price Protection is now uniform
+    // across all profiles (every real rule already converged on these
+    // values in practice, and the UI no longer exposes them per-profile).
+    enable_monopoly_mode: true,
+    monopoly_mode_type: 'conservative',
     monopoly_cooldown_minutes: 60,
     use_ai_tuning: true,
     cooldown_minutes: 5,
-    skip_lower_when_bb_owner: false,
+    skip_lower_when_bb_owner: true,
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
@@ -1382,7 +1385,11 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
       </Card>
       )}
 
-      {/* Buy Box Owner Protection + Smart Raise */}
+      {/* Buy Box Owner Protection + Smart Raise — hidden from the regular flow:
+          every real rule already converges on Don't Lower/Smart Raise/Monopoly
+          Mode all being ON, so these are now hardcoded defaults and only
+          reachable here via Advanced Settings for anyone who wants to diverge. */}
+      {advancedMode && (
       <Card className="border-emerald-500/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -1509,8 +1516,12 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Monopoly Mode - Proactive Price Raising */}
+      {/* Monopoly Mode - Proactive Price Raising — hidden from the regular
+          flow for the same reason as Smart Price Protection above; still
+          reachable via Advanced Settings. */}
+      {advancedMode && (
       <Card className="border-yellow-500/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -1661,6 +1672,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Target Price Anchor — Admin only */}
       {isAdmin && <Card className="border-cyan-500/30">
