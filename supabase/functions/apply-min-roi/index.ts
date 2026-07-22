@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
     const isInternational = INTL_MARKETPLACES.includes(marketplace);
 
-    console.log(`[apply-min-roi] User ${user.id} applying ${min_roi_percent}% ROI to rule ${rule_id} for ${marketplace} (${isInternational ? 'INTL-aggressive' : 'US-conservative'})${asins?.length ? ` asins=${asins.join(',')}` : ''}`);
+    console.log(`[apply-min-roi] User ${user.id} applying ${min_roi_percent}% ROI to rule ${rule_id} for ${marketplace}${asins?.length ? ` asins=${asins.join(',')}` : ''}`);
 
     // 1. Get all enabled assignments for this rule + marketplace (optionally filtered to a subset of ASINs)
     let query = supabase
@@ -302,19 +302,14 @@ Deno.serve(async (req) => {
         const currentMax = assignment.max_price_override;
 
         if (currentMax != null && newMinPrice > currentMax) {
-          if (isInternational) {
-            // ── AGGRESSIVE MODE (International) ──
-            // Auto-raise max to protect margin. Losing BB is better than losing money.
-            newMax = parseFloat((newMinPrice + 0.50).toFixed(2));
-            updateData.max_price_override = newMax;
-            reason = 'intl_max_raised_for_roi_protection';
-            console.log(`[apply-min-roi] INTL ${asin}: ROI floor $${newMinPrice} > max $${currentMax} → auto-raising max to $${newMax}`);
-          } else {
-            // ── CONSERVATIVE MODE (US) ──
-            // Do NOT auto-raise max. Set min to floor but flag it.
-            reason = 'roi_exceeds_max';
-            console.log(`[apply-min-roi] US ${asin}: ROI floor $${newMinPrice} > max $${currentMax} → keeping max, flagging as roi_exceeds_max`);
-          }
+          // Auto-raise max to protect margin — applies to every marketplace now
+          // (previously US alone left min > max unresolved, flagged only as
+          // 'roi_exceeds_max'; CA/MX/BR already auto-raised). Losing BB is
+          // better than being stuck with an invalid min > max assignment.
+          newMax = parseFloat((newMinPrice + 0.50).toFixed(2));
+          updateData.max_price_override = newMax;
+          reason = isInternational ? 'intl_max_raised_for_roi_protection' : 'max_raised_for_roi_protection';
+          console.log(`[apply-min-roi] ${marketplace} ${asin}: ROI floor $${newMinPrice} > max $${currentMax} → auto-raising max to $${newMax}`);
         }
 
         const { error: upErr } = await supabase
