@@ -3,6 +3,7 @@ import { checkModuleAccess } from "../_shared/module-access-guard.ts";
 import { getListingUnitCost } from "../_shared/cost-contract.ts";
 import { exchangeLwaToken } from "../_shared/lwa-token.ts";
 import { getSpApiEndpoint, signRequest } from "../_shared/sp-api-sigv4.ts";
+import { resolveMinRoiEnabled } from "../_shared/min-roi-enabled.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -210,11 +211,11 @@ Deno.serve(async (req) => {
     if (settings!.auto_assign_rule_id) {
       const { data: ruleData } = await supabase
         .from("repricer_rules")
-        .select("min_roi_enabled, min_roi, min_roi_percent, min_roi_marketplace_overrides")
+        .select("min_roi_enabled, min_roi_enabled_marketplace_overrides, min_roi, min_roi_percent, min_roi_marketplace_overrides")
         .eq("id", settings!.auto_assign_rule_id)
         .maybeSingle();
       if (ruleData) {
-        ruleMinRoiEnabled = ruleData.min_roi_enabled || false;
+        ruleMinRoiEnabled = resolveMinRoiEnabled(ruleData, marketplace);
         ruleMinRoi = ruleData.min_roi_percent || ruleData.min_roi || null;
         if (ruleData.min_roi_marketplace_overrides && typeof ruleData.min_roi_marketplace_overrides === 'object') {
           ruleMinRoiOverrides = ruleData.min_roi_marketplace_overrides as Record<string, number>;

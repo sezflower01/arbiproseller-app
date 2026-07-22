@@ -3,6 +3,7 @@ import { checkMarketplaceAccess } from '../_shared/marketplace-guard.ts';
 import { checkModuleAccess } from '../_shared/module-access-guard.ts';
 import { logHealthSignal, HealthSignals } from "../_shared/health-signal.ts";
 import { requireInternalOrUser } from '../_shared/require-internal.ts';
+import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -695,7 +696,9 @@ Deno.serve(async (req) => {
     // ============================================================
     let roiFloorPrice: number | null = null;
     let roiFloorSource: 'cached_fees' | 'fallback_static' | 'none' = 'none';
-    const minRoiEnabled = rule.min_roi_enabled ?? false;
+    // "Respect minimum ROI" is toggled per marketplace — falls back to the
+    // legacy global min_roi_enabled for marketplaces without their own override.
+    const minRoiEnabled = resolveMinRoiEnabled(rule, targetMarketplace);
     const minRoiMarketplaceOverrides = rule.min_roi_marketplace_overrides || {};
     const enableDynamicRoi = rule.enable_dynamic_roi ?? false;
     

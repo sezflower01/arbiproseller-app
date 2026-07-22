@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { getListingUnitCost, getInventoryUnitCost } from '../_shared/cost-contract.ts';
+import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -142,16 +143,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get rule's Min ROI settings
+    // Get rule's Min ROI settings. "Respect minimum ROI" is per marketplace,
+    // so we keep the raw legacy flag + per-marketplace overrides here and
+    // resolve the effective boolean per mktLabel inside the loop below.
     let ruleMinRoi: number | null = null;
-    let ruleMinRoiEnabled = false;
+    let ruleMinRoiEnabledLegacy = false;
+    let ruleMinRoiEnabledOverrides: Record<string, boolean> = {};
     let ruleMinRoiOverrides: Record<string, number> = {};
     if (autoSettings?.auto_assign_rule_id) {
       const { data: ruleData } = await supabase.from('repricer_rules')
-        .select('min_roi_enabled, min_roi, min_roi_percent, min_roi_marketplace_overrides')
+        .select('min_roi_enabled, min_roi_enabled_marketplace_overrides, min_roi, min_roi_percent, min_roi_marketplace_overrides')
         .eq('id', autoSettings.auto_assign_rule_id).maybeSingle();
       if (ruleData) {
-        ruleMinRoiEnabled = ruleData.min_roi_enabled || false;
+        ruleMinRoiEnabledLegacy = ruleData.min_roi_enabled || false;
+        if (ruleData.min_roi_enabled_marketplace_overrides && typeof ruleData.min_roi_enabled_marketplace_overrides === 'object') {
+          ruleMinRoiEnabledOverrides = ruleData.min_roi_enabled_marketplace_overrides as Record<string, boolean>;
+        }
         ruleMinRoi = ruleData.min_roi_percent || ruleData.min_roi || null;
         if (ruleData.min_roi_marketplace_overrides && typeof ruleData.min_roi_marketplace_overrides === 'object') {
           ruleMinRoiOverrides = ruleData.min_roi_marketplace_overrides as Record<string, number>;
@@ -231,6 +238,11 @@ Deno.serve(async (req) => {
         if (autoSettings?.auto_assign_enabled && autoSettings.auto_assign_rule_id) {
           assignmentObj.rule_id = autoSettings.auto_assign_rule_id;
           assignmentObj.is_enabled = true;
+
+          const ruleMinRoiEnabled = resolveMinRoiEnabled(
+            { min_roi_enabled: ruleMinRoiEnabledLegacy, min_roi_enabled_marketplace_overrides: ruleMinRoiEnabledOverrides },
+            mktLabel,
+          );
 
           // Convert USD cost to local currency for this marketplace
           const localCurrency = mktCurrency[mktId] || 'USD';

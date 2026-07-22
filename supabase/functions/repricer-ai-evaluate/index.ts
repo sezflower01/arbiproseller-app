@@ -8,6 +8,7 @@ import {
   computeFastLaneCooldown,
 } from './_recovery.ts';
 import { scoreMarketVolatility, wasMoveProductive } from '../_shared/marketVolatility.ts';
+import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -5523,8 +5524,10 @@ Deno.serve(async (req) => {
     const isHighRisk = enableDynamicRoi && sellerCount >= highRiskThreshold;
     const assignmentRoiOverride = assignment?.min_roi_override;
     
-    // Min ROI Protection: marketplace-specific ROI override from rule
-    const minRoiEnabled = rule.min_roi_enabled ?? false;
+    // Min ROI Protection: marketplace-specific ROI override from rule.
+    // "Respect minimum ROI" is now toggled per marketplace — falls back to
+    // the legacy global min_roi_enabled for marketplaces without their own override.
+    const minRoiEnabled = resolveMinRoiEnabled(rule, targetMarketplace);
     const minRoiMarketplaceOverrides = rule.min_roi_marketplace_overrides || {};
     const marketplaceRoiOverride = minRoiEnabled
       ? (minRoiMarketplaceOverrides[targetMarketplace] ?? rule.min_roi_percent ?? null)

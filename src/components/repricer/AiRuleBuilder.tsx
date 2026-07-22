@@ -253,8 +253,12 @@ export interface AiRuleSettings {
   enable_auto_floor: boolean;
   // Price War Protection — delay auto-floor activation
   war_protection_minutes: number;
-  // Min ROI Protection — optional user-facing ROI floor
+  // Min ROI Protection — optional user-facing ROI floor.
+  // min_roi_enabled is the legacy global on/off switch, kept only as a
+  // fallback for marketplaces that don't yet have their own entry in
+  // min_roi_enabled_marketplace_overrides (per-marketplace on/off).
   min_roi_enabled: boolean;
+  min_roi_enabled_marketplace_overrides: Record<string, boolean>;
   min_roi_marketplace_overrides: Record<string, number>;
   // Strategy Engine — Dynamic Floor Relaxation (Milestone B). Default OFF.
   enable_dynamic_floor_relaxation?: boolean;
@@ -358,6 +362,7 @@ export const defaultAiRuleSettings: AiRuleSettings = {
   war_protection_minutes: 30,
   // Min ROI Protection — OFF by default
   min_roi_enabled: false,
+  min_roi_enabled_marketplace_overrides: {},
   min_roi_marketplace_overrides: {},
 };
 
@@ -430,6 +435,20 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
     value: AiRuleSettings[K]
   ) => {
     onChange({ ...settings, [key]: value });
+  };
+
+  // "Respect minimum ROI" is now toggled per marketplace. A marketplace with
+  // no explicit entry yet falls back to the legacy global min_roi_enabled,
+  // so existing rules keep working exactly as before until touched here.
+  const isRoiEnabledForMarketplace = (mp: string): boolean => {
+    const overrides = settings.min_roi_enabled_marketplace_overrides || {};
+    if (Object.prototype.hasOwnProperty.call(overrides, mp)) return overrides[mp];
+    return settings.min_roi_enabled ?? false;
+  };
+
+  const setRoiEnabledForMarketplace = (mp: string, enabled: boolean) => {
+    const overrides = { ...(settings.min_roi_enabled_marketplace_overrides || {}), [mp]: enabled };
+    onChange({ ...settings, min_roi_enabled_marketplace_overrides: overrides });
   };
 
   const handleProfileChange = (profileValue: SmartProfile) => {
@@ -1377,86 +1396,89 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+          <div className="space-y-3">
             <div>
-              <p className="font-medium text-sm">Respect minimum ROI for your price?</p>
+              <Label className="text-sm font-medium">Min ROI % per Marketplace</Label>
               <p className="text-xs text-muted-foreground">
-                When enabled, the repricer calculates a minimum selling price based on your cost + Amazon fees + target ROI
+                ROI = (Price - Cost - Fees) / Cost. Each marketplace has its own switch — turn it on to set a minimum ROI floor for that marketplace only.
               </p>
             </div>
-            <Switch
-              checked={settings.min_roi_enabled}
-              onCheckedChange={(checked) => updateSetting("min_roi_enabled", checked)}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {connectedMarketplaces.map((mp) => {
+                const roiEnabled = isRoiEnabledForMarketplace(mp);
+                return (
+                  <div key={mp} className="p-3 bg-muted/50 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-sm">{mp} — Respect minimum ROI for your price?</p>
+                      <Switch
+                        checked={roiEnabled}
+                        onCheckedChange={(checked) => setRoiEnabledForMarketplace(mp, checked)}
+                      />
+                    </div>
+                    {roiEnabled && (
+                      <div className="space-y-1">
+                        <Label htmlFor={`roi-${mp}`} className="text-xs text-muted-foreground">{mp} ROI %</Label>
+                        <div className="flex gap-1">
+                          <Input
+                            id={`roi-${mp}`}
+                            type="number"
+                            step="1"
+                            min="0"
+                            max="500"
+                            value={settings.min_roi_marketplace_overrides?.[mp] ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                              const overrides = { ...settings.min_roi_marketplace_overrides };
+                              if (val !== undefined) {
+                                overrides[mp] = val;
+                              } else {
+                                delete overrides[mp];
+                              }
+                              // Use a single onChange call to avoid the second call overwriting the first
+                              const updated: Partial<AiRuleSettings> = { min_roi_marketplace_overrides: overrides };
+                              if (mp === "US") {
+                                updated.min_roi_percent = val ?? null;
+                              }
+                              onChange({ ...settings, ...updated });
+                            }}
+                            placeholder="e.g. 30"
+                            className="flex-1"
+                          />
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-9 w-9 shrink-0"
+                                  disabled={!ruleId || !settings.min_roi_marketplace_overrides?.[mp] || applyingMarketplace === mp}
+                                  onClick={() => handleApplyMinRoi(mp)}
+                                >
+                                  {applyingMarketplace === mp ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Play className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Apply {mp} ROI to all assignments now</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">ROI will not lower prices below your manual minimum.</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {settings.min_roi_enabled && (
+          {connectedMarketplaces.some(isRoiEnabledForMarketplace) && (
              <div className="space-y-4 pl-4 border-l-2 border-amber-500/30">
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Min ROI % per Marketplace</Label>
-                <p className="text-xs text-muted-foreground">
-                  ROI = (Price - Cost - Fees) / Cost. Set a minimum ROI floor for each marketplace.
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {connectedMarketplaces.map((mp) => (
-                    <div key={mp} className="space-y-1">
-                      <Label htmlFor={`roi-${mp}`} className="text-xs text-muted-foreground">{mp} ROI %</Label>
-                      <div className="flex gap-1">
-                        <Input
-                          id={`roi-${mp}`}
-                          type="number"
-                          step="1"
-                          min="0"
-                          max="500"
-                          value={settings.min_roi_marketplace_overrides?.[mp] ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value ? parseFloat(e.target.value) : undefined;
-                            const overrides = { ...settings.min_roi_marketplace_overrides };
-                            if (val !== undefined) {
-                              overrides[mp] = val;
-                            } else {
-                              delete overrides[mp];
-                            }
-                            // Use a single onChange call to avoid the second call overwriting the first
-                            const updated: Partial<AiRuleSettings> = { min_roi_marketplace_overrides: overrides };
-                            if (mp === "US") {
-                              updated.min_roi_percent = val ?? null;
-                            }
-                            onChange({ ...settings, ...updated });
-                          }}
-                          placeholder="e.g. 30"
-                          className="flex-1"
-                        />
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                className="h-9 w-9 shrink-0"
-                                disabled={!ruleId || !settings.min_roi_marketplace_overrides?.[mp] || applyingMarketplace === mp}
-                                onClick={() => handleApplyMinRoi(mp)}
-                              >
-                                {applyingMarketplace === mp ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Play className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Apply {mp} ROI to all assignments now</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground/70 mt-0.5">ROI will not lower prices below your manual minimum.</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
                 <p className="text-xs text-muted-foreground">
                   <strong>How it works:</strong> If your target ROI is 30% and based on cost + fees the minimum valid price is $18.40, 

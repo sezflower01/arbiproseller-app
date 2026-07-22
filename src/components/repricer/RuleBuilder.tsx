@@ -560,6 +560,7 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
         ruleData.war_protection_minutes = (formData as any).war_protection_minutes ?? 30;
         // Min ROI Protection
         ruleData.min_roi_enabled = (formData as any).min_roi_enabled ?? false;
+        ruleData.min_roi_enabled_marketplace_overrides = (formData as any).min_roi_enabled_marketplace_overrides ?? {};
         ruleData.min_roi_marketplace_overrides = (formData as any).min_roi_marketplace_overrides ?? {};
         // Strict Match Mode — force exact-match with anchor (blocks all undercut overrides)
         ruleData.strict_match_mode = (formData as any).strict_match_mode === true;
@@ -1160,6 +1161,7 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
                     war_protection_minutes: (formData as any).war_protection_minutes ?? 30,
                     // Min ROI Protection
                     min_roi_enabled: (formData as any).min_roi_enabled ?? false,
+                    min_roi_enabled_marketplace_overrides: (formData as any).min_roi_enabled_marketplace_overrides ?? {},
                     min_roi_marketplace_overrides: (formData as any).min_roi_marketplace_overrides ?? {},
                     // Strict Match Mode
                     strict_match_mode: (formData as any).strict_match_mode === true,
