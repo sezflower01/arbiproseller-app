@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { isInternalCaller } from "../_shared/require-internal.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
     let userId: string;
     const authHeader = req.headers.get('Authorization');
     
-    if (body.internal && body.user_id) {
+    if (body.internal && body.user_id && isInternalCaller(req)) {
       // Internal service call from scheduler
       console.log('[update-amazon-price] Internal service call for user', body.user_id);
       userId = body.user_id;
