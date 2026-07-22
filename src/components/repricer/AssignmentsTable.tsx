@@ -4823,10 +4823,15 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
       calculatedRoi = calculateRoiFromPrice(previous, numVal);
     }
 
-    // Min ROI validation: warn if the new min price falls below the rule's ROI floor
-    if (!isRevertingToSnapshot && numVal !== null && numVal > 0 && previous.rule_min_roi_enabled && calculatedRoi !== null) {
-      const effectiveTargetRoi = previous.rule_min_roi_marketplace_overrides?.[marketplace]
-        ?? previous.rule_min_roi_percent
+    // Min ROI validation: warn if the new min price falls below the rule's ROI floor.
+    // Re-derive from the live rules list (not the cached previous.rule_min_roi_enabled
+    // field) so a stale cached assignments snapshot can never show this warning after
+    // the marketplace's Respect-Min-ROI toggle has been turned off.
+    const liveRuleForRoiCheck = rules.find(r => r.id === (previous.rule_id || previous.saved_rule_id));
+    const roiEnabledForThisMarketplace = resolveRuleMinRoiEnabledForMarketplace(liveRuleForRoiCheck as any, marketplace);
+    if (!isRevertingToSnapshot && numVal !== null && numVal > 0 && roiEnabledForThisMarketplace && calculatedRoi !== null) {
+      const effectiveTargetRoi = (liveRuleForRoiCheck as any)?.min_roi_marketplace_overrides?.[marketplace]
+        ?? (liveRuleForRoiCheck as any)?.min_roi_percent
         ?? 30;
       if (calculatedRoi < effectiveTargetRoi) {
         const roiFloorPrice = calculatePriceFromRoi(previous, effectiveTargetRoi);
@@ -5240,7 +5245,9 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     const boundsChanged = minChanged || maxChanged;
 
     const ruleChanged = currentItem.rule_id !== currentItem.saved_rule_id;
-    const shouldClearMinRoiOverride = ruleChanged && !currentItem.rule_min_roi_enabled && liveMinRoi === undefined;
+    const liveRuleForSave = rules.find(r => r.id === (currentItem.rule_id || currentItem.saved_rule_id));
+    const liveRoiEnabledForSave = resolveRuleMinRoiEnabledForMarketplace(liveRuleForSave as any, marketplace);
+    const shouldClearMinRoiOverride = ruleChanged && !liveRoiEnabledForSave && liveMinRoi === undefined;
 
     const minRoi = shouldClearMinRoiOverride
       ? null
@@ -5267,10 +5274,10 @@ export default function AssignmentsTable({ rules, onViewOffers, marketplace = "U
     // When Min was set authoritatively by the backend (e.g. via the "Raise to ROI"
     // button → apply-min-roi), trust it — local fee math can drift slightly and
     // would otherwise silently block the save with a toast.
-    if (currentItem.rule_min_roi_enabled && minPrice > 0 && liveMin !== undefined) {
+    if (liveRoiEnabledForSave && minPrice > 0 && liveMin !== undefined) {
       const roiAtMin = calculateRoiFromPrice(currentItem, minPrice);
-      const effectiveTargetRoi = currentItem.rule_min_roi_marketplace_overrides?.[marketplace]
-        ?? currentItem.rule_min_roi_percent
+      const effectiveTargetRoi = (liveRuleForSave as any)?.min_roi_marketplace_overrides?.[marketplace]
+        ?? (liveRuleForSave as any)?.min_roi_percent
         ?? 30;
 
       if (roiAtMin === null) {
