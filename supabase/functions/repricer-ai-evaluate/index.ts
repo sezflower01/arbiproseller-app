@@ -5702,13 +5702,11 @@ Deno.serve(async (req) => {
 
     // === APPLY SMART PROFILE PRESETS ===
     // If rule has a smart_profile that isn't CUSTOM, override rule fields with preset values.
-    // wasExplicitlyZero captures match-exact intent BEFORE presets mutate rule:
-    // if the rule's OWN stored undercut_amount is already 0, that must remain
-    // a hard zero and not get clobbered by a nonzero preset value. This is
-    // ONLY used to decide the preset-protection below — the real, final
-    // matchExactly flag (used everywhere else) is derived later, after ALL
-    // mutations (presets + learning overrides) have settled.
-    const wasExplicitlyZero = Number(rule.undercut_amount ?? NaN) === 0;
+    // undercut_amount is the sole source of truth for undercutting behavior —
+    // the profile only serves as a template when a rule is first created/
+    // copied (in the frontend); it must NEVER re-override a value the user
+    // has since customized. It is therefore always excluded from the preset
+    // override below, regardless of what the rule's current value is.
     const smartProfile = rule.smart_profile || 'CUSTOM';
     // Canonical profile key → UI label mapping (outer scope for strategy visibility)
     const PROFILE_KEY_TO_LABEL: Record<string, string> = {
@@ -5775,20 +5773,14 @@ Deno.serve(async (req) => {
       
       const preset = profilePresets[smartProfile];
       if (preset) {
-        // Override rule fields with preset values, BUT preserve user-controlled settings
-        const userControlledFields = ['ignore_fbm_unless_buybox_owner'];
-        if (wasExplicitlyZero) {
-          userControlledFields.push('undercut_amount', 'use_ai_tuning');
-        }
+        // Override rule fields with preset values, BUT preserve user-controlled
+        // settings. undercut_amount is ALWAYS user-controlled now — the preset
+        // is only a template at rule creation, never a runtime override.
+        const userControlledFields = ['ignore_fbm_unless_buybox_owner', 'undercut_amount'];
         for (const [key, value] of Object.entries(preset)) {
           if (!userControlledFields.includes(key)) {
             (rule as any)[key] = value;
           }
-        }
-        if (wasExplicitlyZero) {
-          (rule as any).undercut_amount = 0;
-          (rule as any).use_ai_tuning = false;
-          console.log(`[MATCH_EXACTLY] preset override blocked for ${targetAsin}: undercut_amount=0 profile=${smartProfile} — effective undercut forced to $0.00, AI tuning disabled`);
         }
         // ── Resolved Profile Audit (Phase 1) ──
         // Family classification: derived from preset shape, not preset name.
