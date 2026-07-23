@@ -67,7 +67,6 @@ interface RunResult {
 
 interface RepricerSettingsData {
   user_id: string;
-  auto_apply: boolean;
   sp_api_check_interval_minutes: number;
   rainforest_snapshot_ttl_minutes: number;
   daily_credit_cap: number;
@@ -82,9 +81,6 @@ interface RepricerSettingsData {
   queue_auto_resume_at: string | null;
   // Safety settings
   absolute_min_price_floor: number;
-  max_price_change_percent_per_day: number;
-  max_minmax_changes_per_day: number;
-  require_cost_for_min_calc: boolean;
 }
 
 interface RepricerSettingsProps {
@@ -129,33 +125,13 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   const [autoTurboPool, setAutoTurboPool] = useState<string[]>([]);
   const [autoTurboCursor, setAutoTurboCursor] = useState(0);
 
-  // Sequential sweep state
-  const [sweepForm, setSweepForm] = useState({
-    enabled: false,
-    batch_size: 10,
-    interval_minutes: 3,
-  });
-  const [sweepStats, setSweepStats] = useState({
-    last_run_at: null as string | null,
-    checked_this_pass: 0,
-    total_eligible: 0,
-    pass_started_at: null as string | null,
-    passes_completed: 0,
-  });
-
   const [formData, setFormData] = useState({
-    auto_apply: false,
     scheduler_enabled: true,
-    continuous_mode: false,
     sp_api_check_interval_minutes: 10,
     rainforest_snapshot_ttl_minutes: 60,
     daily_credit_cap: 100,
-    scheduler_batch_size: 100,
     // Safety settings
     absolute_min_price_floor: 5.00,
-    max_price_change_percent_per_day: 50,
-    max_minmax_changes_per_day: 10,
-    require_cost_for_min_calc: true,
     // Momentum settings
     momentum_check_enabled: true,
     momentum_threshold_pct: 50,
@@ -168,7 +144,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
-      scheduler_batch_size: optimizedSettings.batchSize,
       sp_api_check_interval_minutes: optimizedSettings.interval,
       rainforest_snapshot_ttl_minutes: optimizedSettings.snapshotTtl,
     }));
@@ -328,18 +303,12 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           (data as any).schedule_timezone = detectedTz;
         }
         setFormData({
-          auto_apply: data.auto_apply,
           scheduler_enabled: data.scheduler_enabled ?? false,
-          continuous_mode: (data as any).continuous_mode ?? false,
           sp_api_check_interval_minutes: data.sp_api_check_interval_minutes,
           rainforest_snapshot_ttl_minutes: data.rainforest_snapshot_ttl_minutes,
           daily_credit_cap: data.daily_credit_cap,
-          scheduler_batch_size: (data as any).scheduler_batch_size ?? 100,
           // Safety settings
           absolute_min_price_floor: data.absolute_min_price_floor ?? 0.99,
-          max_price_change_percent_per_day: data.max_price_change_percent_per_day ?? 50,
-          max_minmax_changes_per_day: data.max_minmax_changes_per_day ?? 10,
-          require_cost_for_min_calc: data.require_cost_for_min_calc ?? true,
           // Momentum settings
           momentum_check_enabled: (data as any).momentum_check_enabled ?? true,
           momentum_threshold_pct: (data as any).momentum_threshold_pct ?? 50,
@@ -354,19 +323,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         setAutoTurboLastRotation((data as any).auto_turbo_last_rotation_at || null);
         setAutoTurboPool((data as any).auto_turbo_rotation_pool || []);
         setAutoTurboCursor((data as any).auto_turbo_rotation_cursor || 0);
-        // Sequential sweep settings
-        setSweepForm({
-          enabled: (data as any).sequential_sweep_enabled ?? false,
-          batch_size: (data as any).sequential_sweep_batch_size ?? 10,
-          interval_minutes: (data as any).sequential_sweep_interval_minutes ?? 3,
-        });
-        setSweepStats({
-          last_run_at: (data as any).sequential_sweep_last_run_at || null,
-          checked_this_pass: (data as any).sequential_sweep_checked_this_pass || 0,
-          total_eligible: (data as any).sequential_sweep_total_eligible || 0,
-          pass_started_at: (data as any).sequential_sweep_pass_started_at || null,
-          passes_completed: (data as any).sequential_sweep_passes_completed || 0,
-        });
       }
     } catch (error: any) {
       console.error("Error fetching settings:", error);
@@ -382,18 +338,12 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
       const { error } = await supabase
         .from("repricer_settings")
         .update({
-          auto_apply: formData.auto_apply,
           scheduler_enabled: formData.scheduler_enabled,
-          continuous_mode: formData.continuous_mode,
           sp_api_check_interval_minutes: formData.sp_api_check_interval_minutes,
           rainforest_snapshot_ttl_minutes: formData.rainforest_snapshot_ttl_minutes,
           daily_credit_cap: formData.daily_credit_cap,
-          scheduler_batch_size: formData.scheduler_batch_size,
           // Safety settings
           absolute_min_price_floor: formData.absolute_min_price_floor,
-          max_price_change_percent_per_day: formData.max_price_change_percent_per_day,
-          max_minmax_changes_per_day: formData.max_minmax_changes_per_day,
-          require_cost_for_min_calc: formData.require_cost_for_min_calc,
           // Momentum settings
           momentum_check_enabled: formData.momentum_check_enabled,
           momentum_threshold_pct: formData.momentum_threshold_pct,
@@ -401,10 +351,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           auto_turbo_enabled: autoTurboForm.enabled,
           auto_turbo_duration_minutes: autoTurboForm.duration_minutes,
           auto_turbo_rule_id: autoTurboForm.rule_id || null,
-          // Sequential sweep settings
-          sequential_sweep_enabled: sweepForm.enabled,
-          sequential_sweep_batch_size: sweepForm.batch_size,
-          sequential_sweep_interval_minutes: sweepForm.interval_minutes,
         } as any)
         .eq("user_id", user?.id);
 
@@ -551,19 +497,18 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
     : lastEvalDate || lastRunDate;
   const isRecentlyActive = trueLastActivity && (Date.now() - trueLastActivity.getTime()) < 20 * 60 * 1000;
 
-  const effectiveStatus = rawSchedulerStatus === 'running' 
-    ? 'running' 
-    : settings?.queue_paused 
+  const effectiveStatus = rawSchedulerStatus === 'running'
+    ? 'running'
+    : settings?.queue_paused
       ? 'paused'
       : formData.scheduler_enabled && isRecentlyActive
-        ? (formData.continuous_mode ? 'active_continuous' : 'active')
+        ? 'active'
         : formData.scheduler_enabled
           ? 'scheduled'
           : 'idle';
-  
+
   const statusLabel: Record<string, string> = {
     running: '⚡ Running Now',
-    active_continuous: '🔄 Active (Continuous)',
     active: '✅ Active',
     scheduled: '⏳ Scheduled (Waiting)',
     paused: '⏸ Paused',
@@ -571,7 +516,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   };
   const statusVariant: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     running: 'default',
-    active_continuous: 'default',
     active: 'default',
     scheduled: 'secondary',
     paused: 'destructive',
@@ -764,23 +708,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
 
           {isAdmin && (
             <>
-          {/* Continuous Mode Toggle */}
-          <div className="mt-3 pt-3 border-t flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 text-amber-500" />
-                <Label className="text-sm font-medium">Continuous Mode</Label>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Auto-chain batches when idle — up to 3× faster full-cycle rotation
-              </p>
-            </div>
-            <Switch
-              checked={formData.continuous_mode}
-              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, continuous_mode: checked }))}
-            />
-          </div>
-          
           {/* Last Run Result Details */}
           {lastRunResult && (
             <div className="mt-3 p-3 border rounded-lg bg-background/50 text-xs space-y-2">
@@ -1137,132 +1064,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         <TurboHistoryPanel />
         </>)}
 
-        {isAdmin && (
-        /* Sequential Sweep Mode */
-        <div className="border-t pt-4 mt-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-primary" />
-              <span className="font-medium">Sequential Sweep Mode</span>
-            </div>
-            <Switch
-              checked={sweepForm.enabled}
-              onCheckedChange={(checked) =>
-                setSweepForm({ ...sweepForm, enabled: checked })
-              }
-            />
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Low-priority background lane that processes active listings in small batches (10 at a time), 
-            rotating through the entire catalog. Skips starred/turbo ASINs and respects all rate limits.
-          </p>
-
-          {sweepForm.enabled && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Batch Size</Label>
-                  <Select
-                    value={String(sweepForm.batch_size)}
-                    onValueChange={(val) =>
-                      setSweepForm({ ...sweepForm, batch_size: Number(val) })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[5, 10, 15, 20, 25].map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n} ASINs
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Interval</Label>
-                  <Select
-                    value={String(sweepForm.interval_minutes)}
-                    onValueChange={(val) =>
-                      setSweepForm({ ...sweepForm, interval_minutes: Number(val) })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 5, 10].map((m) => (
-                        <SelectItem key={m} value={String(m)}>
-                          Every {m} min
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Sweep Progress */}
-              <div className="p-3 border rounded-lg bg-background/50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Sweep Progress</span>
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    Pass #{sweepStats.passes_completed + 1}
-                  </Badge>
-                </div>
-                {sweepStats.total_eligible > 0 ? (
-                  <>
-                    <Progress 
-                      value={(sweepStats.checked_this_pass / sweepStats.total_eligible) * 100} 
-                      className="h-2" 
-                    />
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>{sweepStats.checked_this_pass} / {sweepStats.total_eligible} checked this pass</span>
-                      <span>
-                        {sweepStats.total_eligible > 0 
-                          ? `~${Math.ceil((sweepStats.total_eligible - sweepStats.checked_this_pass) / sweepForm.batch_size * sweepForm.interval_minutes)} min remaining`
-                          : ''}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground space-y-0.5">
-                      <p>
-                        Full sweep: ~{Math.ceil(sweepStats.total_eligible / sweepForm.batch_size * sweepForm.interval_minutes)} min 
-                        ({Math.ceil(sweepStats.total_eligible / sweepForm.batch_size)} batches)
-                      </p>
-                      <p>
-                        SP-API impact: ~{sweepForm.batch_size} calls every {sweepForm.interval_minutes} min 
-                        ({Math.round(sweepForm.batch_size / sweepForm.interval_minutes * 10) / 10}/min avg)
-                      </p>
-                      {sweepStats.passes_completed > 0 && (
-                        <p>Completed passes: {sweepStats.passes_completed}</p>
-                      )}
-                      {sweepStats.last_run_at && (
-                        <p>Last run: {new Date(sweepStats.last_run_at).toLocaleString()}</p>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Stats will populate after the first sweep run.
-                  </p>
-                )}
-              </div>
-
-              {/* Rate impact warning */}
-              {sweepForm.batch_size / sweepForm.interval_minutes > 5 && (
-                <div className="p-3 border rounded-lg border-yellow-500/50 bg-yellow-500/10">
-                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                    ⚠️ High sweep rate ({Math.round(sweepForm.batch_size / sweepForm.interval_minutes * 10) / 10} calls/min). 
-                    This may compete with cron/turbo for SP-API budget. Consider reducing batch size or increasing interval.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        )}
-
         {/* ═══════════════════════════════════════════ */}
         {/* ⚡ SCALING GROUP                             */}
         {/* ═══════════════════════════════════════════ */}
@@ -1291,34 +1092,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               }
             />
           </div>
-        )}
-
-        {/* Auto-Apply Prices — admin only */}
-        {isAdmin && (
-          <>
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-base">Auto-Apply Prices</Label>
-                <p className="text-sm text-muted-foreground">
-                  Automatically update Amazon listing prices when recommendations are generated
-                </p>
-              </div>
-              <Switch
-                checked={formData.auto_apply}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, auto_apply: checked })
-                }
-              />
-            </div>
-
-            {formData.auto_apply && (
-              <div className="p-3 border rounded-lg border-yellow-500 bg-yellow-500/10">
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  ⚠️ Auto-apply is enabled. Price changes will be sent to Amazon automatically.
-                </p>
-              </div>
-            )}
-          </>
         )}
 
         {/* Repricing Mode — Admin only */}
@@ -1395,7 +1168,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                   <div className="mt-2 pt-2 border-t text-[10px] text-muted-foreground space-y-0.5">
                     <div>Cycle: <strong className="text-foreground">{mode.cycle.cycleLabel}</strong></div>
                     <div>Checks: <strong className="text-foreground">~{mode.cycle.repricingsPerDay}×/day</strong></div>
-                    <div>Batch: <strong className="text-foreground">{mode.cycle.batchSize}</strong></div>
                   </div>
                 </button>
               );
@@ -1446,18 +1218,12 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                     <span>6,000</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" /> Interval
                     </Label>
                     <Input value={`${optimizedSettings.interval} min`} readOnly className="bg-muted/50 cursor-not-allowed font-mono text-sm h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Zap className="h-3 w-3" /> Batch Size
-                    </Label>
-                    <Input value={optimizedSettings.batchSize} readOnly className="bg-muted/50 cursor-not-allowed font-mono text-sm h-8" />
                   </div>
                   <div className="space-y-1">
                     <Label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1593,63 +1359,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               <p className="text-xs text-muted-foreground">
                 Never set min price below this (even if AI recommends it)
               </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="maxChangePercent">Max Price Change % / Day</Label>
-              <Input
-                id="maxChangePercent"
-                type="number"
-                min="5"
-                max="100"
-                value={formData.max_price_change_percent_per_day}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    max_price_change_percent_per_day: parseInt(e.target.value) || 50,
-                  })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Skip price changes exceeding this % in one day
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="space-y-2">
-              <Label htmlFor="maxMinMaxChanges">Max Min/Max Changes / Day</Label>
-              <Input
-                id="maxMinMaxChanges"
-                type="number"
-                min="1"
-                max="50"
-                value={formData.max_minmax_changes_per_day}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    max_minmax_changes_per_day: parseInt(e.target.value) || 10,
-                  })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Limit min/max boundary changes per SKU daily
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <Label>Require Cost for Min Calc</Label>
-                <p className="text-xs text-muted-foreground">
-                  Only auto-set min if unit cost is known
-                </p>
-              </div>
-              <Switch
-                checked={formData.require_cost_for_min_calc}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, require_cost_for_min_calc: checked })
-                }
-              />
             </div>
           </div>
         </div>
