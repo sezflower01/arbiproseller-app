@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -240,6 +240,13 @@ const CALCULATOR_CARDS: StandaloneCard[] = [
 // Repricer admin tools -- moved out of the Repricer page's own tab bar so
 // Assignments/Rules/Settings stay the only tabs everyone sees there.
 const REPRICER_ADMIN_CARDS: StandaloneCard[] = [
+  {
+    title: "Automation Status",
+    desc: "Live scheduler status, last run, and activity source breakdown.",
+    path: "/tools/repricer/automation-status",
+    Icon: Clock,
+    accent: "from-blue-500/15 to-sky-500/5 border-blue-400/30 text-blue-300",
+  },
   {
     title: "Activity Log",
     desc: "Recent repricer scheduler and dispatch activity for your account.",

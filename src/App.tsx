@@ -204,6 +204,7 @@ const ShipmentAccounting = lazyWithRetry(() => import("./pages/tools/ShipmentAcc
 const Repricer = lazyWithRetry(() => import("./pages/tools/Repricer"));
 const RepricerMonitor = lazyWithRetry(() => import("./pages/tools/RepricerMonitor"));
 const RepricerActivityLog = lazyWithRetry(() => import("./pages/tools/RepricerActivityLog"));
+const RepricerAutomationStatus = lazyWithRetry(() => import("./pages/tools/RepricerAutomationStatus"));
 const RepricerChangeHistory = lazyWithRetry(() => import("./pages/tools/RepricerChangeHistory"));
 const RepricerRuleBehavior = lazyWithRetry(() => import("./pages/tools/RepricerRuleBehavior"));
 const RepricerCheckedAsins = lazyWithRetry(() => import("./pages/tools/RepricerCheckedAsins"));
@@ -349,6 +350,7 @@ function App() {
                   <Route path="/tools/repricer" element={<ProtectedRoute><Repricer /></ProtectedRoute>} />
                   <Route path="/tools/repricer/monitor" element={<ProtectedRoute><RepricerMonitor /></ProtectedRoute>} />
                   <Route path="/tools/repricer/activity-log" element={<ProtectedRoute><RepricerActivityLog /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/automation-status" element={<ProtectedRoute><RepricerAutomationStatus /></ProtectedRoute>} />
                   <Route path="/tools/repricer/change-history" element={<ProtectedRoute><RepricerChangeHistory /></ProtectedRoute>} />
                   <Route path="/tools/repricer/rule-behavior" element={<ProtectedRoute><RepricerRuleBehavior /></ProtectedRoute>} />
                   <Route path="/tools/repricer/checked-asins" element={<ProtectedRoute><RepricerCheckedAsins /></ProtectedRoute>} />
