@@ -133,7 +133,7 @@ export default function Repricer() {
                 {!isAdmin && <SchedulerToggle />}
                 {isAdmin && <RepricerSettings isAdmin={isAdmin} />}
                 <AutoOnboardingSettings />
-                <IntlRoiSweepCard />
+                <IntlRoiSweepCard isAdmin={isAdmin} />
               </div>
             </TabsContent>
 
