@@ -5756,7 +5756,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
       // Warn on large selections
       if (selectedIds.size > 50) {
         const confirmed = window.confirm(
-          `⚠️ You selected ${selectedIds.size} items.\n\nLarge manual runs share the same Amazon SP-API budget as automated repricing (cron/turbo). This may delay automated checks and increase throttling risk.\n\nConsider using Sequential Sweep Mode in Settings for full-catalog coverage.\n\nContinue anyway?`
+          `⚠️ You selected ${selectedIds.size} items.\n\nLarge manual runs share the same Amazon SP-API budget as automated repricing (cron/turbo). This may delay automated checks and increase throttling risk.\n\nContinue anyway?`
         );
         if (!confirmed) {
           return;

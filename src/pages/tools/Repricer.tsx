@@ -99,7 +99,7 @@ export default function Repricer() {
               <TabsList className="bg-white/80 backdrop-blur-sm border border-white/30 text-[hsl(221,100%,10%)] font-bold">
                 {hasRules && <TabsTrigger value="assignments">Assignments</TabsTrigger>}
                 <TabsTrigger value="rules">Rules</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+                <TabsTrigger value="settings">Control Panel</TabsTrigger>
                 {isAdmin && <TabsTrigger value="automation-status">Automation Status</TabsTrigger>}
               </TabsList>
             </div>
@@ -121,7 +121,7 @@ export default function Repricer() {
                 <div className="rounded-xl border border-primary/30 bg-primary/10 backdrop-blur-sm p-5 text-foreground">
                   <h3 className="text-base font-semibold mb-1">Create your first repricing rule</h3>
                   <p className="text-sm opacity-80">
-                    The Assignments tab will unlock once you create a rule. Your first rule is automatically set as the default for new listings in Settings → Auto Onboarding.
+                    The Assignments tab will unlock once you create a rule. Your first rule is automatically set as the default for new listings in Control Panel → Auto Onboarding.
                   </p>
                 </div>
               )}
