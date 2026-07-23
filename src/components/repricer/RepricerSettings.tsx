@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Settings, Zap, Clock, DollarSign, Save, RefreshCw, CheckCircle, AlertTriangle, Info, PauseCircle, PlayCircle, SlidersHorizontal, Star, Copy, X, RotateCw } from "lucide-react";
+import { Settings, Zap, Clock, Save, RefreshCw, CheckCircle, AlertTriangle, Info, PauseCircle, PlayCircle, SlidersHorizontal, Star, Copy, X, RotateCw } from "lucide-react";
 import { calculateOptimizedSettings } from "@/lib/repricerOptimizer";
 import TurboHistoryPanel from "./TurboHistoryPanel";
 import { getDeviceNickname, setDeviceNickname } from "@/lib/repricerChangeLog";
@@ -48,9 +48,6 @@ interface RepricerSettingsData {
   user_id: string;
   sp_api_check_interval_minutes: number;
   rainforest_snapshot_ttl_minutes: number;
-  daily_credit_cap: number;
-  credits_used_today: number;
-  credits_reset_at: string;
   scheduler_enabled: boolean;
   // Queue state
   queue_paused: boolean;
@@ -96,7 +93,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
     scheduler_enabled: true,
     sp_api_check_interval_minutes: 10,
     rainforest_snapshot_ttl_minutes: 60,
-    daily_credit_cap: 100,
     // Safety settings
     absolute_min_price_floor: 5.00,
     // Momentum settings
@@ -211,17 +207,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         data = newData;
       }
 
-      // Reset credits if new day
-      const today = new Date().toISOString().split("T")[0];
-      if (data && data.credits_reset_at !== today) {
-        await supabase
-          .from("repricer_settings")
-          .update({ credits_used_today: 0, credits_reset_at: today })
-          .eq("user_id", user?.id);
-        data.credits_used_today = 0;
-        data.credits_reset_at = today;
-      }
-
       if (data) {
         setSettings(data);
 
@@ -237,7 +222,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           scheduler_enabled: data.scheduler_enabled ?? false,
           sp_api_check_interval_minutes: data.sp_api_check_interval_minutes,
           rainforest_snapshot_ttl_minutes: data.rainforest_snapshot_ttl_minutes,
-          daily_credit_cap: data.daily_credit_cap,
           // Safety settings
           absolute_min_price_floor: data.absolute_min_price_floor ?? 0.99,
           // Momentum settings
@@ -272,7 +256,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           scheduler_enabled: formData.scheduler_enabled,
           sp_api_check_interval_minutes: formData.sp_api_check_interval_minutes,
           rainforest_snapshot_ttl_minutes: formData.rainforest_snapshot_ttl_minutes,
-          daily_credit_cap: formData.daily_credit_cap,
           // Safety settings
           absolute_min_price_floor: formData.absolute_min_price_floor,
           // Momentum settings
@@ -320,10 +303,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
     }
   };
 
-  const creditsUsed = settings?.credits_used_today || 0;
-  const creditsCap = settings?.daily_credit_cap || 100;
-  const creditsRemaining = Math.max(0, creditsCap - creditsUsed);
-  const creditsPercent = (creditsUsed / creditsCap) * 100;
   if (loading) {
     return (
       <Card>
@@ -834,32 +813,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
             )}
           </div>
           )}
-        </div>
-        )}
-
-        {isAdmin && (
-        /* Daily Credit Cap */
-        <div className="space-y-2">
-          <Label htmlFor="creditCap" className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />
-            Daily Credit Cap
-          </Label>
-          <Input
-            id="creditCap"
-            type="number"
-            min="10"
-            max="1000"
-            value={formData.daily_credit_cap}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                daily_credit_cap: parseInt(e.target.value) || 100,
-              })
-            }
-          />
-          <p className="text-xs text-muted-foreground">
-            Maximum Rainforest API calls per day (1 call = 1 credit per ASIN)
-          </p>
         </div>
         )}
 
