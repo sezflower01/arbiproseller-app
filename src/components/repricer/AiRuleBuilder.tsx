@@ -85,7 +85,11 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     target_anchor: 'lowest_offer',
   },
   MOMENTUM_BUILDER: {
-    undercut_amount: 0.01,
+    // 0.00, not 0.01 — with strict_match_mode true below, undercut is forced
+    // to 0 regardless of this value (see repricer-ai-evaluate's adjustedUndercut),
+    // so 0.01 implied competitive intent that doesn't actually exist. Matches
+    // Profit Extractor's honest-value convention for strict-mode profiles.
+    undercut_amount: 0.00,
     enable_smart_raise: true,
     raise_trigger_percent: 1.5,
     max_raise_step_dollars: 1.00,
