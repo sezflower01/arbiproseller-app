@@ -5720,12 +5720,15 @@ Deno.serve(async (req) => {
         VELOCITY_DOMINATOR: {
           undercut_amount: 0.02,
           enable_smart_raise: true,        // Limited raise to recover margin after winning
-          enable_monopoly_mode: false,
-          monopoly_mode_type: 'aggressive',
+          // Matches Momentum Builder — Smart Price Protection is now uniform
+          // across all profiles (frontend preset was updated for this in an
+          // earlier step this session; this backend copy had drifted).
+          enable_monopoly_mode: true,
+          monopoly_mode_type: 'conservative',
           monopoly_cooldown_minutes: 60,
           use_ai_tuning: true,
           cooldown_minutes: 5,
-          skip_lower_when_bb_owner: false,
+          skip_lower_when_bb_owner: true,
           stock_overlay_enabled: true,
           only_raise_when_buybox_owner: true,
           ignore_fbm_unless_buybox_owner: true,
@@ -5765,7 +5768,8 @@ Deno.serve(async (req) => {
           use_ai_tuning: true,
           cooldown_minutes: 20,
           skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: false,
+          // Matches frontend preset (was false — drifted backend copy).
+          stock_overlay_enabled: true,
           only_raise_when_buybox_owner: true,
           ignore_fbm_unless_buybox_owner: true,
         },
