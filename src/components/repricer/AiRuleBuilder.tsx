@@ -237,6 +237,7 @@ interface AiRuleBuilderProps {
   onChange: (settings: AiRuleSettings) => void;
   hideProfileSelector?: boolean;
   ruleId?: string | null;
+  isCustomRule?: boolean;
 }
 
 export const defaultAiRuleSettings: AiRuleSettings = {
@@ -335,8 +336,12 @@ export const defaultAiRuleSettings: AiRuleSettings = {
   min_roi_marketplace_overrides: {},
 };
 
-export default function AiRuleBuilder({ settings, onChange, hideProfileSelector, ruleId }: AiRuleBuilderProps) {
-  const [advancedMode, setAdvancedMode] = useState(false);
+export default function AiRuleBuilder({ settings, onChange, hideProfileSelector, ruleId, isCustomRule }: AiRuleBuilderProps) {
+  // Custom rules start fully expanded — "full control over every setting"
+  // is the whole point, so there's no reason to make an admin click
+  // "Show Advanced Settings" first. The 3 Smart Profiles still default
+  // collapsed, unaffected by this.
+  const [advancedMode, setAdvancedMode] = useState(!!isCustomRule);
   const [isAdmin, setIsAdmin] = useState(false);
   const [connectedMarketplaces, setConnectedMarketplaces] = useState<string[]>(["US"]);
   const [applyingMarketplace, setApplyingMarketplace] = useState<string | null>(null);

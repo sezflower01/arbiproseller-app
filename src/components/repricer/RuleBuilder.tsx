@@ -1183,6 +1183,7 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
                    onChange={handleAiSettingsChange}
                    hideProfileSelector={isCustomRule || (!editingRule && !isCustomRule)}
                    ruleId={editingRule?.id ?? null}
+                   isCustomRule={isCustomRule}
                  />
               </div>
             ) : (
