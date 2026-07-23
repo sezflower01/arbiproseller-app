@@ -1212,31 +1212,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
             </div>
           </div>
 
-          {connectedMarketplaces.some(isRoiEnabledForMarketplace) && (
-             <div className="space-y-4 pl-4 border-l-2 border-amber-500/30">
-              <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                <p className="text-xs text-muted-foreground">
-                  <strong>How it works:</strong> If your target ROI is 30% and based on cost + fees the minimum valid price is $18.40, 
-                  the repricer will never go below $18.40. If your current price is $17.90, it will raise it to at least $18.40.
-                  If the ROI floor exceeds Max Price, the engine uses a temporary higher max during that evaluation (your saved Max is not overwritten).
-                </p>
-              </div>
-
-              <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
-                <p className="text-xs text-muted-foreground">
-                  ⚠️ <strong>Liquidation rules bypass Min ROI protection.</strong> If a rule uses the Liquidation strategy, 
-                  this ROI floor will not be enforced — liquidation prioritizes sell-through over margins.
-                </p>
-              </div>
-
-              <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                <p className="text-xs text-muted-foreground">
-                  📊 <strong>Missing data:</strong> If cost or fee data is unavailable, the repricer will hold your current price 
-                  instead of lowering — protecting you from unintended losses. Check the Action Log for "MIN_ROI_DATA_MISSING" tags.
-                </p>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
