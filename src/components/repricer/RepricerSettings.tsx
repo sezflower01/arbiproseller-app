@@ -47,7 +47,6 @@ function DeviceNicknameInput() {
 interface RepricerSettingsData {
   user_id: string;
   sp_api_check_interval_minutes: number;
-  rainforest_snapshot_ttl_minutes: number;
   scheduler_enabled: boolean;
   // Queue state
   queue_paused: boolean;
@@ -92,7 +91,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   const [formData, setFormData] = useState({
     scheduler_enabled: true,
     sp_api_check_interval_minutes: 10,
-    rainforest_snapshot_ttl_minutes: 60,
     // Safety settings
     absolute_min_price_floor: 5.00,
     // Momentum settings
@@ -108,7 +106,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
     setFormData(prev => ({
       ...prev,
       sp_api_check_interval_minutes: optimizedSettings.interval,
-      rainforest_snapshot_ttl_minutes: optimizedSettings.snapshotTtl,
     }));
   }, [optimizedSettings]);
 
@@ -221,7 +218,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         setFormData({
           scheduler_enabled: data.scheduler_enabled ?? false,
           sp_api_check_interval_minutes: data.sp_api_check_interval_minutes,
-          rainforest_snapshot_ttl_minutes: data.rainforest_snapshot_ttl_minutes,
           // Safety settings
           absolute_min_price_floor: data.absolute_min_price_floor ?? 0.99,
           // Momentum settings
@@ -255,7 +251,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         .update({
           scheduler_enabled: formData.scheduler_enabled,
           sp_api_check_interval_minutes: formData.sp_api_check_interval_minutes,
-          rainforest_snapshot_ttl_minutes: formData.rainforest_snapshot_ttl_minutes,
           // Safety settings
           absolute_min_price_floor: formData.absolute_min_price_floor,
           // Momentum settings
@@ -795,19 +790,11 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                     <span>6,000</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <Label className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" /> Interval
-                    </Label>
-                    <Input value={`${optimizedSettings.interval} min`} readOnly className="bg-muted/50 cursor-not-allowed font-mono text-sm h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" /> TTL
-                    </Label>
-                    <Input value={`${optimizedSettings.snapshotTtl} min`} readOnly className="bg-muted/50 cursor-not-allowed font-mono text-sm h-8" />
-                  </div>
+                <div className="space-y-1">
+                  <Label className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3" /> Interval
+                  </Label>
+                  <Input value={`${optimizedSettings.interval} min`} readOnly className="bg-muted/50 cursor-not-allowed font-mono text-sm h-8" />
                 </div>
               </div>
             )}
