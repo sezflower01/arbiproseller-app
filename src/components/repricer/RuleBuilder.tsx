@@ -579,8 +579,6 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
         ruleData.min_roi_enabled = (formData as any).min_roi_enabled ?? false;
         ruleData.min_roi_enabled_marketplace_overrides = (formData as any).min_roi_enabled_marketplace_overrides ?? {};
         ruleData.min_roi_marketplace_overrides = (formData as any).min_roi_marketplace_overrides ?? {};
-        // Strict Match Mode — force exact-match with anchor (blocks all undercut overrides)
-        ruleData.strict_match_mode = (formData as any).strict_match_mode === true;
         // Strategy Engine — Dynamic Floor Relaxation (Milestone B). Default OFF.
         ruleData.enable_dynamic_floor_relaxation = (formData as any).enable_dynamic_floor_relaxation === true;
       }
@@ -1180,8 +1178,6 @@ export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: Rule
                     min_roi_enabled: (formData as any).min_roi_enabled ?? false,
                     min_roi_enabled_marketplace_overrides: (formData as any).min_roi_enabled_marketplace_overrides ?? {},
                     min_roi_marketplace_overrides: (formData as any).min_roi_marketplace_overrides ?? {},
-                    // Strict Match Mode
-                    strict_match_mode: (formData as any).strict_match_mode === true,
                     enable_dynamic_floor_relaxation: (formData as any).enable_dynamic_floor_relaxation === true,
                    }}
                    onChange={handleAiSettingsChange}

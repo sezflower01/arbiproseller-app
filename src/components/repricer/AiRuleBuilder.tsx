@@ -76,19 +76,15 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     raise_trigger_percent: 3,        // ← Modest raise trigger (was never used before)
     max_raise_step_dollars: 0.30,    // ← Small raise caps to keep it aggressive-first
     max_raise_step_percent: 2,
-    // Aggressive Capture is the "compete on price" profile — Strict Match
-    // (exact-match-anchor, no undercut) would defeat the point of it, so
-    // this is the one profile that turns it OFF.
-    strict_match_mode: false,
     // Chase the absolute cheapest offer (FBA + FBM) — matches this profile's
     // whole purpose of maximizing Buy Box wins over margin per sale.
     target_anchor: 'lowest_offer',
   },
   MOMENTUM_BUILDER: {
-    // 0.00, not 0.01 — with strict_match_mode true below, undercut is forced
-    // to 0 regardless of this value (see repricer-ai-evaluate's adjustedUndercut),
-    // so 0.01 implied competitive intent that doesn't actually exist. Matches
-    // Profit Extractor's honest-value convention for strict-mode profiles.
+    // 0.00 — undercut_amount is now the sole source of truth for undercutting
+    // behavior (Strict Match Mode was removed as a separate flag). Zero means
+    // "match exactly, never undercut," which is Momentum Builder's intended
+    // identity, expressed directly through this number.
     undercut_amount: 0.00,
     enable_smart_raise: true,
     raise_trigger_percent: 1.5,
@@ -103,13 +99,14 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
-    strict_match_mode: true,
     // Hold position when already lowest, switch to chasing the lowest FBA
     // seller when undercut — the balanced/recapture behavior this profile
     // is built around.
     target_anchor: 'smart_recapture',
   },
   PROFIT_EXTRACTOR: {
+    // 0.00 — same reasoning as Momentum Builder: match exactly via the
+    // undercut number itself, no separate mode flag needed.
     undercut_amount: 0.00,
     enable_smart_raise: true,
     raise_trigger_percent: 1,
@@ -124,7 +121,6 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: false,
-    strict_match_mode: true,
     // Anchor to Buy Box price — no reason to chase the cheapest offer when
     // the goal is capturing margin in a low-competition category.
     target_anchor: 'buybox',
@@ -153,8 +149,6 @@ export interface AiRuleSettings {
   fbm_undercut_amount?: number | null;
   suppressed_bb_undercut: number | null;
   undercut_mode: 'managed' | 'custom';
-  // Strict Match Mode — force exact match with anchor; bypass all undercut overrides
-  strict_match_mode?: boolean;
   // Safety guards
   max_step_amount: number;
   max_step_percent: number;
@@ -259,13 +253,12 @@ export const defaultAiRuleSettings: AiRuleSettings = {
   fulfillment_filter: "FBA", // Default to FBA
   min_price: null,
   max_price: null,
-  undercut_amount: 0.01,
+  // 0.00 — matches the default smart_profile (Momentum Builder): match
+  // exactly, never undercut, expressed via the number itself.
+  undercut_amount: 0.00,
   fbm_undercut_amount: null,
   suppressed_bb_undercut: null,
   undercut_mode: 'managed',
-  // ON by default — most users shouldn't need to reason about this directly.
-  // Aggressive Capture (VELOCITY_DOMINATOR) is the one profile that turns it off.
-  strict_match_mode: true,
   max_step_amount: 0.50,
   max_step_percent: 5,
   cooldown_minutes: 15,
@@ -833,29 +826,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1 opacity-60">Advanced</Badge>
                 </Button>
               </div>
-
-              {/* Strict Match Mode toggle — forces exact match with anchor, blocks all undercut overrides.
-                  ON by default for every profile except Aggressive Capture; hidden from the regular
-                  rule-creation flow behind Advanced Settings since most users shouldn't need to reason
-                  about it directly. */}
-              {advancedMode && (
-                <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-border/60 bg-muted/20">
-                  <div className="space-y-1">
-                    <Label htmlFor="strict-match-mode" className="text-sm font-semibold flex items-center gap-2">
-                      🔒 Strict Match Mode
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">Match anchor exactly</Badge>
-                    </Label>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      When ON, the engine matches the anchor price <span className="font-semibold">exactly</span> and disables ALL undercut multipliers, AI win-sales boosters, enhanced tuning, suppressed-BB minimum-undercut overrides, and oscillation undercuts. Corrective raises back to the anchor bypass cooldown.
-                    </p>
-                  </div>
-                  <Switch
-                    id="strict-match-mode"
-                    checked={settings.strict_match_mode === true}
-                    onCheckedChange={(checked) => updateSetting('strict_match_mode' as any, checked)}
-                  />
-                </div>
-              )}
 
               {settings.undercut_mode === 'managed' ? (
                 <p className="text-xs text-muted-foreground">

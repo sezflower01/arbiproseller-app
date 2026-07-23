@@ -8664,7 +8664,6 @@ export type Database = {
           stock_threshold_heavy: number
           stock_threshold_low: number
           strategy: Database["public"]["Enums"]["repricer_strategy"]
-          strict_match_mode: boolean
           suppressed_bb_undercut: number | null
           target_anchor: string
           target_seller_ids: string[] | null
@@ -8772,7 +8771,6 @@ export type Database = {
           stock_threshold_heavy?: number
           stock_threshold_low?: number
           strategy?: Database["public"]["Enums"]["repricer_strategy"]
-          strict_match_mode?: boolean
           suppressed_bb_undercut?: number | null
           target_anchor?: string
           target_seller_ids?: string[] | null
@@ -8880,7 +8878,6 @@ export type Database = {
           stock_threshold_heavy?: number
           stock_threshold_low?: number
           strategy?: Database["public"]["Enums"]["repricer_strategy"]
-          strict_match_mode?: boolean
           suppressed_bb_undercut?: number | null
           target_anchor?: string
           target_seller_ids?: string[] | null

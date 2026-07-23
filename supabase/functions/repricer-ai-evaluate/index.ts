@@ -9,6 +9,7 @@ import {
 } from './_recovery.ts';
 import { scoreMarketVolatility, wasMoveProductive } from '../_shared/marketVolatility.ts';
 import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -669,12 +670,14 @@ interface PricingContext {
   // null = user has not set it. Suppressed-BB pricing path is SKIPPED entirely
   // when null (no implicit default). 0 = match exactly. Positive = undercut.
   suppressedBbUndercut: number | null;
-  // STRICT MATCH MODE — when true, force final price to match anchor exactly:
-  // disables ALL undercut multipliers, AI tuning undercut adjustments, intel
-  // boosters, suppressed-BB minimum-undercut overrides, and aggressive
-  // oscillation-mode undercut bumps. Also lets a corrective raise back to the
-  // anchor bypass cooldown (rule compliance ≠ aggressive move).
-  strictMatchMode: boolean;
+  // MATCH EXACTLY — true whenever undercutAmount is exactly 0 (the rule's
+  // undercut_amount is the sole source of truth for this; there is no
+  // separate strict-match flag anymore). Forces final price to match anchor
+  // exactly: disables ALL undercut multipliers, AI tuning undercut
+  // adjustments, intel boosters, suppressed-BB minimum-undercut overrides,
+  // and aggressive oscillation-mode undercut bumps. Also lets a corrective
+  // raise back to the anchor bypass cooldown (rule compliance ≠ aggressive move).
+  matchExactly: boolean;
   maxStepAmount: number;
   maxStepPercent: number;
   cooldownMinutes: number;
@@ -908,7 +911,7 @@ function computeAiWinSalesBoosterPrice(
   offers: any[]
 ): PricingResult {
   const guardsApplied: string[] = [];
-  if (context.strictMatchMode) {
+  if (context.matchExactly) {
     guardsApplied.push('strict_match_mode_active');
   }
     const { 
@@ -1186,15 +1189,15 @@ function computeAiWinSalesBoosterPrice(
   for (const t of _anomalies.tags) if (!guardsApplied.includes(t)) guardsApplied.push(t);
   if (_anomalies.notes.length) console.log(`[ANOMALY] ${_anomalies.notes.join(' | ')}`);
 
-  // STRICT MATCH MODE: corrective raise bypass. If the user is in strict-match
-  // and current price is below the anchor (buybox, then lowest_fba), allow a
-  // corrective move back UP to the anchor through cooldown — matching the rule
-  // is compliance, not aggression.
-  const strictAnchorForRaise = context.strictMatchMode
+  // MATCH EXACTLY: corrective raise bypass. If undercut is 0 (match anchor
+  // exactly) and current price is below the anchor (buybox, then lowest_fba),
+  // allow a corrective move back UP to the anchor through cooldown — matching
+  // the rule is compliance, not aggression.
+  const strictAnchorForRaise = context.matchExactly
     ? (buyboxPrice ?? lowestFbaPrice ?? null)
     : null;
   const strictModeCorrectiveRaise = Boolean(
-    context.strictMatchMode
+    context.matchExactly
     && strictAnchorForRaise != null
     && currentPrice != null
     && currentPrice + 0.005 < strictAnchorForRaise
@@ -1234,15 +1237,15 @@ function computeAiWinSalesBoosterPrice(
   // Underpriced recovery — fires before GLOBAL RAISE GUARD so significantly-below-market
   // prices climb toward cluster instead of HOLDing. Floor + max already respected.
   //
-  // STRICT MATCH GUARD: when the rule is in strict-match mode with undercut=0,
-  // the user has explicitly opted into "anchor to BB / lowest FBA exactly". The
-  // underpriced_recovery raise (which targets the *next higher* eligible
-  // competitor) would silently override that intent — e.g. raising $27.99 →
-  // $28.99 because next competitor is $29.50, even though BB/lowest FBA is
-  // $27.99. Block it; the corrective raise path above already handles the
-  // legitimate "below the anchor" case by moving back to the anchor exactly.
-  if (_underpriced && _underpriced.applies && context.strictMatchMode && Number(undercutAmount ?? 0) === 0) {
-    console.log(`[UNDERPRICED RECOVERY] BLOCKED by strict_match_mode (undercut=0): would raise $${currentPrice?.toFixed(2)} → $${_underpriced.targetPrice.toFixed(2)} but anchor is BB=$${buyboxPrice?.toFixed(2) ?? 'null'} / lowestFba=$${lowestFbaPrice?.toFixed(2) ?? 'null'}`);
+  // MATCH EXACTLY GUARD: when undercut=0, the user has explicitly opted into
+  // "anchor to BB / lowest FBA exactly". The underpriced_recovery raise (which
+  // targets the *next higher* eligible competitor) would silently override
+  // that intent — e.g. raising $27.99 → $28.99 because next competitor is
+  // $29.50, even though BB/lowest FBA is $27.99. Block it; the corrective
+  // raise path above already handles the legitimate "below the anchor" case
+  // by moving back to the anchor exactly.
+  if (_underpriced && _underpriced.applies && context.matchExactly) {
+    console.log(`[UNDERPRICED RECOVERY] BLOCKED by match-exactly (undercut=0): would raise $${currentPrice?.toFixed(2)} → $${_underpriced.targetPrice.toFixed(2)} but anchor is BB=$${buyboxPrice?.toFixed(2) ?? 'null'} / lowestFba=$${lowestFbaPrice?.toFixed(2) ?? 'null'}`);
     guardsApplied.push('strict_match_blocks_underpriced_recovery');
     // Fall through to normal competitive logic which will match the anchor.
   } else if (_underpriced && _underpriced.applies && hasLowerFbmCompetitor) {
@@ -2349,8 +2352,8 @@ function computeAiWinSalesBoosterPrice(
         const userSuppressedUndercut = Math.max(0, Number(rawSuppressedUndercut) || 0);
         const effectiveSuppressedUndercut = userSuppressedUndercut;
 
-        if (context.strictMatchMode) {
-          console.log(`[Suppressed BB] STRICT_MATCH_MODE present, but explicit suppressed_bb_undercut=$${userSuppressedUndercut.toFixed(3)} controls suppressed-BB pricing`);
+        if (context.matchExactly) {
+          console.log(`[Suppressed BB] MATCH_EXACTLY present, but explicit suppressed_bb_undercut=$${userSuppressedUndercut.toFixed(3)} controls suppressed-BB pricing`);
           guardsApplied.push('suppressed_bb_explicit_undercut_overrode_strict_match');
         } else {
           console.log(`[Suppressed BB] User suppressed-BB undercut: $${userSuppressedUndercut.toFixed(3)} (rule_undercut=$${undercutAmount.toFixed(3)}, fba_competitors=${fbaCompCount})`);
@@ -3181,8 +3184,8 @@ function computeAiWinSalesBoosterPrice(
   // FBM listings use a dedicated `fbm_undercut_amount` rule field. When unset (null),
   // fall back to legacy `undercut_amount_fbm` and finally to the FBA undercut.
   const fbmUndercutOverride = (rule as any).fbm_undercut_amount ?? (rule as any).undercut_amount_fbm ?? null;
-  const effectiveUndercut = context.strictMatchMode && !lowestSellerMode
-    ? 0  // STRICT MATCH: match means match, except Lowest Seller mode explicitly chases FBM using FBM Undercut
+  const effectiveUndercut = context.matchExactly && !lowestSellerMode
+    ? 0  // MATCH EXACTLY: match means match, except Lowest Seller mode explicitly chases FBM using FBM Undercut
     : (context.yourFulfillmentType === 'FBM'
       ? (fbmUndercutOverride != null ? Number(fbmUndercutOverride) : undercutAmount)
       : undercutAmount);
@@ -3190,10 +3193,10 @@ function computeAiWinSalesBoosterPrice(
     console.log(`[FBM_UNDERCUT] Using FBM-specific undercut $${Number(fbmUndercutOverride).toFixed(4)} (FBA undercut would have been $${Number(undercutAmount).toFixed(4)})`);
   }
   const { multiplier: intelMultiplier, factors: intelFactors } = calculateIntelligenceMultiplier(intelligence, rule);
-  const visibleIntelMultiplier = context.strictMatchMode ? 1.0 : intelMultiplier;
-  // STRICT MATCH: neutralize the multiplier on undercut. (intelMultiplier still
+  const visibleIntelMultiplier = context.matchExactly ? 1.0 : intelMultiplier;
+  // MATCH EXACTLY: neutralize the multiplier on undercut. (intelMultiplier still
   // logged for transparency, but it cannot turn 0 into $0.01 anymore.)
-  let adjustedUndercut = context.strictMatchMode && !lowestSellerMode ? 0 : (effectiveUndercut * visibleIntelMultiplier);
+  let adjustedUndercut = context.matchExactly && !lowestSellerMode ? 0 : (effectiveUndercut * visibleIntelMultiplier);
 
   // ═══════════════════════════════════════════════════════════════════
   // CLUSTER MATCH OVERRIDE — In a tight rotating cluster, match instead of undercut.
@@ -4791,8 +4794,11 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     
     let isInternalCall = false;
-    // Option 1: Internal service call with user_id in body
-    if (internal && user_id) {
+    // Option 1: Internal service call with user_id in body — must present the
+    // shared internal secret or a service-role bearer, same as update-amazon-price;
+    // otherwise any caller could impersonate a user_id and trigger evaluations
+    // (or with dry_run=false, real price pushes) on another account.
+    if (internal && user_id && isInternalCaller(req)) {
       console.log(`[repricer-ai-evaluate] Internal service call for user ${user_id}`);
       userId = user_id;
       isInternalCall = true;
@@ -5696,11 +5702,11 @@ Deno.serve(async (req) => {
 
     // === APPLY SMART PROFILE PRESETS ===
     // If rule has a smart_profile that isn't CUSTOM, override rule fields with preset values.
-    // Preserve match-exact intent BEFORE presets mutate rule. Momentum Builder ships with
-    // a preset undercut, but a saved strict_match_mode=true or explicit undercut_amount=0
-    // must remain a hard zero throughout the engine.
-    const strictMatchRequested = (rule as any).strict_match_mode === true;
-    const explicitZeroUndercutRequested = Number(rule.undercut_amount ?? NaN) === 0;
+    // Preserve match-exact intent BEFORE presets mutate rule: if the rule's OWN
+    // stored undercut_amount is already 0, that must remain a hard zero
+    // throughout the engine — undercut_amount is the sole source of truth,
+    // there is no separate strict-match flag anymore.
+    const matchExactly = Number(rule.undercut_amount ?? NaN) === 0;
     const smartProfile = rule.smart_profile || 'CUSTOM';
     // Canonical profile key → UI label mapping (outer scope for strategy visibility)
     const PROFILE_KEY_TO_LABEL: Record<string, string> = {
@@ -5765,7 +5771,7 @@ Deno.serve(async (req) => {
       if (preset) {
         // Override rule fields with preset values, BUT preserve user-controlled settings
         const userControlledFields = ['ignore_fbm_unless_buybox_owner'];
-        if (strictMatchRequested || explicitZeroUndercutRequested) {
+        if (matchExactly) {
           userControlledFields.push('undercut_amount', 'use_ai_tuning');
         }
         for (const [key, value] of Object.entries(preset)) {
@@ -5773,10 +5779,10 @@ Deno.serve(async (req) => {
             (rule as any)[key] = value;
           }
         }
-        if (strictMatchRequested || explicitZeroUndercutRequested) {
+        if (matchExactly) {
           (rule as any).undercut_amount = 0;
-          if (strictMatchRequested) (rule as any).use_ai_tuning = false;
-          console.log(`[STRICT_MATCH_MODE] preset override blocked for ${targetAsin}: strict_match_mode=${strictMatchRequested} explicit_zero_undercut=${explicitZeroUndercutRequested} profile=${smartProfile} — effective undercut forced to $0.00`);
+          (rule as any).use_ai_tuning = false;
+          console.log(`[MATCH_EXACTLY] preset override blocked for ${targetAsin}: undercut_amount=0 profile=${smartProfile} — effective undercut forced to $0.00, AI tuning disabled`);
         }
         // ── Resolved Profile Audit (Phase 1) ──
         // Family classification: derived from preset shape, not preset name.
@@ -5872,7 +5878,7 @@ Deno.serve(async (req) => {
       : (rule as any).fbm_competition_mode === 'all_sellers' ? 'all_sellers'
       : (rule as any).fbm_competition_mode === 'fba_priority' ? 'fba_priority'
       : ((rule as any).ignore_fbm_unless_buybox_owner === false ? 'all_sellers' : 'fba_priority');
-    console.log(`[FBM_MODE_RESOLVED] asin=${targetAsin} effective_fbm_competition_mode=${effectiveFbmCompetitionMode} stored=${(rule as any).fbm_competition_mode ?? 'null'} legacy_ignore=${rule.ignore_fbm_unless_buybox_owner} fbm_undercut=${(rule as any).fbm_undercut_amount ?? 'null'} strict_match=${(rule as any).strict_match_mode === true}`);
+    console.log(`[FBM_MODE_RESOLVED] asin=${targetAsin} effective_fbm_competition_mode=${effectiveFbmCompetitionMode} stored=${(rule as any).fbm_competition_mode ?? 'null'} legacy_ignore=${rule.ignore_fbm_unless_buybox_owner} fbm_undercut=${(rule as any).fbm_undercut_amount ?? 'null'} match_exactly=${matchExactly}`);
 
     // ── GROUND TRUTH FULFILLMENT TYPE ──
     // assignment.fulfillment_type can be stale (channel reclassified, hybrid listings,
@@ -5928,13 +5934,12 @@ Deno.serve(async (req) => {
       conditionIsUsed: assignment?.item_condition === 'Used' || rule.condition_scope === 'Used' || (sp_api_data?.detectedItemCondition?.toLowerCase?.()?.startsWith?.('used')),
       minPrice: runtimeMinOverride ?? null,
       maxPrice: runtimeMaxOverride ?? assignment?.max_price_override ?? rule.max_price ?? null,
-      // STRICT MATCH MODE / ZERO-MATCH: when set, force undercut to exactly 0
-      // regardless of preset. An explicit saved undercut_amount=0 is treated as
-      // match intent too, so legacy/custom zero-undercut rules cannot be turned
-      // into $0.01 by Momentum Builder presets, intel multipliers, or tuning.
-      undercutAmount: (strictMatchRequested || explicitZeroUndercutRequested) ? 0 : (rule.undercut_amount ?? 0.01),
+      // MATCH EXACTLY (undercut_amount === 0): force undercut to exactly 0
+      // regardless of preset, so zero-undercut rules can't be turned into
+      // $0.01 by Momentum Builder presets, intel multipliers, or tuning.
+      undercutAmount: matchExactly ? 0 : (rule.undercut_amount ?? 0.01),
       suppressedBbUndercut: (rule.suppressed_bb_undercut == null || Number.isNaN(Number(rule.suppressed_bb_undercut))) ? null : Math.max(0, Number(rule.suppressed_bb_undercut)),
-      strictMatchMode: strictMatchRequested || explicitZeroUndercutRequested,
+      matchExactly,
       maxStepAmount: rule.max_step_amount || 0.50,
       maxStepPercent: rule.max_step_percent || 5,
       cooldownMinutes: rule.cooldown_minutes || 15,
@@ -6685,12 +6690,12 @@ Deno.serve(async (req) => {
         && result.mode === 'AI_REPRICE'
         && result.reason?.startsWith('Buy Box suppressed')
       );
-      if (context.strictMatchMode || explicitSuppressedBbReprice) {
+      if (context.matchExactly || explicitSuppressedBbReprice) {
         tuning_source = 'none';
         // Force downstream final guards not to re-derive a different undercut.
         undercutBaseForTuning = explicitSuppressedBbReprice ? (context.suppressedBbUndercut ?? 0) : 0;
         finalMultiplier = 1.0;
-        console.log(`[ENHANCED_TUNING] ${explicitSuppressedBbReprice ? 'SUPPRESSED_BB_EXPLICIT_UNDERCUT' : 'STRICT_MATCH_MODE'}: enhanced tuning BLOCKED for asin=${targetAsin} — keeping price $${result.newPrice.toFixed(2)}`);
+        console.log(`[ENHANCED_TUNING] ${explicitSuppressedBbReprice ? 'SUPPRESSED_BB_EXPLICIT_UNDERCUT' : 'MATCH_EXACTLY'}: enhanced tuning BLOCKED for asin=${targetAsin} — keeping price $${result.newPrice.toFixed(2)}`);
         if (!result.guardsApplied) result.guardsApplied = [];
         result.guardsApplied.push(explicitSuppressedBbReprice ? 'suppressed_bb_blocked_enhanced_tuning' : 'strict_match_mode_blocked_enhanced_tuning');
       } else {
@@ -6752,14 +6757,13 @@ Deno.serve(async (req) => {
       // ============================================================
       // PURE BB LOCK MODE
       // When the user explicitly asked to MATCH Buy Box exactly
-      // (strict_match_mode + buybox anchor + undercut=0), no
-      // post-anchor guard is allowed to lower the price below BB.
-      // This blocks final_smart_recapture_guard, enhanced tuning
-      // drift, and cluster-match drops in one hard gate.
+      // (undercut_amount=0 + buybox anchor), no post-anchor guard is
+      // allowed to lower the price below BB. This blocks
+      // final_smart_recapture_guard, enhanced tuning drift, and
+      // cluster-match drops in one hard gate.
       // ============================================================
       const pureBbLockEligible = Boolean(
-        context.strictMatchMode
-        && (context.undercutAmount ?? 0) === 0
+        context.matchExactly
         && resultAnchorDiagnostics
         && (
           resultAnchorDiagnostics.selected_anchor === 'buybox_winner_offer'
