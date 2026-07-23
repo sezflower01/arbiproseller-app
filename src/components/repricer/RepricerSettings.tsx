@@ -488,14 +488,18 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   const creditsPercent = (creditsUsed / creditsCap) * 100;
   const rawSchedulerStatus = settings?.scheduler_status || 'idle';
   const lastRunDate = settings?.last_scheduler_run_at ? new Date(settings.last_scheduler_run_at) : null;
-  const lastRun = lastRunDate ? lastRunDate.toLocaleString() : 'Never';
-  
+
   // Use live eval activity to determine true system status (not just stale scheduler timestamp)
   const lastEvalDate = liveActivity?.lastEvalAt ? new Date(liveActivity.lastEvalAt) : null;
   const trueLastActivity = lastEvalDate && lastRunDate
     ? (lastEvalDate > lastRunDate ? lastEvalDate : lastRunDate)
     : lastEvalDate || lastRunDate;
   const isRecentlyActive = trueLastActivity && (Date.now() - trueLastActivity.getTime()) < 20 * 60 * 1000;
+  // "Last scheduler run" now shows real activity (repricer_eval_acks), not the
+  // legacy last_scheduler_run_at column — that field is only ever written by
+  // repricer-cron-trigger, which was retired in favor of repricer-unified-dispatch
+  // and never updated to keep writing it.
+  const lastRun = trueLastActivity ? trueLastActivity.toLocaleString() : 'Never';
 
   const effectiveStatus = rawSchedulerStatus === 'running'
     ? 'running'
