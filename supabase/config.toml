@@ -391,3 +391,12 @@ verify_jwt = false
 
 [functions.rescue-inventory-asin]
 verify_jwt = false
+
+[functions.apply-min-roi]
+verify_jwt = false
+
+[functions.apply-min-roi-intl-sweep]
+verify_jwt = false
+
+[functions.apply-min-roi-intl-sweep-all]
+verify_jwt = false

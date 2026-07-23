@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,8 @@ interface ApplyMinRoiRequest {
   marketplace: string;
   min_roi_percent: number;
   asins?: string[]; // optional: restrict to a specific subset of ASINs (per-row trigger)
+  internal?: boolean; // cron/fanout calls: skip user-JWT auth, use user_id below
+  user_id?: string;
 }
 
 function getCreatedListingUnitCost(row: any): number | null {
@@ -54,15 +57,24 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Auth check
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('No authorization header');
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (!user) throw new Error('Unauthorized');
-
     const body: ApplyMinRoiRequest = await req.json();
     const { rule_id, marketplace, min_roi_percent, asins } = body;
+
+    // Auth check — cron/fanout calls pass internal:true + user_id and
+    // authenticate via the shared internal-caller guard (service-role Bearer
+    // or x-internal-secret); the frontend "Apply now" / Dry run path keeps
+    // authenticating via a real user JWT.
+    let userId: string;
+    if (body.internal && body.user_id && isInternalCaller(req)) {
+      userId = body.user_id;
+    } else {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) throw new Error('No authorization header');
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) throw new Error('Unauthorized');
+      userId = user.id;
+    }
 
     if (!rule_id || !marketplace || min_roi_percent == null) {
       throw new Error('rule_id, marketplace, and min_roi_percent are required');
@@ -70,7 +82,7 @@ Deno.serve(async (req) => {
 
     const isInternational = INTL_MARKETPLACES.includes(marketplace);
 
-    console.log(`[apply-min-roi] User ${user.id} applying ${min_roi_percent}% ROI to rule ${rule_id} for ${marketplace}${asins?.length ? ` asins=${asins.join(',')}` : ''}`);
+    console.log(`[apply-min-roi] User ${userId} applying ${min_roi_percent}% ROI to rule ${rule_id} for ${marketplace}${asins?.length ? ` asins=${asins.join(',')}` : ''}`);
 
     // 1. Get all enabled assignments for this rule + marketplace (optionally filtered to a subset of ASINs)
     let query = supabase
@@ -78,7 +90,7 @@ Deno.serve(async (req) => {
       .select('id, asin, sku, min_price_override, max_price_override, roi_at_min_percent, manual_min_price')
       .eq('rule_id', rule_id)
       .eq('marketplace', marketplace)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_enabled', true);
     if (asins && asins.length > 0) query = query.in('asin', asins);
     const { data: assignments, error: assignError } = await query;
@@ -97,7 +109,7 @@ Deno.serve(async (req) => {
     const { data: inventoryData } = await supabase
       .from('inventory')
       .select('asin, sku, cost, my_price, amazon_price, price')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('sku', skus);
 
     // Match the repricer UI cost source: newest created_listings unit cost wins,
@@ -107,7 +119,7 @@ Deno.serve(async (req) => {
     const { data: createdListingRows } = await supabase
       .from('created_listings')
       .select('id, asin, cost, units, amount, date_created, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('asin', uniqueAsins);
 
     const createdCostByAsinMap: Record<string, number> = {};
@@ -192,7 +204,7 @@ Deno.serve(async (req) => {
             marketplace,
             cost_home: costUsd,
             target_roi_percent: min_roi_percent,
-            user_id: user.id,
+            user_id: userId,
           }),
         });
 
@@ -333,7 +345,7 @@ Deno.serve(async (req) => {
           const effectiveMax = newMax ?? assignment.max_price_override;
           try {
             const pushBody: Record<string, any> = {
-              user_id: user.id,
+              user_id: userId,
               asin,
               sku: assignment.sku,
               marketplace,

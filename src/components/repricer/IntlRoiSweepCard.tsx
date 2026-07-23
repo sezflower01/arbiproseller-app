@@ -10,6 +10,10 @@ import { Loader2, ShieldCheck } from 'lucide-react';
  * in CA / MX / BR. Uses live SP-API fees + FX cross-rates and pushes new
  * Min/Max bounds to Amazon. The repricer's next evaluation raises live price
  * up to the new floor automatically.
+ *
+ * Runs automatically every day at 07:00 UTC (apply-min-roi-intl-sweep-daily
+ * cron, one hour after the daily FX rate refresh). "Apply now" triggers an
+ * immediate run instead of waiting for the next scheduled one.
  */
 interface IntlRoiSweepCardProps {
   isAdmin?: boolean;
@@ -59,7 +63,8 @@ export default function IntlRoiSweepCard({ isAdmin = false }: IntlRoiSweepCardPr
           Re-applies each rule&apos;s per-marketplace Min ROI (CA / MX / BR) to all enabled
           assignments. Recalculates Min Price with live SP-API fees + FX, then pushes new
           bounds to Amazon. The repricer raises the live price to the new floor on its next
-          evaluation.
+          evaluation. Runs automatically every day — use the button below to run it immediately
+          instead of waiting.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

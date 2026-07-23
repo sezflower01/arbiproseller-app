@@ -10,6 +10,7 @@
 // is needed here.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +22,8 @@ const INTL_MARKETPLACES = ['CA', 'MX', 'BR'];
 interface SweepBody {
   marketplaces?: string[]; // optional subset
   dry_run?: boolean;
+  internal?: boolean; // cron/fanout calls: skip user-JWT auth, use user_id below
+  user_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -32,13 +35,26 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('No authorization header');
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) throw new Error('Unauthorized');
-
     const body: SweepBody = await req.json().catch(() => ({}));
+
+    // Auth check — cron/fanout calls pass internal:true + user_id and
+    // authenticate via the shared internal-caller guard (service-role Bearer
+    // or x-internal-secret); the frontend "Apply now" / Dry run path keeps
+    // authenticating via a real user JWT.
+    const incomingAuthHeader = req.headers.get('Authorization');
+    let userId: string;
+    let isInternalCall = false;
+    if (body.internal && body.user_id && isInternalCaller(req)) {
+      userId = body.user_id;
+      isInternalCall = true;
+    } else {
+      if (!incomingAuthHeader) throw new Error('No authorization header');
+      const token = incomingAuthHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) throw new Error('Unauthorized');
+      userId = user.id;
+    }
+
     const targetMkts = (body.marketplaces && body.marketplaces.length
       ? body.marketplaces
       : INTL_MARKETPLACES
@@ -50,13 +66,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[intl-roi-sweep] user=${user.id} marketplaces=${targetMkts.join(',')} dry_run=${!!body.dry_run}`);
+    console.log(`[intl-roi-sweep] user=${userId} marketplaces=${targetMkts.join(',')} dry_run=${!!body.dry_run} internal=${isInternalCall}`);
 
     // 1. Distinct (rule_id, marketplace) pairs with at least one enabled intl assignment
     const { data: pairs, error: pairErr } = await supabase
       .from('repricer_assignments')
       .select('rule_id, marketplace')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_enabled', true)
       .in('marketplace', targetMkts)
       .not('rule_id', 'is', null);
@@ -110,7 +126,7 @@ Deno.serve(async (req) => {
           .select('id', { count: 'exact', head: true })
           .eq('rule_id', rule_id)
           .eq('marketplace', marketplace)
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('is_enabled', true);
         results.push({
           rule_id, marketplace, rule_name: rule.name,
@@ -124,13 +140,17 @@ Deno.serve(async (req) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': authHeader, // forward user JWT — apply-min-roi authenticates as user
+            // Internal/cron calls have no real user JWT to forward — authenticate
+            // to apply-min-roi as a service-role internal caller instead, and
+            // pass user_id explicitly. Frontend calls keep forwarding the user's JWT.
+            'Authorization': isInternalCall ? `Bearer ${supabaseKey}` : incomingAuthHeader!,
             apikey: anonKey,
           },
           body: JSON.stringify({
             rule_id,
             marketplace,
             min_roi_percent: Number(roi),
+            ...(isInternalCall ? { internal: true, user_id: userId } : {}),
           }),
         });
         const json = await resp.json().catch(() => ({}));
