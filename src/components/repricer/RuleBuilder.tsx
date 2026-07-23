@@ -213,7 +213,6 @@ export function resolveRuleMinRoiEnabledForMarketplace(
 
 interface RuleBuilderProps {
   onRulesChange?: () => void;
-  onTestRule?: (rule: RepricerRule) => void;
   isAdmin?: boolean;
 }
 
@@ -252,7 +251,7 @@ const defaultAiRule: Partial<RepricerRule> = {
   ...defaultAiRuleSettings,
 };
 
-export default function RuleBuilder({ onRulesChange, onTestRule, isAdmin }: RuleBuilderProps) {
+export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps) {
   const { user } = useAuth();
   const [rules, setRules] = useState<RepricerRule[]>([]);
   const [loading, setLoading] = useState(true);

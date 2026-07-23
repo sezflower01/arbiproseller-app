@@ -234,7 +234,6 @@ const normalizeIdentifier = (value?: string | null) =>
 
 interface AssignmentsTableProps {
   rules: RepricerRule[];
-  onViewOffers?: (asin: string, marketplace: string) => void;
   marketplace?: string; // Selected marketplace filter
   onMarketplaceChange?: (marketplace: string) => void;
   isAdmin?: boolean;
@@ -1348,7 +1347,7 @@ const _assignmentsFilterCache = {
   pageSize: 50 as 50 | 250,
 };
 
-export default function AssignmentsTable({ rules, onViewOffers, marketplace = "US", onMarketplaceChange, isAdmin = false }: AssignmentsTableProps) {
+export default function AssignmentsTable({ rules, marketplace = "US", onMarketplaceChange, isAdmin = false }: AssignmentsTableProps) {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { syncState: globalSyncState } = useSalesSync();

@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { invokeEdgeFunction } from "@/lib/edgeFunctionClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscription } from "@/hooks/use-subscription";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Helmet } from "react-helmet-async";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
 import { usePageFavicon } from "@/hooks/use-page-favicon";
 import IntlRoiSweepCard from "@/components/repricer/IntlRoiSweepCard";
 
@@ -15,12 +13,10 @@ import IntlRoiSweepCard from "@/components/repricer/IntlRoiSweepCard";
 import RuleBuilder, { type RepricerRule } from "@/components/repricer/RuleBuilder";
 import AssignmentsTable from "@/components/repricer/AssignmentsTable";
 import PricingSuppressionsSection from "@/components/repricer/PricingSuppressionsSection";
-import OffersViewer from "@/components/repricer/OffersViewer";
 import RepricerSettings from "@/components/repricer/RepricerSettings";
 import AutomationStatusPanel from "@/components/repricer/AutomationStatusPanel";
 import AutoOnboardingSettings from "@/components/settings/AutoOnboardingSettings";
 import SchedulerToggle from "@/components/repricer/SchedulerToggle";
-import AiRuleTestDialog from "@/components/repricer/AiRuleTestDialog";
 import { SyncReadinessBanner } from "@/components/SyncReadinessBanner";
 
 export default function Repricer() {
@@ -46,15 +42,6 @@ export default function Repricer() {
     setSelectedMarketplaceRaw(mp);
     try { localStorage.setItem("repricer.selectedMarketplace", mp); } catch { /* ignore */ }
   }, []);
-
-  // Offers viewer state
-  const [viewingAsin, setViewingAsin] = useState<string | null>(null);
-  const [viewingMarketplace, setViewingMarketplace] = useState("US");
-  const [offersDialogOpen, setOffersDialogOpen] = useState(false);
-
-  // AI test dialog state
-  const [testingRule, setTestingRule] = useState<RepricerRule | null>(null);
-  const [testDialogOpen, setTestDialogOpen] = useState(false);
 
   const fetchRules = useCallback(async () => {
     if (!user) return;
@@ -89,51 +76,6 @@ export default function Repricer() {
     }
   }, [rulesLoaded, hasRules, activeTab]);
 
-  const handleViewOffers = (asin: string, marketplace: string) => {
-    setViewingAsin(asin);
-    setViewingMarketplace(marketplace);
-    setOffersDialogOpen(true);
-  };
-
-  const handleTestRule = async (rule: RepricerRule) => {
-    if (rule.strategy === "AI_WIN_SALES_BOOSTER") {
-      // Use new AI test dialog
-      setTestingRule(rule);
-      setTestDialogOpen(true);
-    } else {
-      // Existing standard rule test
-      const asin = prompt("Enter ASIN to test this rule:");
-      if (!asin) return;
-
-      try {
-        toast.info("Evaluating rule...");
-
-        const result = await invokeEdgeFunction({
-          functionName: "repricer-evaluate",
-          body: { asin, ruleId: rule.id, marketplace: "US" },
-          maxRetries: 1,
-          context: { asin, ruleId: rule.id },
-        });
-
-        if (!result.ok) {
-          toast.error(`Test failed (${result.errorCategory}): ${result.errorMessage}`);
-          return;
-        }
-
-        if (result.data.recommendedPrice !== null) {
-          toast.success(
-            `Recommended: $${result.data.recommendedPrice.toFixed(2)} | ${result.data.reason}`,
-            { duration: 8000 }
-          );
-        } else {
-          toast.info(result.data.reason || "No price change recommended", { duration: 6000 });
-        }
-      } catch (error: any) {
-        toast.error("Test failed: " + error.message);
-      }
-    }
-  };
-
   return (
     <>
       <Helmet>
@@ -167,7 +109,6 @@ export default function Repricer() {
                 <PricingSuppressionsSection marketplace={selectedMarketplace} isAdmin={isAdmin} />
                 <AssignmentsTable
                   rules={rules}
-                  onViewOffers={handleViewOffers}
                   marketplace={selectedMarketplace}
                   onMarketplaceChange={setSelectedMarketplace}
                   isAdmin={isAdmin}
@@ -184,7 +125,7 @@ export default function Repricer() {
                   </p>
                 </div>
               )}
-              <RuleBuilder onRulesChange={fetchRules} onTestRule={isAdmin ? handleTestRule : undefined} isAdmin={isAdmin} />
+              <RuleBuilder onRulesChange={fetchRules} isAdmin={isAdmin} />
             </TabsContent>
 
             <TabsContent value="settings" className="space-y-6">
@@ -207,22 +148,6 @@ export default function Repricer() {
         </main>
         <Footer />
       </div>
-
-      {/* Offers Viewer Dialog */}
-      <OffersViewer
-        asin={viewingAsin}
-        marketplace={viewingMarketplace}
-        open={offersDialogOpen}
-        onOpenChange={setOffersDialogOpen}
-      />
-
-      {/* AI Rule Test Dialog */}
-      <AiRuleTestDialog
-        rule={testingRule}
-        open={testDialogOpen}
-        onOpenChange={setTestDialogOpen}
-      />
-
     </>
   );
 }
