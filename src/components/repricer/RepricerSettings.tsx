@@ -174,7 +174,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
       fetchStarredItems();
       fetchUserRules();
       fetchEligibleCount();
-      const refreshInterval = setInterval(() => { fetchSettings(); }, 30_000);
+      const refreshInterval = setInterval(() => { fetchSettings(); fetchEligibleCount(); }, 30_000);
       return () => clearInterval(refreshInterval);
     }
   }, [user]);
@@ -713,8 +713,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               Repricing Mode
             </Label>
             <p className="text-xs text-muted-foreground">
-              Auto-detected from your {detectedEligible !== null ? <strong>{detectedEligible}</strong> : '...'} active assignments. 
-              Choose the mode that matches your priority.
+              Automatically selected based on your {detectedEligible !== null ? <strong>{detectedEligible}</strong> : '...'} active assignments.
             </p>
           </div>
 
@@ -747,29 +746,18 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               },
             ]).map((mode) => {
               const isSelected = repricingMode === mode.key;
-              const isRecommended = (
-                (mode.key === 'speed' && (detectedEligible || 500) <= 500) ||
-                (mode.key === 'balanced' && (detectedEligible || 500) > 500 && (detectedEligible || 500) <= 1500) ||
-                (mode.key === 'scale' && (detectedEligible || 500) > 1500)
-              );
               return (
-                <button
+                <div
                   key={mode.key}
-                  type="button"
-                  onClick={() => {
-                    setRepricingMode(mode.key);
-                    setActiveAsinCount(mode.asinTarget);
-                    setShowManualOverride(false);
-                  }}
-                  className={`relative text-left p-3 rounded-lg border-2 transition-all ${
+                  className={`relative text-left p-3 rounded-lg border-2 ${
                     isSelected
                       ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                      : 'border-border hover:border-primary/40 bg-background'
+                      : 'border-border bg-background opacity-60'
                   }`}
                 >
-                  {isRecommended && (
+                  {isSelected && (
                     <Badge className="absolute -top-2 right-2 text-[9px] px-1.5 py-0 h-4 bg-green-600">
-                      Recommended
+                      Active
                     </Badge>
                   )}
                   <div className="text-lg mb-1">{mode.icon}</div>
@@ -779,7 +767,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                     <div>Cycle: <strong className="text-foreground">{mode.cycle.cycleLabel}</strong></div>
                     <div>Checks: <strong className="text-foreground">~{mode.cycle.repricingsPerDay}×/day</strong></div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
