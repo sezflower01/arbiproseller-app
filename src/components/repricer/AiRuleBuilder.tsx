@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Sparkles, Zap, TrendingUp, Shield, Info, Star, DollarSign, Clock, ArrowUp, Eye, EyeOff, AlertTriangle, Play, Loader2 } from "lucide-react";
+import { Sparkles, Zap, TrendingUp, Shield, Info, Star, DollarSign, ArrowUp, Eye, EyeOff, AlertTriangle, Play, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 // Behavior-by-scenario (when_only_seller, when_buybox_suppressed, etc.) used to
@@ -1264,7 +1264,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="max-step-amount">Max Change Per Step ($)</Label>
               <Input
@@ -1305,45 +1305,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                 }
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="snapshot-ttl" className="flex items-center gap-1">
-                Snapshot TTL (hours)
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="h-3 w-3 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      How often to refresh competitor data from Rainforest API. 
-                      Higher = fewer API calls = lower cost. Default: 6 hours.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Label>
-              <Select
-                value={String(settings.snapshot_ttl_minutes)}
-                onValueChange={(v) => updateSetting("snapshot_ttl_minutes", parseInt(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="60">1 hour</SelectItem>
-                  <SelectItem value="120">2 hours</SelectItem>
-                  <SelectItem value="240">4 hours</SelectItem>
-                  <SelectItem value="360">6 hours (recommended)</SelectItem>
-                  <SelectItem value="720">12 hours</SelectItem>
-                  <SelectItem value="1440">24 hours</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <div className="mt-4 p-3 border rounded-lg border-blue-500/30 bg-blue-500/5">
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              <strong>Cost Control:</strong> At 6-hour TTL with 1,000 SKUs, you'll use ~4 Rainforest calls/day per SKU = ~120K/month instead of 2.88M/month with 15-min polling.
-            </p>
           </div>
         </CardContent>
       </Card>
