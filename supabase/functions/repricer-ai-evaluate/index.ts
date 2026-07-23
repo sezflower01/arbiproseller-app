@@ -5702,11 +5702,13 @@ Deno.serve(async (req) => {
 
     // === APPLY SMART PROFILE PRESETS ===
     // If rule has a smart_profile that isn't CUSTOM, override rule fields with preset values.
-    // Preserve match-exact intent BEFORE presets mutate rule: if the rule's OWN
-    // stored undercut_amount is already 0, that must remain a hard zero
-    // throughout the engine — undercut_amount is the sole source of truth,
-    // there is no separate strict-match flag anymore.
-    const matchExactly = Number(rule.undercut_amount ?? NaN) === 0;
+    // wasExplicitlyZero captures match-exact intent BEFORE presets mutate rule:
+    // if the rule's OWN stored undercut_amount is already 0, that must remain
+    // a hard zero and not get clobbered by a nonzero preset value. This is
+    // ONLY used to decide the preset-protection below — the real, final
+    // matchExactly flag (used everywhere else) is derived later, after ALL
+    // mutations (presets + learning overrides) have settled.
+    const wasExplicitlyZero = Number(rule.undercut_amount ?? NaN) === 0;
     const smartProfile = rule.smart_profile || 'CUSTOM';
     // Canonical profile key → UI label mapping (outer scope for strategy visibility)
     const PROFILE_KEY_TO_LABEL: Record<string, string> = {
@@ -5734,7 +5736,11 @@ Deno.serve(async (req) => {
           max_raise_step_percent: 2,
         },
         MOMENTUM_BUILDER: {
-          undercut_amount: 0.01,
+          // 0.00, not 0.01 — matches the frontend preset (AiRuleBuilder.tsx).
+          // This is a separate, independent copy of the profile presets that
+          // the engine applies at eval time; it had drifted from the
+          // frontend's already-fixed value.
+          undercut_amount: 0.00,
           enable_smart_raise: true,
           raise_trigger_percent: 1.5,
           max_raise_step_dollars: 1.00,
@@ -5771,7 +5777,7 @@ Deno.serve(async (req) => {
       if (preset) {
         // Override rule fields with preset values, BUT preserve user-controlled settings
         const userControlledFields = ['ignore_fbm_unless_buybox_owner'];
-        if (matchExactly) {
+        if (wasExplicitlyZero) {
           userControlledFields.push('undercut_amount', 'use_ai_tuning');
         }
         for (const [key, value] of Object.entries(preset)) {
@@ -5779,7 +5785,7 @@ Deno.serve(async (req) => {
             (rule as any)[key] = value;
           }
         }
-        if (matchExactly) {
+        if (wasExplicitlyZero) {
           (rule as any).undercut_amount = 0;
           (rule as any).use_ai_tuning = false;
           console.log(`[MATCH_EXACTLY] preset override blocked for ${targetAsin}: undercut_amount=0 profile=${smartProfile} — effective undercut forced to $0.00, AI tuning disabled`);
@@ -5871,6 +5877,20 @@ Deno.serve(async (req) => {
     } catch (e) {
       // Non-critical — don't block evaluation if learning lookup fails
       console.warn(`[LEARNING_OVERRIDE] Lookup failed for ${targetAsin}:`, e);
+    }
+
+    // Final match-exactly derivation — undercut_amount is the sole source of
+    // truth, computed here from the FULLY resolved value (after profile
+    // presets AND learning overrides), not the rule's original pre-preset
+    // value. This matters for rules whose own stored undercut_amount was
+    // nonzero but whose profile preset resolves to 0 (e.g. Momentum
+    // Builder's undercut_amount=0.00) — they now correctly get the full
+    // match-exactly treatment (guards, disabled AI tuning), not just a
+    // zeroed number with none of the surrounding protections.
+    const matchExactly = Number(rule.undercut_amount ?? NaN) === 0;
+    if (matchExactly && rule.use_ai_tuning !== false) {
+      rule.use_ai_tuning = false;
+      console.log(`[MATCH_EXACTLY] ${targetAsin}: final undercut_amount=0 (profile=${smartProfile}) — disabling AI tuning`);
     }
 
     const effectiveFbmCompetitionMode: 'fba_priority' | 'all_sellers' | 'lowest_seller' =
