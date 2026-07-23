@@ -1,31 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { Clock, Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, Info, Zap } from "lucide-react";
-
-interface RunResult {
-  status: 'success' | 'failed' | 'warning';
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  summary: {
-    evaluated: number;
-    applied: number;
-    skipped: number;
-    errors: number;
-    rainforestCreditsUsed: number;
-  };
-  exitReason?: string;
-  details?: Array<{
-    asin: string;
-    sku?: string;
-    action: string;
-    reason: string;
-  }>;
-}
+import { Clock, CheckCircle, AlertTriangle, Zap } from "lucide-react";
 
 interface AutomationStatusPanelProps {
   isAdmin?: boolean;
@@ -39,8 +16,6 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
     last_scheduler_run_at: string | null;
     queue_paused: boolean;
   } | null>(null);
-  const [runningScheduler, setRunningScheduler] = useState(false);
-  const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
   const [liveActivity, setLiveActivity] = useState<{
     lastEvalAt: string | null;
     writes24h: number;
@@ -101,98 +76,6 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
       return () => clearInterval(refreshInterval);
     }
   }, [user, fetchSettings, fetchLiveActivity]);
-
-  const runSchedulerManually = async () => {
-    const startTime = Date.now();
-    const startedAt = new Date().toISOString();
-
-    try {
-      setRunningScheduler(true);
-      setLastRunResult(null);
-      toast.info("Running scheduler...");
-
-      const result = await (await import("@/lib/edgeFunctionClient")).invokeEdgeFunction({
-        functionName: "repricer-scheduler",
-        body: { dry_run: false },
-        maxRetries: 1,
-        context: { source: "settings_run" },
-      });
-
-      const data = result.data;
-      const error = result.ok ? null : { message: `${result.errorCategory}: ${result.errorMessage}` };
-
-      const finishedAt = new Date().toISOString();
-      const durationMs = Date.now() - startTime;
-
-      if (error) {
-        setLastRunResult({
-          status: 'failed',
-          startedAt,
-          finishedAt,
-          durationMs,
-          summary: { evaluated: 0, applied: 0, skipped: 0, errors: 1, rainforestCreditsUsed: 0 },
-          exitReason: error.message || 'Unknown error'
-        });
-        throw error;
-      }
-
-      const summary = data.summary || { evaluated: 0, applied: 0, skipped: 0, errors: 0, rainforestCreditsUsed: 0 };
-      const results = data.results || [];
-
-      let exitReason = 'SUCCESS';
-      if (summary.evaluated === 0 && summary.applied === 0) {
-        if (data.message === 'Scheduler disabled') {
-          exitReason = 'SCHEDULER_DISABLED';
-        } else if (results.length === 0) {
-          exitReason = 'NO_ASSIGNMENTS';
-        } else {
-          exitReason = 'NO_ITEMS_MATCHED';
-        }
-      } else if (summary.errors > 0) {
-        exitReason = 'PARTIAL_SUCCESS';
-      }
-
-      const runResult: RunResult = {
-        status: summary.errors > 0 ? 'warning' : (summary.evaluated === 0 ? 'warning' : 'success'),
-        startedAt,
-        finishedAt,
-        durationMs,
-        summary: {
-          evaluated: summary.evaluated || 0,
-          applied: summary.applied || 0,
-          skipped: summary.skipped || results.filter((r: any) => r.action === 'skipped').length || 0,
-          errors: summary.errors || results.filter((r: any) => r.action === 'error').length || 0,
-          rainforestCreditsUsed: summary.rainforestCreditsUsed || 0
-        },
-        exitReason,
-        details: results.slice(0, 10)
-      };
-
-      setLastRunResult(runResult);
-
-      if (exitReason === 'NO_ASSIGNMENTS') {
-        toast.warning("No enabled assignments found. Enable repricing on items in the Assignments tab.", { duration: 6000 });
-      } else if (exitReason === 'SCHEDULER_DISABLED') {
-        toast.warning("Scheduler is disabled. Enable it in Settings to run.", { duration: 6000 });
-      } else {
-        toast.success(
-          `Complete: ${summary.evaluated} evaluated, ${summary.applied} applied, ${summary.rainforestCreditsUsed} credits used`,
-          { duration: 6000 }
-        );
-      }
-
-      fetchSettings();
-    } catch (error: any) {
-      toast.error("Scheduler failed: " + error.message);
-    } finally {
-      setRunningScheduler(false);
-    }
-  };
-
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  };
 
   const rawSchedulerStatus = settings?.scheduler_status || 'idle';
   const lastRunDate = settings?.last_scheduler_run_at ? new Date(settings.last_scheduler_run_at) : null;
@@ -273,21 +156,6 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
                 </div>
               )}
             </div>
-            {isAdmin && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={runSchedulerManually}
-              disabled={runningScheduler || settings?.queue_paused}
-            >
-              {runningScheduler ? (
-                <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-              ) : (
-                <Play className="h-3 w-3 mr-1" />
-              )}
-              Run Now
-            </Button>
-            )}
           </div>
 
           {isAdmin && liveActivity && (
@@ -299,73 +167,6 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
             </div>
           )}
         </div>
-
-        {isAdmin && lastRunResult && (
-          <div className="mt-3 p-3 border rounded-lg bg-background/50 text-xs space-y-2">
-            <div className="flex items-center gap-2 font-medium">
-              {lastRunResult.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
-              {lastRunResult.status === 'failed' && <XCircle className="h-4 w-4 text-destructive" />}
-              {lastRunResult.status === 'warning' && <AlertTriangle className="h-4 w-4 text-amber-500" />}
-              <span>
-                {lastRunResult.exitReason === 'SUCCESS' && 'Run completed successfully'}
-                {lastRunResult.exitReason === 'NO_ASSIGNMENTS' && 'No enabled assignments found'}
-                {lastRunResult.exitReason === 'NO_ITEMS_MATCHED' && 'No items matched criteria'}
-                {lastRunResult.exitReason === 'SCHEDULER_DISABLED' && 'Scheduler is disabled'}
-                {lastRunResult.exitReason === 'PARTIAL_SUCCESS' && 'Completed with some errors'}
-                {lastRunResult.exitReason === 'QUEUE_PAUSED' && 'Queue is paused'}
-                {!['SUCCESS', 'NO_ASSIGNMENTS', 'NO_ITEMS_MATCHED', 'SCHEDULER_DISABLED', 'PARTIAL_SUCCESS', 'QUEUE_PAUSED'].includes(lastRunResult.exitReason || '') && lastRunResult.exitReason}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>Started: {new Date(lastRunResult.startedAt).toLocaleTimeString()}</div>
-              <div>Duration: {formatDuration(lastRunResult.durationMs)}</div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="text-xs">
-                <Info className="h-3 w-3 mr-1" />
-                {lastRunResult.summary.evaluated} evaluated
-              </Badge>
-              <Badge variant={lastRunResult.summary.applied > 0 ? "default" : "secondary"} className="text-xs">
-                {lastRunResult.summary.applied} applied
-              </Badge>
-              <Badge variant="secondary" className="text-xs">
-                {lastRunResult.summary.skipped} skipped
-              </Badge>
-              {lastRunResult.summary.errors > 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  {lastRunResult.summary.errors} errors
-                </Badge>
-              )}
-              <Badge variant="outline" className="text-xs">
-                <Zap className="h-3 w-3 mr-1" />
-                {lastRunResult.summary.rainforestCreditsUsed} credits
-              </Badge>
-            </div>
-
-            {lastRunResult.details && lastRunResult.details.length > 0 && (
-              <div className="mt-2 pt-2 border-t">
-                <div className="font-medium mb-1">Details (first {lastRunResult.details.length}):</div>
-                <div className="max-h-24 overflow-y-auto space-y-1">
-                  {lastRunResult.details.map((d, i) => (
-                    <div key={i} className="flex gap-2 items-start">
-                      <span className="font-mono text-[10px] bg-muted px-1 rounded">{d.asin}</span>
-                      <Badge variant={
-                        d.action === 'applied' ? 'default' :
-                        d.action === 'error' ? 'destructive' :
-                        d.action === 'skipped' ? 'secondary' : 'outline'
-                      } className="text-[10px] h-4">
-                        {d.action}
-                      </Badge>
-                      <span className="text-muted-foreground truncate flex-1">{d.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {isAdmin && liveActivity && Object.keys(liveActivity.bySource).length > 0 && (
