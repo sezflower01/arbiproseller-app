@@ -17,6 +17,7 @@ import AssignmentsTable from "@/components/repricer/AssignmentsTable";
 import PricingSuppressionsSection from "@/components/repricer/PricingSuppressionsSection";
 import OffersViewer from "@/components/repricer/OffersViewer";
 import RepricerSettings from "@/components/repricer/RepricerSettings";
+import AutomationStatusPanel from "@/components/repricer/AutomationStatusPanel";
 import AutoOnboardingSettings from "@/components/settings/AutoOnboardingSettings";
 import SchedulerToggle from "@/components/repricer/SchedulerToggle";
 import AiRuleTestDialog from "@/components/repricer/AiRuleTestDialog";
@@ -157,6 +158,7 @@ export default function Repricer() {
                 {hasRules && <TabsTrigger value="assignments">Assignments</TabsTrigger>}
                 <TabsTrigger value="rules">Rules</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
+                {isAdmin && <TabsTrigger value="automation-status">Automation Status</TabsTrigger>}
               </TabsList>
             </div>
 
@@ -193,6 +195,14 @@ export default function Repricer() {
                 <IntlRoiSweepCard />
               </div>
             </TabsContent>
+
+            {isAdmin && (
+              <TabsContent value="automation-status" className="space-y-6">
+                <div className="max-w-xl">
+                  <AutomationStatusPanel isAdmin={isAdmin} />
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
         </main>
         <Footer />

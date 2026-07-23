@@ -437,17 +437,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           </Select>
         </div>
 
-        {/* Automation Status moved to its own page — /tools/repricer/automation-status */}
-        <a
-          href="/tools/repricer/automation-status"
-          className="flex items-center justify-between p-4 border rounded-lg bg-muted/30 hover:border-primary/40 hover:bg-muted/50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-blue-500" />
-            <span className="font-medium">Automation Status</span>
-          </div>
-          <span className="text-xs text-muted-foreground">View live scheduler status →</span>
-        </a>
+        {/* Automation Status is now its own tab next to Assignments/Rules/Settings */}
 
         {isAdmin && (<>
         {/* Priority Queue Panel */}
