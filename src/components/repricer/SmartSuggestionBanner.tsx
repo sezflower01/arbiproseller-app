@@ -49,7 +49,8 @@ type SuggestionType =
   | "missing_min_max"
   | "bb_suppressed"
   | "profit_guard_block"
-  | "cooldown";
+  | "cooldown"
+  | "oscillation_pause";
 
 interface Suggestion {
   type: SuggestionType;
@@ -149,7 +150,26 @@ export function detectSuggestion(
     };
   }
 
-  // Priority 6: Cooldown active — not a problem, just a short wait between
+  // Priority 6: Oscillation guard pause — the engine detected repeated Buy Box
+  // loss / rapid competitor churn on this listing and is briefly holding to
+  // avoid chasing the Buy Box back and forth (a price war). Distinct from the
+  // plain cooldown below: this comes from the oscillation-detection guard
+  // ("Guard: OSCILLATION_..." reason), not the generic price-move cooldown.
+  // Checked before the generic cooldown check since some oscillation guard
+  // reasons also contain the word "cooldown" and would otherwise fall into
+  // the less specific message below.
+  if (reason.includes("guard:") && reason.includes("oscillation")) {
+    return {
+      type: "oscillation_pause",
+      severity: "blue",
+      message: "Price on hold — recent Buy Box back-and-forth",
+      detail:
+        "The system noticed this listing losing the Buy Box repeatedly and is briefly pausing instead of chasing it back and forth (which would just trigger a price war). It will try again shortly on its own. Don't want to wait? Type your desired price in Set Price and use the toggle to push it now.",
+      actions: [],
+    };
+  }
+
+  // Priority 7: Cooldown active — not a problem, just a short wait between
   // price moves (prevents rapid back-and-forth changes). Informational, but
   // the user should know why the price hasn't moved yet and that they can
   // set their own price instead of waiting it out.
