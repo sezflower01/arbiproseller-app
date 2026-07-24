@@ -400,3 +400,9 @@ verify_jwt = false
 
 [functions.apply-min-roi-intl-sweep-all]
 verify_jwt = false
+
+[functions.fbm-quick-check]
+verify_jwt = false
+
+[functions.fbm-quick-check-all]
+verify_jwt = false
