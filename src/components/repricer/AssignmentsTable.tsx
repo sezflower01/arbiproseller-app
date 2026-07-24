@@ -614,7 +614,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
 
     // ── TEMP TRACE — B0H1NKJP1X cost investigation (remove after diagnosis) ──
     if (inv.asin === 'B0H1NKJP1X') {
-      console.log('[COST_TRACE B0H1NKJP1X]', {
+      console.log('[COST_TRACE B0H1NKJP1X] ' + JSON.stringify({
         targetMarketplace,
         inv_id: inv.id,
         inv_sku: inv.sku,
@@ -622,15 +622,15 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
         inv_amount: (inv as any).amount,
         inv_units: (inv as any).units,
         clEnrich_present: !!clEnrich,
-        clEnrich_unitCost: clEnrich?.unitCost,
-        createdListingMap_keys_sample: Object.keys(createdListingMap).slice(0, 3),
+        clEnrich_unitCost: clEnrich?.unitCost ?? null,
+        createdListingMap_size: Object.keys(createdListingMap).length,
         createdListingMap_has_this_asin: Object.prototype.hasOwnProperty.call(createdListingMap, inv.asin),
         computed_cost: (clEnrich?.unitCost != null && clEnrich.unitCost > 0)
           ? clEnrich.unitCost
           : ((inv.cost != null && inv.cost > 0) ? inv.cost : null),
-        assignment_id: assignment?.id,
-        assignment_marketplace: (assignment as any)?.marketplace,
-      });
+        assignment_id: assignment?.id ?? null,
+        assignment_marketplace: (assignment as any)?.marketplace ?? null,
+      }));
     }
 
     // ── TRACE LOG (contamination audit) — B01JIA5DOK only ──
