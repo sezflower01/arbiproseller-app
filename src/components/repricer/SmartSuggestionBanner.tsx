@@ -33,6 +33,8 @@ interface SuggestionItem {
   last_recommendation_reason: string | null;
   marketplace: string;
   fulfillment_type: "FBA" | "FBM";
+  oscillation_state?: string | null;
+  oscillation_cooldown_until?: string | null;
 }
 
 interface SmartSuggestionBannerProps {
@@ -83,19 +85,58 @@ export function detectSuggestion(
   // Priority 2: Missing min or max
   if (minPrice == null || maxPrice == null) return null;
 
-  // Priority 3: Blocked by min floor while losing BB
+  // Priority 3: Oscillation cooldown active — read directly from the live
+  // oscillation_cooldown_until/oscillation_state columns (same fields the
+  // admin diagnostics panel uses), not from last_recommendation_reason.
+  // The reason string is a snapshot written at the last evaluation and can
+  // go stale (e.g. still says "blocked by min floor $18" after the user
+  // already lowered the min to $17) — checked here, before the reason-text
+  // heuristics below, so a live cooldown always wins over a stale reason.
+  const oscCooldownUntilMs = item.oscillation_cooldown_until
+    ? new Date(item.oscillation_cooldown_until).getTime()
+    : 0;
+  const oscState = (item.oscillation_state || "").toLowerCase();
+  const oscCooldownActive =
+    (oscState.includes("cooldown") || oscState === "blocked") &&
+    oscCooldownUntilMs > Date.now();
+
+  if (oscCooldownActive) {
+    const minsLeft = Math.max(1, Math.ceil((oscCooldownUntilMs - Date.now()) / 60000));
+    return {
+      type: "oscillation_pause",
+      severity: "blue",
+      message: `Price on hold — recent Buy Box back-and-forth (~${minsLeft} min)`,
+      detail: `The system noticed this listing losing the Buy Box repeatedly and is briefly pausing (about ${minsLeft} more minute${minsLeft === 1 ? "" : "s"}) instead of chasing it back and forth, which would just trigger a price war. It will try again automatically once the pause clears. Don't want to wait? Type your desired price in Set Price and use the toggle to push it now.`,
+      actions: [],
+    };
+  }
+
+  // Priority 4: Blocked by min floor while losing BB
   const isLosingBB =
     bb != null
       ? currentPrice > bb * 1.005
       : lowestCompetitor != null && currentPrice > lowestCompetitor;
+
+  // The reason text may quote a floor dollar amount (e.g. "user min floor
+  // $18.00") from a stale evaluation. Only trust floor-language in the
+  // reason if that quoted amount still matches the CURRENT min — otherwise
+  // the user has already changed the min and this reason no longer applies.
+  const reasonFloorMatch = reason.match(/floor\s*\$?\s*([\d.]+)/);
+  const reasonFloorAmount = reasonFloorMatch ? parseFloat(reasonFloorMatch[1]) : null;
+  const reasonFloorStillCurrent =
+    reasonFloorAmount == null ||
+    minPrice == null ||
+    Math.abs(reasonFloorAmount - Number(minPrice)) < 0.02;
+
   const isClampedByFloor =
-    reason.includes("clamped") ||
-    reason.includes("holding at floor") ||
-    reason.includes("floor prevents") ||
-    reason.includes("clamped by floor") ||
-    reason.includes("clamped to min") ||
-    reason.includes("effective_floor") ||
-    reason.includes("constrained_by");
+    reasonFloorStillCurrent &&
+    (reason.includes("clamped") ||
+      reason.includes("holding at floor") ||
+      reason.includes("floor prevents") ||
+      reason.includes("clamped by floor") ||
+      reason.includes("clamped to min") ||
+      reason.includes("effective_floor") ||
+      reason.includes("constrained_by"));
 
   const isAtMinFloor =
     minPrice != null && Math.abs(currentPrice - Number(minPrice)) < 0.02;
@@ -115,7 +156,7 @@ export function detectSuggestion(
     };
   }
 
-  // Priority 4: BB suppressed
+  // Priority 5: BB suppressed
   const isBbSuppressed =
     reason.includes("buy box suppressed") ||
     (bb == null && lowestCompetitor != null && reason.includes("suppressed"));
@@ -134,7 +175,7 @@ export function detectSuggestion(
     };
   }
 
-  // Priority 5: Profit guard blocked
+  // Priority 6: Profit guard blocked
   if (
     reason.includes("profit guard") ||
     reason.includes("profit_guard") ||
@@ -150,14 +191,10 @@ export function detectSuggestion(
     };
   }
 
-  // Priority 6: Oscillation guard pause — the engine detected repeated Buy Box
-  // loss / rapid competitor churn on this listing and is briefly holding to
-  // avoid chasing the Buy Box back and forth (a price war). Distinct from the
-  // plain cooldown below: this comes from the oscillation-detection guard
-  // ("Guard: OSCILLATION_..." reason), not the generic price-move cooldown.
-  // Checked before the generic cooldown check since some oscillation guard
-  // reasons also contain the word "cooldown" and would otherwise fall into
-  // the less specific message below.
+  // Priority 7: Oscillation guard pause (reason-text fallback) — only reached
+  // if the live oscillation_cooldown_until/oscillation_state check above
+  // (Priority 3) didn't fire, e.g. for older rows where those columns aren't
+  // populated yet. Falls back to matching the "Guard: OSCILLATION_..." reason.
   if (reason.includes("guard:") && reason.includes("oscillation")) {
     return {
       type: "oscillation_pause",
@@ -169,7 +206,7 @@ export function detectSuggestion(
     };
   }
 
-  // Priority 7: Cooldown active — not a problem, just a short wait between
+  // Priority 8: Cooldown active — not a problem, just a short wait between
   // price moves (prevents rapid back-and-forth changes). Informational, but
   // the user should know why the price hasn't moved yet and that they can
   // set their own price instead of waiting it out.
