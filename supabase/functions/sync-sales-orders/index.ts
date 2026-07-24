@@ -735,7 +735,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           );
 
           for (const event of financialEvents.slice(0, 200)) {
-            await processFinancialEvent(supabase, auth.user_id, event);
+            await processFinancialEvent(supabase, auth.user_id, event, accessToken);
           }
 
           // Always re-scan recent refunds so newly Released refunds and corrected
@@ -4019,7 +4019,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
 
         let settledCount = 0;
         for (const event of events) {
-        const didSettle = await processFinancialEvent(supabase, userId, event);
+        const didSettle = await processFinancialEvent(supabase, userId, event, accessToken);
           if (didSettle) settledCount++;
         }
         console.log(`💰 RESYNC_TODAY: Settled ${settledCount} order(s) from financial events`);
@@ -4177,7 +4177,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
         
         console.log(`💰 Processing ${events.length} financial events`);
         for (const event of events) {
-          const wasSettled = await processFinancialEvent(supabase, userId, event);
+          const wasSettled = await processFinancialEvent(supabase, userId, event, accessToken);
           if (wasSettled) settledCount++;
         }
         console.log(`💰 Step 2 complete: ${settledCount} orders settled`);
@@ -4678,7 +4678,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
               totalEvents += pageResult.events.length;
 
               for (const event of pageResult.events) {
-                await processFinancialEvent(supabase, userId, event);
+                await processFinancialEvent(supabase, userId, event, accessToken);
                 totalProcessed++;
 
                 if (Date.now() - startedAt > TIME_BUDGET_MS) {
@@ -5062,9 +5062,9 @@ async function performBackfillChunk(
       );
       
       console.log(`⏪ BACKFILL: Found ${events.length} financial events in chunk`);
-      
+
       for (const event of events) {
-        await processFinancialEvent(supabase, userId, event);
+        await processFinancialEvent(supabase, userId, event, accessToken);
         eventsProcessed++;
       }
     } catch (eventsErr: any) {
@@ -8491,11 +8491,33 @@ async function fetchFinancialEvents(
   return allEvents;
 }
 
+// Fetch the REAL Amazon PurchaseDate for one order via GetOrder — basic order
+// metadata, returned regardless of order status. Used so a settlement-only
+// insert (financial event arrived with no prior Orders API record) gets the
+// true purchase date instead of the settlement/posted date.
+async function fetchOrderPurchaseDateForSettlement(orderId: string, accessToken: string): Promise<string | null> {
+  try {
+    const url = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}`;
+    const headers = await signRequest('GET', url, '', accessToken);
+    const res = await fetch(url, { method: 'GET', headers: { ...headers, 'Content-Type': 'application/json' } });
+    if (!res.ok) {
+      console.warn(`⚠️ SETTLEMENT_PURCHASE_DATE_LOOKUP: ${orderId} failed: ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    return data?.payload?.PurchaseDate || null;
+  } catch (err) {
+    console.warn(`⚠️ SETTLEMENT_PURCHASE_DATE_LOOKUP: ${orderId} exception: ${(err as Error).message}`);
+    return null;
+  }
+}
+
 // Process Financial Event
 async function processFinancialEvent(
   supabase: any,
   userId: string,
-  event: any
+  event: any,
+  accessToken?: string
 ): Promise<boolean> {
   const eventType = event._eventType || 'shipment';
   const orderId = event.AmazonOrderId;
@@ -9049,12 +9071,21 @@ async function processFinancialEvent(
         const rollupDate = matchingExisting.order_date || postedDate;
         await upsertDailyRollup(supabase, userId, finalAsin, rollupDate, marketplace, sku);
       } else {
-        // CRITICAL FIX: For new inserts, use postedDate as settlement date but
-        // DON'T use it as order_date — it shifts sales to wrong purchase day.
-        // Instead, leave order_date NULL so a gap-repair pass can fix it later
-        // via Orders API (which has the real PurchaseDate).
-        // Fallback: if we truly can't get the purchase date, use postedDate.
-        console.log(`📝 Inserting settled order: ${orderId} / ${finalAsin} | asinSource: ${finalAsinSource} | price_source=financial_events | order_date=postedDate(${postedDate})`);
+        // For new inserts (settlement arrived with no prior Orders API record),
+        // fetch the REAL purchase date via GetOrder — using postedDate (the
+        // settlement date) as order_date shifts the sale to the wrong day.
+        // Confirmed live on order 113-4056832-6171438: purchased 2026-07-11,
+        // settled 2026-07-23 — without this lookup it permanently showed as a
+        // 07-23 sale. Falls back to postedDate only if the lookup fails.
+        let resolvedOrderDate = postedDate;
+        if (accessToken) {
+          const realPurchaseDate = await fetchOrderPurchaseDateForSettlement(orderId, accessToken);
+          if (realPurchaseDate) {
+            resolvedOrderDate = getPacificDateString(realPurchaseDate);
+            console.log(`📅 SETTLEMENT_PURCHASE_DATE_RESOLVED: ${orderId} settlement=${postedDate} -> real purchase=${resolvedOrderDate}`);
+          }
+        }
+        console.log(`📝 Inserting settled order: ${orderId} / ${finalAsin} | asinSource: ${finalAsinSource} | price_source=financial_events | order_date=${resolvedOrderDate}`);
         const { error: insertError } = await supabase.from('sales_orders').insert({
           user_id: userId,
           order_id: orderId,
@@ -9074,7 +9105,7 @@ async function processFinancialEvent(
           unit_cost: unitCost > 0 ? unitCost : null,
           total_cost: unitCost > 0 ? totalCost : null,
           roi: unitCost > 0 ? roi : null,
-          order_date: postedDate,
+          order_date: resolvedOrderDate,
           settlement_date: postedDate,
           marketplace,
           status: 'settled',
