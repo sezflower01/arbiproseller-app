@@ -5482,6 +5482,23 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           // item's existing known live price.
           referencePrice: hasNewPrice ? (newPrice as number) : (currentItem.my_price ?? currentItem.price ?? null),
         });
+
+        // Targeted instant re-check: only when this row's PRE-save reason
+        // shows it was being actively held back by a floor (the engine's own
+        // wording: "Competitive target $X blocked by <floor> $Y — holding
+        // current price"). A bounds edit that loosens/tightens a floor that
+        // wasn't blocking anything doesn't get one — avoids firing an extra
+        // SP-API evaluation on every routine Min/Max edit. This is a normal
+        // (non-forced) single-assignment eval via repricer-scheduler, same
+        // mechanism "Force Smart Raise" uses, just without bypassing guards.
+        const wasBlockedByFloor = /blocked by .* floor .* — holding current price/i.test(
+          currentItem.last_recommendation_reason || ""
+        );
+        if (wasBlockedByFloor) {
+          supabase.functions.invoke('repricer-scheduler', {
+            body: { assignment_ids: [assignmentId], marketplace, dry_run: false },
+          }).catch((e: any) => console.warn(`[instant re-eval] failed for ${nextItem.asin}:`, e?.message || e));
+        }
       }
 
       return true;
