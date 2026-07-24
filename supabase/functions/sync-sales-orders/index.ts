@@ -8861,6 +8861,45 @@ async function processFinancialEvent(
         finalAsinSource = 'unknown';
       }
     }
+
+    // SAFETY NET: finalAsin must never equal the raw SKU. This is the exact
+    // gap that let SKU "GNC-AK0-7ZU5" end up in the asin column for order
+    // 113-4056832-6171438 (asin_source stuck at 'unknown') even though our
+    // own created_listings/inventory already had the correct ASIN
+    // (B0G15SJPW9) mapped to that SKU — realAsin gets set to the raw sku a
+    // few lines above this block when nothing else resolved it, and this
+    // fallback then accepted it without the same "!== sku" check Strategy 3
+    // above already applies. One more direct lookup before giving up; if it
+    // still can't resolve, use 'UNKNOWN' (never the raw SKU) so the UI never
+    // shows a SKU where an ASIN belongs.
+    if (finalAsin && sku && finalAsin === sku) {
+      let recovered: string | null = null;
+      const { data: recoverCl } = await supabase
+        .from('created_listings')
+        .select('asin')
+        .eq('user_id', userId)
+        .eq('sku', sku)
+        .maybeSingle();
+      if (recoverCl?.asin && isValidAsinPattern(recoverCl.asin)) recovered = recoverCl.asin;
+      if (!recovered) {
+        const { data: recoverInv } = await supabase
+          .from('inventory')
+          .select('asin')
+          .eq('user_id', userId)
+          .eq('sku', sku)
+          .maybeSingle();
+        if (recoverInv?.asin && isValidAsinPattern(recoverInv.asin)) recovered = recoverInv.asin;
+      }
+      if (recovered) {
+        console.log(`🔄 ASIN_RECOVERED_FROM_SKU_CONTAMINATION: ${orderId} | sku=${sku} -> asin=${recovered}`);
+        finalAsin = recovered;
+        finalAsinSource = 'resolved' as any;
+      } else {
+        console.warn(`⚠️ ASIN_SKU_CONTAMINATION_UNRESOLVED: ${orderId} | sku=${sku} had no ASIN mapping anywhere — using UNKNOWN instead of SKU`);
+        finalAsin = 'UNKNOWN';
+        finalAsinSource = 'unknown';
+      }
+    }
     
     // DIAGNOSTIC: Log the settlement process
     console.log('EVENTS_DEBUG_PROCESS', {
