@@ -35,24 +35,33 @@ export function useAsinPurchaseRecords(asins: string[] | undefined): {
       try {
         // Supabase has a practical IN-clause limit; chunk to be safe.
         const CHUNK = 500;
+        const PAGE_SIZE = 1000;
         const found = new Set<string>();
         for (let i = 0; i < list.length; i += CHUNK) {
           const slice = list.slice(i, i + CHUNK);
-          // Explicit limit — without it, PostgREST's default row cap (1000)
-          // silently truncates a batch's results instead of erroring. Repeat-
-          // purchase ASINs average ~2 rows each in created_listings, so a
-          // 500-ASIN batch can exceed 1000 rows, and whichever ASINs land past
-          // the cutoff quietly show up as "no purchase record" even though one
-          // exists.
-          const { data, error } = await supabase
-            .from("created_listings")
-            .select("asin")
-            .eq("user_id", user.id)
-            .in("asin", slice)
-            .limit(5000);
-          if (error) throw error;
-          for (const r of data ?? []) {
-            if (r.asin) found.add(r.asin);
+          // Paginate with .range() — this project's PostgREST "Max Rows"
+          // setting silently clamps ANY query to 1000 rows regardless of a
+          // client-side .limit(), so a single request per 500-ASIN chunk can
+          // never return more than that. Repeat-purchase ASINs average ~1.9
+          // rows each in created_listings, so some chunks genuinely exceed
+          // 1000 total rows, and whichever ASINs land past the cutoff quietly
+          // show up as "no purchase record" even though one exists.
+          let from = 0;
+          while (true) {
+            const { data, error } = await supabase
+              .from("created_listings")
+              .select("asin")
+              .eq("user_id", user.id)
+              .in("asin", slice)
+              .order("id", { ascending: true })
+              .range(from, from + PAGE_SIZE - 1);
+            if (error) throw error;
+            const rows = data ?? [];
+            for (const r of rows) {
+              if (r.asin) found.add(r.asin);
+            }
+            if (rows.length < PAGE_SIZE) break;
+            from += PAGE_SIZE;
           }
         }
         if (!cancelled) setWithRecord(found);

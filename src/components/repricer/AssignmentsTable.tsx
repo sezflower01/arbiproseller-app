@@ -510,21 +510,37 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
   const createdListingMap: Record<string, { unitCost: number | null; image_url: string | null; title: string | null; price: number | null }> = {};
   if (asins.length > 0) {
     try {
-      const clRows = await batchInQuery(
-        "created_listings",
-        "asin, cost, units, amount, image_url, title, price, date_created, created_at, id",
-        "asin",
-        asins,
-        // Explicit limit — PostgREST's default row cap (1000) silently truncates
-        // a batch's result set instead of erroring. With repeat-purchase ASINs
-        // averaging ~2 created_listings rows each, a 500-ASIN batch can exceed
-        // 1000 rows, and whichever ASINs land past the cutoff quietly lose their
-        // COG/image enrichment (confirmed live: ASIN B0H1NKJP1X had a valid
-        // created_listings row that never made it into createdListingMap because
-        // of this). 5000 covers a 500-ASIN batch even at ~10 rows/ASIN — well
-        // above the real ~1.88 average.
-        (q: any) => q.eq("user_id", userId).limit(5000)
-      );
+      // Paginated fetch, NOT batchInQuery — this project's PostgREST "Max Rows"
+      // setting silently clamps ANY query (regardless of client-side .limit())
+      // to 1000 rows, so a single request per 500-ASIN batch can never be made
+      // to return more than that. With repeat-purchase ASINs averaging ~1.9
+      // created_listings rows each, some 500-ASIN batches genuinely exceed 1000
+      // total rows, and whichever ASINs land past the cutoff quietly lose their
+      // COG/image enrichment (confirmed live: ASIN B0H1NKJP1X's batch alone
+      // produced 1000+ rows and its row never made it into createdListingMap).
+      // Paginating with .range() inside each batch — same pattern as
+      // fetchAllPaged above — guarantees completeness regardless of the
+      // project's row cap or how the table grows.
+      const clRows: any[] = [];
+      const CL_PAGE_SIZE = 1000;
+      for (let i = 0; i < asins.length; i += BATCH_IN_SIZE) {
+        const batch = asins.slice(i, i + BATCH_IN_SIZE);
+        let clFrom = 0;
+        while (true) {
+          const { data: clPage, error: clPageErr } = await supabase
+            .from("created_listings")
+            .select("asin, cost, units, amount, image_url, title, price, date_created, created_at, id")
+            .eq("user_id", userId)
+            .in("asin", batch)
+            .order("id", { ascending: true })
+            .range(clFrom, clFrom + CL_PAGE_SIZE - 1);
+          if (clPageErr) break;
+          const rows = clPage || [];
+          clRows.push(...rows);
+          if (rows.length < CL_PAGE_SIZE) break;
+          clFrom += CL_PAGE_SIZE;
+        }
+      }
       // Group by ASIN, then pick the NEWEST row (mirrors resolveUnitCost.pickNewestListing:
       // date_created DESC NULLS LAST, created_at DESC, id DESC). This guarantees the
       // most-recently-created listing wins for COG (and image/title/price fallbacks),
