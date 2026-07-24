@@ -612,6 +612,27 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     const snapshot = snapshotsMap[`${inv.asin}-${targetMarketplace}`];
     const rule = assignment?.rule_id ? rulesMap[assignment.rule_id] : null;
 
+    // ── TEMP TRACE — B0H1NKJP1X cost investigation (remove after diagnosis) ──
+    if (inv.asin === 'B0H1NKJP1X') {
+      console.log('[COST_TRACE B0H1NKJP1X]', {
+        targetMarketplace,
+        inv_id: inv.id,
+        inv_sku: inv.sku,
+        inv_cost: inv.cost,
+        inv_amount: (inv as any).amount,
+        inv_units: (inv as any).units,
+        clEnrich_present: !!clEnrich,
+        clEnrich_unitCost: clEnrich?.unitCost,
+        createdListingMap_keys_sample: Object.keys(createdListingMap).slice(0, 3),
+        createdListingMap_has_this_asin: Object.prototype.hasOwnProperty.call(createdListingMap, inv.asin),
+        computed_cost: (clEnrich?.unitCost != null && clEnrich.unitCost > 0)
+          ? clEnrich.unitCost
+          : ((inv.cost != null && inv.cost > 0) ? inv.cost : null),
+        assignment_id: assignment?.id,
+        assignment_marketplace: (assignment as any)?.marketplace,
+      });
+    }
+
     // ── TRACE LOG (contamination audit) — B01JIA5DOK only ──
     if (inv.asin === 'B01JIA5DOK') {
       const allAsgnForAsin = Object.entries(assignmentsBySku)
