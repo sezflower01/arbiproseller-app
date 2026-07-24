@@ -48,7 +48,8 @@ type SuggestionType =
   | "no_rule"
   | "missing_min_max"
   | "bb_suppressed"
-  | "profit_guard_block";
+  | "profit_guard_block"
+  | "cooldown";
 
 interface Suggestion {
   type: SuggestionType;
@@ -144,6 +145,25 @@ export function detectSuggestion(
       message: "Profit protection blocking price drop",
       detail:
         "The system wants to lower your price but your profit rules prevent it. Consider switching to a liquidation rule if you need to sell faster.",
+      actions: [],
+    };
+  }
+
+  // Priority 6: Cooldown active — not a problem, just a short wait between
+  // price moves (prevents rapid back-and-forth changes). Informational, but
+  // the user should know why the price hasn't moved yet and that they can
+  // set their own price instead of waiting it out.
+  if (reason.includes("cooldown")) {
+    const minsMatch = reason.match(/(\d+)\s*min(?:ute)?s?\s*remaining/i);
+    const mins = minsMatch ? minsMatch[1] : null;
+    return {
+      type: "cooldown",
+      severity: "blue",
+      message: mins
+        ? `Price on hold — cooling down (~${mins} min left)`
+        : "Price on hold — cooling down",
+      detail:
+        "To avoid rapid back-and-forth price changes, the system briefly pauses between price moves on this listing. Don't want to wait? Type your desired price in Set Price and use the toggle to push it now.",
       actions: [],
     };
   }
