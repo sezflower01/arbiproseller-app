@@ -125,24 +125,15 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     
     const loadTranslations = async () => {
       try {
-        const response = await fetch(`/src/locales/${language}.json`);
-        if (response.ok) {
-          const data = await response.json();
-          setTranslations(data);
-        } else {
-          // Fallback to embedded translations if file fetch fails
-          const fallbackTranslations = await import(`../locales/${language}.json`);
-          setTranslations(fallbackTranslations.default);
-        }
+        // Bundled import — works identically in dev and production. (A prior
+        // version tried `fetch('/src/locales/...')` first: that path is only
+        // ever served in dev; in production it hits the SPA fallback route,
+        // which returns index.html — response.json() then throws "Unexpected
+        // token '<'" trying to parse HTML as JSON, on every single page load.)
+        const translations = await import(`../locales/${language}.json`);
+        setTranslations(translations.default);
       } catch (error) {
         console.error('Error loading translations:', error);
-        // Load embedded translations as fallback
-        try {
-          const fallbackTranslations = await import(`../locales/${language}.json`);
-          setTranslations(fallbackTranslations.default);
-        } catch (fallbackError) {
-          console.error('Error loading fallback translations:', fallbackError);
-        }
       } finally {
         setIsLoading(false);
       }
