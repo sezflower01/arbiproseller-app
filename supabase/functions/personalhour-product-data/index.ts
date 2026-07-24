@@ -936,65 +936,6 @@ Deno.serve(async (req) => {
           const results = await Promise.all(gatingPromises);
           marketplaceGating.push(...results);
 
-          // SELLER-ACCOUNT OVERRIDE — if the user already has an active listing
-          // for this ASIN in a marketplace (inventory row, created_listings row,
-          // or repricer_assignment), Amazon has ALREADY approved them. Override
-          // APPROVAL_REQUIRED from the catalog-level restrictions API so the
-          // analyzer/extension stop nagging "Apply →" on ASINs the user is
-          // already selling.
-          try {
-            // Inventory + created_listings are user-scoped, not marketplace-scoped
-            // in this DB. Treat any active row as proof of US-marketplace approval.
-            const [{ data: invRows }, { data: clRows }, { data: raRows }] = await Promise.all([
-              supabaseAdmin.from('inventory')
-                .select('id, listing_status')
-                .eq('user_id', user.id)
-                .eq('asin', asin)
-                .limit(20),
-              supabaseAdmin.from('created_listings')
-                .select('id, validation_status')
-                .eq('user_id', user.id)
-                .eq('asin', asin)
-                .limit(20),
-              supabaseAdmin.from('repricer_assignments')
-                .select('id, marketplace')
-                .eq('user_id', user.id)
-                .eq('asin', asin)
-                .limit(20),
-            ]);
-            const hasActiveUsInventory = (invRows || []).some((r: any) => {
-              const s = String(r.listing_status || '').toUpperCase();
-              return s !== 'NOT_IN_CATALOG' && s !== 'DELETED';
-            });
-            const hasActiveUsCreatedListing = (clRows || []).some((r: any) => {
-              const s = String(r.validation_status || 'ACTIVE').toUpperCase();
-              return s === 'ACTIVE' || s === 'PENDING_VALIDATION';
-            });
-            const repricerMarketplaces = new Set<string>(
-              (raRows || []).map((r: any) => String(r.marketplace || '').toUpperCase()).filter(Boolean)
-            );
-
-            for (let i = 0; i < marketplaceGating.length; i++) {
-              const g = marketplaceGating[i];
-              if (g.status !== 'APPROVAL_REQUIRED') continue;
-              const mpCode = String(g.marketplace).toUpperCase();
-              const overrideUs = mpCode === 'US' && (hasActiveUsInventory || hasActiveUsCreatedListing);
-              const overrideByRepricer = repricerMarketplaces.has(mpCode);
-              if (overrideUs || overrideByRepricer) {
-                console.log(`[gating override] ${asin} ${mpCode}: APPROVAL_REQUIRED -> APPROVED (seller already has active listing/assignment)`);
-                marketplaceGating[i] = {
-                  ...g,
-                  status: 'APPROVED',
-                  reasons: [
-                    'Approval verified at seller-account level — you already have an active listing/assignment for this ASIN in this marketplace.',
-                  ],
-                };
-              }
-            }
-          } catch (overrideErr) {
-            console.warn('[gating override] failed:', overrideErr instanceof Error ? overrideErr.message : String(overrideErr));
-          }
-
           console.log('Multi-marketplace gating results:', JSON.stringify(marketplaceGating, null, 2));
           
           // Set primary gating status based on first connected marketplace
