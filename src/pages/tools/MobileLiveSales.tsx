@@ -1146,8 +1146,15 @@ const MobileLiveSales = () => {
           // CANONICAL NET refund cost via shared helper, applied per-row to
           // preserve per-order USD attribution. See src/lib/sales/refundMath.ts
           // and architecture-audit.md §1.2.
+          //
+          // refundCostNet is ALREADY in USD — computeNetRefundFromFecRows
+          // operates on financial_events_cache columns (refunds, referral_fees,
+          // etc.), which the ingestion sync converts to USD before writing.
+          // Passing it through toUsd() here divided it by the marketplace FX
+          // rate a SECOND time (e.g. MX $8.52 real refund -> $0.49 displayed —
+          // confirmed live against order 701-0390947-3179428, MX$164.18).
           const rowCanon = computeNetRefundFromFecRows([r], 'full');
-          const usd = toUsd(rowCanon.refundCostNet, r.marketplace);
+          const usd = rowCanon.refundCostNet;
           totalNetUsd += usd;
           if (r.amazon_order_id) {
             orderSet.add(r.amazon_order_id);
