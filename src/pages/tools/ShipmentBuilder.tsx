@@ -25,6 +25,7 @@ import {
   Send,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -204,6 +205,14 @@ type ShipmentItem = {
   savedToShipment?: boolean;
   fbaBlocked?: boolean;
   fbaBlockReason?: string | null;
+  /**
+   * Brand-gating/approval status, checked against Amazon's live Listings
+   * Restrictions API the moment the row is saved (see checkAsinGating) —
+   * catches restricted-brand ASINs before they reach shipment-plan
+   * submission, where Amazon would reject them.
+   */
+  gatingStatus?: "checking" | "approved" | "restricted" | "unknown";
+  gatingReason?: string | null;
 };
 
 type LegacyDraftItem = Partial<ShipmentItem> & {
@@ -2636,7 +2645,49 @@ export default function ShipmentBuilder() {
   };
 
   // Confirm a row — marks it as Saved so it carries into Prep / Boxes / Plan.
+  const setItemGating = (itemId: string, patch: Pick<ShipmentItem, "gatingStatus" | "gatingReason">) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    }));
+    setSearchResults((current) => current.map((item) => (item.id === itemId ? { ...item, ...patch } : item)));
+  };
+
+  // Fired the moment a row is Saved — checks Amazon's LIVE Listings
+  // Restrictions API for this ASIN (via personalhour-product-data, the same
+  // gating check the analyzer/extension use) so a restricted-brand ASIN is
+  // flagged here in Step 2 instead of failing later at shipment-plan
+  // submission. Non-blocking: the save itself already happened, this only
+  // updates the badge once the check resolves.
+  const checkAsinGating = async (itemId: string, asin: string) => {
+    setItemGating(itemId, { gatingStatus: "checking", gatingReason: null });
+    try {
+      const { data, error } = await supabase.functions.invoke("personalhour-product-data", {
+        body: { asin: asin.toUpperCase(), marketplaceId: "ATVPDKIKX0DER" },
+      });
+      if (error || !data) {
+        setItemGating(itemId, { gatingStatus: "unknown", gatingReason: null });
+        return;
+      }
+      const status = String((data as any).gatingStatus || "").toUpperCase();
+      if (status === "APPROVED") {
+        setItemGating(itemId, { gatingStatus: "approved", gatingReason: null });
+      } else if (status === "APPROVAL_REQUIRED" || status === "RESTRICTED" || status === "NOT_ELIGIBLE") {
+        const reasons = (data as any).gatingReasons;
+        setItemGating(itemId, {
+          gatingStatus: "restricted",
+          gatingReason: Array.isArray(reasons) && reasons[0] ? reasons[0] : "Amazon requires approval to list this ASIN in this brand.",
+        });
+      } else {
+        setItemGating(itemId, { gatingStatus: "unknown", gatingReason: null });
+      }
+    } catch {
+      setItemGating(itemId, { gatingStatus: "unknown", gatingReason: null });
+    }
+  };
+
   const saveItemRow = (itemId: string) => {
+    let savedAsin: string | null = null;
     setDraft((current) => {
       const target = current.items.find((item) => item.id === itemId);
       if (!target || target.qtyToShip <= 0) {
@@ -2647,6 +2698,7 @@ export default function ShipmentBuilder() {
         toast.error("FBA-blocked items cannot be saved to this shipment.");
         return current;
       }
+      savedAsin = target.asin;
       return {
         ...current,
         items: current.items.map((item) =>
@@ -2662,6 +2714,9 @@ export default function ShipmentBuilder() {
     setSearchQuery("");
     setSearchResults([]);
     toast.success("Saved to shipment");
+    if (savedAsin) {
+      checkAsinGating(itemId, savedAsin);
+    }
   };
 
 
@@ -5408,25 +5463,51 @@ export default function ShipmentBuilder() {
                                 )}
                               </TableCell>
                               <TableCell className="text-center">
-                                {item.savedToShipment === true && item.qtyToShip > 0 ? (
-                                  <Badge className="gap-1 bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 hover:bg-emerald-500/25">
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    Saved
-                                  </Badge>
-                                ) : (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="default"
-                                    className="gap-1.5"
-                                    onClick={() => saveItemRow(item.id)}
-                                    disabled={!item.qtyToShip || item.qtyToShip <= 0 || !!item.fbaBlocked}
-                                    title="Save this product to the shipment"
-                                  >
-                                    <Save className="h-3.5 w-3.5" />
-                                    Save
-                                  </Button>
-                                )}
+                                <div className="flex flex-col items-center gap-1">
+                                  {item.savedToShipment === true && item.qtyToShip > 0 ? (
+                                    <Badge className="gap-1 bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 hover:bg-emerald-500/25">
+                                      <CheckCircle2 className="h-3.5 w-3.5" />
+                                      Saved
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="default"
+                                      className="gap-1.5"
+                                      onClick={() => saveItemRow(item.id)}
+                                      disabled={!item.qtyToShip || item.qtyToShip <= 0 || !!item.fbaBlocked}
+                                      title="Save this product to the shipment"
+                                    >
+                                      <Save className="h-3.5 w-3.5" />
+                                      Save
+                                    </Button>
+                                  )}
+                                  {item.gatingStatus === "checking" && (
+                                    <Badge className="gap-1 bg-white/10 text-white/70 border border-white/20">
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      Checking approval
+                                    </Badge>
+                                  )}
+                                  {item.gatingStatus === "approved" && (
+                                    <Badge
+                                      className="gap-1 bg-emerald-500/20 text-emerald-200 border border-emerald-400/40"
+                                      title="Amazon confirms this ASIN is ungated for your account."
+                                    >
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Ungated
+                                    </Badge>
+                                  )}
+                                  {item.gatingStatus === "restricted" && (
+                                    <Badge
+                                      className="gap-1 bg-red-500/20 text-red-200 border border-red-400/40"
+                                      title={item.gatingReason || "Amazon requires approval to list this ASIN in this brand."}
+                                    >
+                                      <XCircle className="h-3 w-3" />
+                                      Approval required
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <Button
