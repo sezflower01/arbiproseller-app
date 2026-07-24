@@ -38,11 +38,18 @@ export function useAsinPurchaseRecords(asins: string[] | undefined): {
         const found = new Set<string>();
         for (let i = 0; i < list.length; i += CHUNK) {
           const slice = list.slice(i, i + CHUNK);
+          // Explicit limit — without it, PostgREST's default row cap (1000)
+          // silently truncates a batch's results instead of erroring. Repeat-
+          // purchase ASINs average ~2 rows each in created_listings, so a
+          // 500-ASIN batch can exceed 1000 rows, and whichever ASINs land past
+          // the cutoff quietly show up as "no purchase record" even though one
+          // exists.
           const { data, error } = await supabase
             .from("created_listings")
             .select("asin")
             .eq("user_id", user.id)
-            .in("asin", slice);
+            .in("asin", slice)
+            .limit(5000);
           if (error) throw error;
           for (const r of data ?? []) {
             if (r.asin) found.add(r.asin);

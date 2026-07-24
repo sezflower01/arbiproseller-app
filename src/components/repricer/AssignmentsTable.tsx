@@ -515,7 +515,15 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
         "asin, cost, units, amount, image_url, title, price, date_created, created_at, id",
         "asin",
         asins,
-        (q: any) => q.eq("user_id", userId)
+        // Explicit limit — PostgREST's default row cap (1000) silently truncates
+        // a batch's result set instead of erroring. With repeat-purchase ASINs
+        // averaging ~2 created_listings rows each, a 500-ASIN batch can exceed
+        // 1000 rows, and whichever ASINs land past the cutoff quietly lose their
+        // COG/image enrichment (confirmed live: ASIN B0H1NKJP1X had a valid
+        // created_listings row that never made it into createdListingMap because
+        // of this). 5000 covers a 500-ASIN batch even at ~10 rows/ASIN — well
+        // above the real ~1.88 average.
+        (q: any) => q.eq("user_id", userId).limit(5000)
       );
       // Group by ASIN, then pick the NEWEST row (mirrors resolveUnitCost.pickNewestListing:
       // date_created DESC NULLS LAST, created_at DESC, id DESC). This guarantees the
@@ -611,27 +619,6 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       : null;
     const snapshot = snapshotsMap[`${inv.asin}-${targetMarketplace}`];
     const rule = assignment?.rule_id ? rulesMap[assignment.rule_id] : null;
-
-    // ── TEMP TRACE — B0H1NKJP1X cost investigation (remove after diagnosis) ──
-    if (inv.asin === 'B0H1NKJP1X') {
-      console.log('[COST_TRACE B0H1NKJP1X] ' + JSON.stringify({
-        targetMarketplace,
-        inv_id: inv.id,
-        inv_sku: inv.sku,
-        inv_cost: inv.cost,
-        inv_amount: (inv as any).amount,
-        inv_units: (inv as any).units,
-        clEnrich_present: !!clEnrich,
-        clEnrich_unitCost: clEnrich?.unitCost ?? null,
-        createdListingMap_size: Object.keys(createdListingMap).length,
-        createdListingMap_has_this_asin: Object.prototype.hasOwnProperty.call(createdListingMap, inv.asin),
-        computed_cost: (clEnrich?.unitCost != null && clEnrich.unitCost > 0)
-          ? clEnrich.unitCost
-          : ((inv.cost != null && inv.cost > 0) ? inv.cost : null),
-        assignment_id: assignment?.id ?? null,
-        assignment_marketplace: (assignment as any)?.marketplace ?? null,
-      }));
-    }
 
     // ── TRACE LOG (contamination audit) — B01JIA5DOK only ──
     if (inv.asin === 'B01JIA5DOK') {
