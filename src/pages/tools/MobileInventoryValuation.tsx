@@ -139,50 +139,50 @@ const MobileInventoryValuation = () => {
 
         {/* Projected Sale, Profit & ROI — if all current stock sold at today's live price */}
         <section className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-white/50 mb-3">
+          <div className="text-sm uppercase tracking-wider font-bold text-white mb-3">
             Projected (at today's price)
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="text-center">
-              <div className="text-[9px] uppercase tracking-wide text-white/40">Sale</div>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-white">Sale</span>
               {loading && !projected ? (
-                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+                <Skeleton className="h-5 w-24 bg-white/10" />
               ) : (
-                <div className="text-lg font-bold tabular-nums mt-0.5">
+                <span className="text-base font-bold tabular-nums text-white">
                   {homeCurrencySymbol}{fmtMoney(projected?.projectedSale ?? 0)}
-                </div>
+                </span>
               )}
             </div>
-            <div className="text-center">
-              <div className="text-[9px] uppercase tracking-wide text-white/40">Profit</div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-white">Profit</span>
               {loading && !projected ? (
-                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+                <Skeleton className="h-5 w-24 bg-white/10" />
               ) : (
-                <div className={`text-lg font-bold tabular-nums mt-0.5 ${
+                <span className={`text-base font-bold tabular-nums ${
                   projected?.projectedProfit != null && projected.projectedProfit >= 0
                     ? "text-emerald-300"
                     : projected?.projectedProfit != null
                       ? "text-red-300"
-                      : ""
+                      : "text-white"
                 }`}>
                   {projected?.projectedProfit != null ? `${homeCurrencySymbol}${fmtMoney(projected.projectedProfit)}` : "—"}
-                </div>
+                </span>
               )}
             </div>
-            <div className="text-center">
-              <div className="text-[9px] uppercase tracking-wide text-white/40">ROI</div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-white">ROI</span>
               {loading && !projected ? (
-                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+                <Skeleton className="h-5 w-24 bg-white/10" />
               ) : (
-                <div className={`text-lg font-bold tabular-nums mt-0.5 ${
+                <span className={`text-base font-bold tabular-nums ${
                   projected?.projectedRoi != null && projected.projectedRoi >= 30
                     ? "text-emerald-300"
                     : projected?.projectedRoi != null && projected.projectedRoi < 0
                       ? "text-red-300"
-                      : ""
+                      : "text-white"
                 }`}>
                   {projected?.projectedRoi != null ? `${projected.projectedRoi.toFixed(0)}%` : "—"}
-                </div>
+                </span>
               )}
             </div>
           </div>
