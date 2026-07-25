@@ -458,28 +458,28 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
     }
   }
 
-  let projectedSale = 0;
+  // Sale uses the same revenue base as Profit/ROI (items with a price AND a
+  // known unit cost) — keeping all three figures reconcilable by hand:
+  // Sale - Profit = Cost, and Profit / Cost = ROI.
   let roiRevenue = 0, roiFees = 0, roiCost = 0;
   let itemsWithRoi = 0;
   let itemsWithCachedFees = 0;
 
   for (const g of grouped.values()) {
     if (!g.price || g.unitCost <= 0 || g.qty <= 0) continue;
-    const revenue = g.price * g.qty;
-    projectedSale += revenue;
-    roiRevenue += revenue;
+    roiRevenue += g.price * g.qty;
     roiFees += estimateAmazonFees(g.feesJson, g.price) * g.qty;
     roiCost += g.unitCost * g.qty;
     itemsWithRoi += 1;
     if (g.feesJson) itemsWithCachedFees += 1;
   }
 
-  // Dollar-weighted (total profit / total cost), not a per-item average —
+  // Dollar-weighted ROI (total profit / total cost), not a per-item average —
   // this guarantees ROI's sign always matches Profit's sign. A real dollar
   // loss should never show as a positive ROI just because most individual
   // listings happen to be healthy.
   return {
-    projectedSale,
+    projectedSale: roiRevenue,
     projectedProfit: itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null,
     projectedRoi: roiCost > 0 ? ((roiRevenue - roiFees - roiCost) / roiCost) * 100 : null,
     itemsWithCachedFees,

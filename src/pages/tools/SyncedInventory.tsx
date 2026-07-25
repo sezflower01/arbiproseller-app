@@ -2881,9 +2881,12 @@ export default function SyncedInventory() {
                   // revenue minus Amazon fees (cached fees_json when available, else a
                   // flat 15% referral-only estimate — see estimateAmazonFees) minus cost,
                   // summed across every item with stock (Available+Reserved+Inbound+
-                  // Unfulfilled > 0). ROI is dollar-weighted (total profit / total cost)
-                  // rather than a plain per-item average, so its sign always matches
-                  // Profit's sign — a real dollar loss should never show as positive ROI.
+                  // Unfulfilled > 0) AND a known unit cost. Sale must use the SAME item
+                  // population as Profit/ROI — an item with a price but no cost data
+                  // would otherwise inflate Sale while being silently excluded from
+                  // Profit/ROI, making Sale minus Profit not equal the real cost basis.
+                  // ROI is dollar-weighted (total profit / total cost) rather than a
+                  // plain per-item average, so its sign always matches Profit's sign.
                   let itemRevenue = 0;
                   let itemFees = 0;
                   let itemRoiCost = 0;
@@ -2905,7 +2908,6 @@ export default function SyncedInventory() {
                     inboundValue: acc.inboundValue + (unitCost * inbound),
                     unfulfilledUnits: acc.unfulfilledUnits + unfulfilled,
                     unfulfilledValue: acc.unfulfilledValue + (unitCost * unfulfilled),
-                    projectedRevenue: acc.projectedRevenue + (item.price && totalQty > 0 ? item.price * totalQty : 0),
                     roiRevenue: acc.roiRevenue + itemRevenue,
                     roiFees: acc.roiFees + itemFees,
                     roiCost: acc.roiCost + itemRoiCost,
@@ -2914,10 +2916,13 @@ export default function SyncedInventory() {
                   };
                 }, {
                   availableUnits: 0, availableValue: 0, reservedUnits: 0, reservedValue: 0, inboundUnits: 0, inboundValue: 0, unfulfilledUnits: 0, unfulfilledValue: 0,
-                  projectedRevenue: 0, roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0, roiItemsWithCachedFees: 0,
+                  roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0, roiItemsWithCachedFees: 0,
                 });
 
-                const projectedSale = totals.projectedRevenue;
+                // Sale is the same revenue base ROI/Profit use (items with price + known
+                // cost) — keeping all three figures reconcilable by hand: Sale - Profit
+                // = Cost, and Profit / Cost = ROI.
+                const projectedSale = totals.roiRevenue;
                 const projectedProfit = totals.roiItems > 0
                   ? totals.roiRevenue - totals.roiFees - totals.roiCost
                   : null;
