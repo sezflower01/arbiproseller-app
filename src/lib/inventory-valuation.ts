@@ -460,15 +460,21 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
     }
   }
 
-  // Sale uses the same revenue base as Profit/ROI (items with a price AND a
-  // known unit cost) — keeping all three figures reconcilable by hand:
-  // Sale - Profit = Cost, and Profit / Cost = ROI.
+  // Sale/Profit/ROI use the same revenue base (items with a price AND a known
+  // unit cost) so they stay reconcilable by hand. Investment instead uses the
+  // Total Valuation basis (all items with cost + stock, price or not) so it
+  // always matches the Total Valuation figure shown alongside it — meaning
+  // Investment can be a little larger than Sale/Profit's implied cost when a
+  // few items have cost/stock but no live price yet.
   let roiRevenue = 0, roiFees = 0, roiCost = 0;
+  let allItemsValue = 0;
   let itemsWithRoi = 0;
   let itemsWithCachedFees = 0;
 
   for (const g of grouped.values()) {
-    if (!g.price || g.unitCost <= 0 || g.qty <= 0) continue;
+    if (g.unitCost <= 0 || g.qty <= 0) continue;
+    allItemsValue += g.unitCost * g.qty;
+    if (!g.price) continue;
     roiRevenue += g.price * g.qty;
     roiFees += estimateAmazonFees(g.feesJson, g.price) * g.qty;
     roiCost += g.unitCost * g.qty;
@@ -485,9 +491,7 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
   const profit = itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null;
   return {
     projectedSale: roiRevenue,
-    // Investment = the Cost basis itself (same thing as "Payout - Profit",
-    // Payout being Sale minus Fees) — read straight from the accumulator.
-    projectedInvestment: itemsWithRoi > 0 ? roiCost : null,
+    projectedInvestment: allItemsValue > 0 ? allItemsValue : null,
     projectedProfit: profit,
     projectedRoi: roiCost > 0 ? ((roiRevenue - roiFees - roiCost) / roiCost) * 100 : null,
     projectedMargin: profit != null && roiRevenue > 0 ? (profit / roiRevenue) * 100 : null,

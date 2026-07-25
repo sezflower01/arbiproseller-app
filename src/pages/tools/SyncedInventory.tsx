@@ -2919,17 +2919,23 @@ export default function SyncedInventory() {
                   roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0, roiItemsWithCachedFees: 0,
                 });
 
+                const totalUnits = totals.availableUnits + totals.reservedUnits + totals.inboundUnits + totals.unfulfilledUnits;
+                const totalValue = totals.availableValue + totals.reservedValue + totals.inboundValue + totals.unfulfilledValue;
+
                 // Sale is the same revenue base ROI/Profit use (items with price + known
-                // cost) — keeping all figures reconcilable by hand: Profit = Sale - Fees
-                // - Cost (so Sale - Profit = Fees + Cost, not Cost alone), and
-                // Profit / Cost = ROI.
+                // cost) — keeping those figures reconcilable by hand: Profit = Sale -
+                // Fees - Cost, and Profit / Cost = ROI.
                 const projectedSale = totals.roiRevenue;
                 const projectedProfit = totals.roiItems > 0
                   ? totals.roiRevenue - totals.roiFees - totals.roiCost
                   : null;
-                // Investment = the Cost basis directly — same thing as "Payout - Profit"
-                // (Payout being Sale minus Fees), just read straight from the accumulator.
-                const projectedInvestment = totals.roiItems > 0 ? totals.roiCost : null;
+                // Investment = Total Valuation (same cost × qty basis, no price required)
+                // rather than the price-gated roiCost — so Investment always matches the
+                // Total Valuation figure above, even when a few items have cost/stock but
+                // no live price yet. That means for accounts with such items, Investment
+                // can be a little larger than "Fees + Cost" implied by Sale/Profit alone —
+                // matching Total Valuation was the explicit tradeoff requested.
+                const projectedInvestment = totalValue > 0 ? totalValue : null;
                 const projectedRoi = totals.roiCost > 0
                   ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
                   : null;
@@ -2939,9 +2945,6 @@ export default function SyncedInventory() {
                   ? (projectedProfit / projectedSale) * 100
                   : null;
                 const roiEstimatedItems = totals.roiItems - totals.roiItemsWithCachedFees;
-
-                const totalUnits = totals.availableUnits + totals.reservedUnits + totals.inboundUnits + totals.unfulfilledUnits;
-                const totalValue = totals.availableValue + totals.reservedValue + totals.inboundValue + totals.unfulfilledValue;
                 
                  return (
                    <>
@@ -3030,7 +3033,7 @@ export default function SyncedInventory() {
                                {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                              </span>
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
-                               Payout − Profit
+                               = Total Valuation
                              </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
@@ -3224,7 +3227,7 @@ export default function SyncedInventory() {
                             {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            Payout − Profit (your cost basis)
+                            Your cost basis (matches Total Valuation)
                           </span>
                         </div>
                         <div className="flex flex-col">
