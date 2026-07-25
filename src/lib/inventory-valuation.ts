@@ -331,6 +331,7 @@ export interface ProjectedValuationMetrics {
   projectedSale: number;
   projectedProfit: number | null;
   projectedRoi: number | null;
+  projectedMargin: number | null;
   itemsWithCachedFees: number;
   itemsWithRoi: number;
 }
@@ -477,11 +478,15 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
   // Dollar-weighted ROI (total profit / total cost), not a per-item average —
   // this guarantees ROI's sign always matches Profit's sign. A real dollar
   // loss should never show as a positive ROI just because most individual
-  // listings happen to be healthy.
+  // listings happen to be healthy. Margin (Profit / Sale) is a different
+  // denominator than ROI (Profit / Cost) — both are useful, neither replaces
+  // the other.
+  const profit = itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null;
   return {
     projectedSale: roiRevenue,
-    projectedProfit: itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null,
+    projectedProfit: profit,
     projectedRoi: roiCost > 0 ? ((roiRevenue - roiFees - roiCost) / roiCost) * 100 : null,
+    projectedMargin: profit != null && roiRevenue > 0 ? (profit / roiRevenue) * 100 : null,
     itemsWithCachedFees,
     itemsWithRoi,
   };

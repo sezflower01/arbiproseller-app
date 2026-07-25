@@ -185,6 +185,22 @@ const MobileInventoryValuation = () => {
                 </span>
               )}
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-white">Margin</span>
+              {loading && !projected ? (
+                <Skeleton className="h-5 w-24 bg-white/10" />
+              ) : (
+                <span className={`text-base font-bold tabular-nums ${
+                  projected?.projectedMargin != null && projected.projectedMargin >= 0
+                    ? "text-emerald-300"
+                    : projected?.projectedMargin != null
+                      ? "text-red-300"
+                      : "text-white"
+                }`}>
+                  {projected?.projectedMargin != null ? `${projected.projectedMargin.toFixed(0)}%` : "—"}
+                </span>
+              )}
+            </div>
           </div>
           {projected && projected.itemsWithRoi > 0 && projected.itemsWithCachedFees < projected.itemsWithRoi && (
             <div className="mt-2 text-[10px] text-white/40 text-center">

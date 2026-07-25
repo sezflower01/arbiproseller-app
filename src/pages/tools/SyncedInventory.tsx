@@ -2929,6 +2929,11 @@ export default function SyncedInventory() {
                 const projectedRoi = totals.roiCost > 0
                   ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
                   : null;
+                // Margin = Profit / Sale (as opposed to ROI = Profit / Cost) — same
+                // dollar-weighted profit, different denominator.
+                const projectedMargin = projectedProfit != null && projectedSale > 0
+                  ? (projectedProfit / projectedSale) * 100
+                  : null;
                 const roiEstimatedItems = totals.roiItems - totals.roiItemsWithCachedFees;
 
                 const totalUnits = totals.availableUnits + totals.reservedUnits + totals.inboundUnits + totals.unfulfilledUnits;
@@ -3004,8 +3009,8 @@ export default function SyncedInventory() {
                              </span>
                            </div>
                          </div>
-                         {/* Projected Sale, Profit & ROI — if all current stock sold at today's live price */}
-                         <div className="grid grid-cols-3 gap-2 pt-2 mt-2 border-t border-white/10">
+                         {/* Projected Sale, Profit, ROI & Margin — if all current stock sold at today's live price */}
+                         <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/10">
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Sale</span>
                              <span className="text-sm font-bold text-white tabular-nums mt-0.5">
@@ -3037,6 +3042,18 @@ export default function SyncedInventory() {
                              </span>
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                {roiEstimatedItems > 0 ? `${totals.roiItemsWithCachedFees}/${totals.roiItems} actual fees` : 'actual fees'}
+                             </span>
+                           </div>
+                           <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
+                             <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Margin</span>
+                             <span className={cn(
+                               "text-sm font-bold tabular-nums mt-0.5",
+                               projectedMargin != null && projectedMargin >= 0 ? "text-emerald-400" : projectedMargin != null ? "text-red-400" : "text-white"
+                             )}>
+                               {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
+                             </span>
+                             <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
+                               Profit ÷ Sale
                              </span>
                            </div>
                          </div>
@@ -3216,6 +3233,20 @@ export default function SyncedInventory() {
                             {roiEstimatedItems > 0
                               ? `${totals.roiItemsWithCachedFees} of ${totals.roiItems} items use actual fees, rest estimated at 15%`
                               : 'Based on cached Amazon fees'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Projected Margin
+                          </span>
+                          <span className={cn(
+                            "text-lg font-bold tabular-nums",
+                            projectedMargin != null && projectedMargin >= 0 ? "text-green-500" : projectedMargin != null ? "text-red-500" : "text-foreground"
+                          )}>
+                            {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Profit ÷ Sale (vs ROI = Profit ÷ Cost)
                           </span>
                         </div>
                       </div>
