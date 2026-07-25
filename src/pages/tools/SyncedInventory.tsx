@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
@@ -3020,54 +3021,74 @@ export default function SyncedInventory() {
                          <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/10">
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Sale</span>
-                             <span className="text-sm font-bold text-white tabular-nums mt-0.5">
-                               ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                             </span>
+                             {isShowingCachedData ? (
+                               <Skeleton className="h-5 w-20 mt-0.5 bg-white/10" />
+                             ) : (
+                               <span className="text-sm font-bold text-white tabular-nums mt-0.5">
+                                 ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                               </span>
+                             )}
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                at today's price
                              </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Investment</span>
-                             <span className="text-sm font-bold text-white tabular-nums mt-0.5">
-                               {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                             </span>
+                             {isShowingCachedData ? (
+                               <Skeleton className="h-5 w-20 mt-0.5 bg-white/10" />
+                             ) : (
+                               <span className="text-sm font-bold text-white tabular-nums mt-0.5">
+                                 {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                               </span>
+                             )}
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                = Total Valuation
                              </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Profit</span>
-                             <span className={cn(
-                               "text-sm font-bold tabular-nums mt-0.5",
-                               projectedProfit != null && projectedProfit >= 0 ? "text-emerald-400" : projectedProfit != null ? "text-red-400" : "text-white"
-                             )}>
-                               {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                             </span>
+                             {isShowingCachedData ? (
+                               <Skeleton className="h-5 w-20 mt-0.5 bg-white/10" />
+                             ) : (
+                               <span className={cn(
+                                 "text-sm font-bold tabular-nums mt-0.5",
+                                 projectedProfit != null && projectedProfit >= 0 ? "text-emerald-400" : projectedProfit != null ? "text-red-400" : "text-white"
+                               )}>
+                                 {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                               </span>
+                             )}
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                {roiEstimatedItems > 0 ? `${totals.roiItemsWithCachedFees}/${totals.roiItems} actual fees` : 'actual fees'}
                              </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected ROI</span>
-                             <span className={cn(
-                               "text-sm font-bold tabular-nums mt-0.5",
-                               projectedRoi != null && projectedRoi >= 30 ? "text-emerald-400" : projectedRoi != null && projectedRoi < 0 ? "text-red-400" : "text-white"
-                             )}>
-                               {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
-                             </span>
+                             {isShowingCachedData ? (
+                               <Skeleton className="h-5 w-12 mt-0.5 bg-white/10" />
+                             ) : (
+                               <span className={cn(
+                                 "text-sm font-bold tabular-nums mt-0.5",
+                                 projectedRoi != null && projectedRoi >= 30 ? "text-emerald-400" : projectedRoi != null && projectedRoi < 0 ? "text-red-400" : "text-white"
+                               )}>
+                                 {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
+                               </span>
+                             )}
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                {roiEstimatedItems > 0 ? `${totals.roiItemsWithCachedFees}/${totals.roiItems} actual fees` : 'actual fees'}
                              </span>
                            </div>
                            <div className="col-span-2 flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Margin</span>
-                             <span className={cn(
-                               "text-sm font-bold tabular-nums mt-0.5",
-                               projectedMargin != null && projectedMargin >= 0 ? "text-emerald-400" : projectedMargin != null ? "text-red-400" : "text-white"
-                             )}>
-                               {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
-                             </span>
+                             {isShowingCachedData ? (
+                               <Skeleton className="h-5 w-12 mt-0.5 bg-white/10" />
+                             ) : (
+                               <span className={cn(
+                                 "text-sm font-bold tabular-nums mt-0.5",
+                                 projectedMargin != null && projectedMargin >= 0 ? "text-emerald-400" : projectedMargin != null ? "text-red-400" : "text-white"
+                               )}>
+                                 {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
+                               </span>
+                             )}
                              <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
                                Profit ÷ Sale
                              </span>
@@ -3212,9 +3233,13 @@ export default function SyncedInventory() {
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                             Projected Sale
                           </span>
-                          <span className="text-lg font-bold tabular-nums text-foreground">
-                            ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
+                          {isShowingCachedData ? (
+                            <Skeleton className="h-7 w-28 mt-0.5" />
+                          ) : (
+                            <span className="text-lg font-bold tabular-nums text-foreground">
+                              ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             If all current stock sold at today's price
                           </span>
@@ -3223,9 +3248,13 @@ export default function SyncedInventory() {
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                             Investment
                           </span>
-                          <span className="text-lg font-bold tabular-nums text-foreground">
-                            {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                          </span>
+                          {isShowingCachedData ? (
+                            <Skeleton className="h-7 w-28 mt-0.5" />
+                          ) : (
+                            <span className="text-lg font-bold tabular-nums text-foreground">
+                              {projectedInvestment != null ? `$${projectedInvestment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             Your cost basis (matches Total Valuation)
                           </span>
@@ -3234,12 +3263,16 @@ export default function SyncedInventory() {
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                             Projected Profit
                           </span>
-                          <span className={cn(
-                            "text-lg font-bold tabular-nums",
-                            projectedProfit != null && projectedProfit >= 0 ? "text-green-500" : projectedProfit != null ? "text-red-500" : "text-foreground"
-                          )}>
-                            {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                          </span>
+                          {isShowingCachedData ? (
+                            <Skeleton className="h-7 w-28 mt-0.5" />
+                          ) : (
+                            <span className={cn(
+                              "text-lg font-bold tabular-nums",
+                              projectedProfit != null && projectedProfit >= 0 ? "text-green-500" : projectedProfit != null ? "text-red-500" : "text-foreground"
+                            )}>
+                              {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             {roiEstimatedItems > 0
                               ? `Sale minus fees and cost (${totals.roiItemsWithCachedFees} of ${totals.roiItems} use actual fees)`
@@ -3250,12 +3283,16 @@ export default function SyncedInventory() {
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                             Projected ROI
                           </span>
-                          <span className={cn(
-                            "text-lg font-bold tabular-nums",
-                            projectedRoi != null && projectedRoi >= 30 ? "text-green-500" : projectedRoi != null && projectedRoi < 0 ? "text-red-500" : "text-foreground"
-                          )}>
-                            {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
-                          </span>
+                          {isShowingCachedData ? (
+                            <Skeleton className="h-7 w-16 mt-0.5" />
+                          ) : (
+                            <span className={cn(
+                              "text-lg font-bold tabular-nums",
+                              projectedRoi != null && projectedRoi >= 30 ? "text-green-500" : projectedRoi != null && projectedRoi < 0 ? "text-red-500" : "text-foreground"
+                            )}>
+                              {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
+                            </span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             {roiEstimatedItems > 0
                               ? `${totals.roiItemsWithCachedFees} of ${totals.roiItems} items use actual fees, rest estimated at 15%`
@@ -3266,12 +3303,16 @@ export default function SyncedInventory() {
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                             Projected Margin
                           </span>
-                          <span className={cn(
-                            "text-lg font-bold tabular-nums",
-                            projectedMargin != null && projectedMargin >= 0 ? "text-green-500" : projectedMargin != null ? "text-red-500" : "text-foreground"
-                          )}>
-                            {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
-                          </span>
+                          {isShowingCachedData ? (
+                            <Skeleton className="h-7 w-16 mt-0.5" />
+                          ) : (
+                            <span className={cn(
+                              "text-lg font-bold tabular-nums",
+                              projectedMargin != null && projectedMargin >= 0 ? "text-green-500" : projectedMargin != null ? "text-red-500" : "text-foreground"
+                            )}>
+                              {projectedMargin != null ? `${projectedMargin.toFixed(0)}%` : '—'}
+                            </span>
+                          )}
                           <span className="text-[10px] text-muted-foreground">
                             Profit ÷ Sale (vs ROI = Profit ÷ Cost)
                           </span>
