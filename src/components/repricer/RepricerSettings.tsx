@@ -901,50 +901,12 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════ */}
-        {/* 🔧 SYSTEM GROUP                              */}
-        {/* ═══════════════════════════════════════════ */}
-        {isAdmin && (
-          <div className="flex items-center gap-2 pt-4">
-            <Badge variant="outline" className="text-xs font-semibold tracking-wide uppercase px-3 py-1">
-              🔧 System
-            </Badge>
-            <div className="flex-1 border-t border-border" />
-          </div>
-        )}
-
-        {/* Device Nickname for Change History audit trail */}
-        {isAdmin && <DeviceNicknameInput />}
-
-        {/* Parallel Dispatcher Worker Shard — admin only */}
-        {isAdmin && (
-          <div className="space-y-2 border rounded-lg p-4 bg-muted/30">
-            <Label className="text-sm font-medium">Dispatch Worker Shard</Label>
-            <p className="text-xs text-muted-foreground">
-              Assign this user to a parallel dispatcher worker. Workers A and B run independently to increase throughput.
-            </p>
-            <Select
-              value={(settings as any)?.dispatch_worker_shard || 'A'}
-              onValueChange={async (val) => {
-                try {
-                  await supabase.from("repricer_settings").update({ dispatch_worker_shard: val } as any).eq("user_id", user?.id);
-                  toast.success(`Worker shard set to ${val}`);
-                  fetchSettings();
-                } catch (e: any) {
-                  toast.error("Failed: " + e.message);
-                }
-              }}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="A">Worker A</SelectItem>
-                <SelectItem value="B">Worker B</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        {/* 🔧 System group (Device Nickname, Dispatch Worker Shard) hidden
+            2026-07-25 per cleanup request — internal engineering controls not
+            meant for regular account control panel use. DeviceNicknameInput
+            component, getDeviceNickname/setDeviceNickname, and the
+            dispatch_worker_shard update handler are all still defined/wired
+            in this file — just re-add the JSX below if needed again. */}
 
         {/* Save Button */}
         <Button onClick={saveSettings} disabled={saving} className="w-full">
