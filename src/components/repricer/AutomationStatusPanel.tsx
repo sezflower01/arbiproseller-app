@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle, AlertTriangle, Zap } from "lucide-react";
+import { Clock, CheckCircle, Zap } from "lucide-react";
 
 interface AutomationStatusPanelProps {
   isAdmin?: boolean;
@@ -139,9 +139,9 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
               )}
               {isAdmin && lastRunDate && lastEvalDate && lastRunDate < lastEvalDate && (
                 <div className="flex items-center gap-1.5 mt-1">
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
                   <span className="text-xs text-foreground/80">
-                     Legacy scheduler idle. Unified dispatch is currently driving repricer activity.
+                     Your prices are being checked by our newer, faster system — this is normal, no action needed.
                    </span>
                 </div>
               )}
@@ -161,8 +161,8 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
           {isAdmin && liveActivity && (
             <div className="mt-2 pt-2 border-t text-sm">
               <div className="flex gap-4 text-foreground/90">
-                <span><strong className="text-foreground">{liveActivity.writes24h}</strong> writes (24h)</span>
-                <span><strong className="text-foreground">{liveActivity.evals24h}</strong> evals (24h)</span>
+                <span><strong className="text-foreground">{liveActivity.writes24h}</strong> prices changed (last 24h)</span>
+                <span><strong className="text-foreground">{liveActivity.evals24h}</strong> listings checked (last 24h)</span>
               </div>
             </div>
           )}
@@ -173,23 +173,26 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
         <div className="p-4 border rounded-lg bg-muted/30">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-5 w-5 text-primary" />
-            <span className="font-semibold text-base text-foreground">Live Activity Source (24h)</span>
+            <span className="font-semibold text-base text-foreground">What's Checking Your Prices (last 24h)</span>
           </div>
           <p className="text-sm text-foreground/80 mb-3">
-            Shows which subsystem is actually generating evaluations and writes right now.
+            Breaks down which part of the repricer checked and updated your listings recently.
           </p>
           <div className="space-y-1.5">
             {Object.entries(liveActivity.bySource)
               .sort(([, a], [, b]) => b.evals - a.evals)
               .map(([source, stats]) => {
+                // Matches the exact trigger_source values written by
+                // repricer-scheduler/priority-cron/batch-update/hardening —
+                // keep in sync with those, or this silently falls back to
+                // printing the raw internal name below.
                 const sourceLabels: Record<string, string> = {
-                  cron: "⏰ Cron Scheduler",
-                  sweep: "🔄 Sequential Sweep",
-                  turbo: "⚡ Turbo / Priority",
-                  manual: "👤 Manual Run",
-                  bb_alert: "🔔 Buy Box Alert",
-                  dispatch: "📡 Unified Dispatch",
-                  unknown: "❓ Unknown",
+                  scheduler: "⏰ Regular Schedule",
+                  priority_cron: "🔥 Priority Check (urgent items)",
+                  manual_run_selected: "👤 You Triggered This",
+                  manual: "👤 Manual Check",
+                  circuit_breaker: "🛡️ Safety Pause",
+                  unknown: "❓ Other",
                 };
                 const label = sourceLabels[source] || `📡 ${source}`;
                 const lastAt = stats.lastAt ? new Date(stats.lastAt) : null;
@@ -200,10 +203,10 @@ export default function AutomationStatusPanel({ isAdmin = false }: AutomationSta
                     <span className="font-medium text-foreground">{label}</span>
                     <div className="flex items-center gap-3">
                       <span className="text-foreground/90">
-                        <strong className="text-foreground">{stats.writes}</strong> writes
+                        <strong className="text-foreground">{stats.writes}</strong> changed
                       </span>
                       <span className="text-foreground/90">
-                        <strong className="text-foreground">{stats.evals}</strong> evals
+                        <strong className="text-foreground">{stats.evals}</strong> checked
                       </span>
                       {minutesAgo !== null && (
                         <span className={`text-xs ${minutesAgo < 20 ? "text-green-500" : minutesAgo < 60 ? "text-amber-500" : "text-foreground/70"}`}>
