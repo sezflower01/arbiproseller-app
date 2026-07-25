@@ -142,6 +142,9 @@ export default function WorkersPanel() {
               className="pl-8"
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            Showing {filteredUsers.length} of {users.length} accounts loaded
+          </p>
           <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
             {filteredUsers.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">No accounts match your search.</p>
