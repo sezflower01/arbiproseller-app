@@ -311,6 +311,35 @@ const CopyAsinButton = ({ asin }: { asin: string }) => {
   );
 };
 
+// Fetches the repricer's per-ASIN fee cache (real fba_fee_fixed dollar amounts +
+// referral_rate, populated by past repricer evaluations — not a live API call here)
+// so Inventory Valuation's ROI can use the same real fee data the repricer already
+// has, instead of falling back to a flat 15% guess for every ASIN. US-only since
+// this page's inventory table is US-only. Paginated to avoid PostgREST's 1000-row cap.
+const fetchFeeCacheMap = async (userId: string): Promise<Map<string, { fba_fee_fixed: number; referral_rate: number }>> => {
+  const map = new Map<string, { fba_fee_fixed: number; referral_rate: number }>();
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("asin_fee_cache")
+      .select("asin, fba_fee_fixed, referral_rate")
+      .eq("user_id", userId)
+      .eq("marketplace", "US")
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.warn("[fetchFeeCacheMap] query failed:", error);
+      break;
+    }
+    for (const row of data || []) {
+      if (row.asin) map.set(row.asin, { fba_fee_fixed: Number(row.fba_fee_fixed) || 0, referral_rate: Number(row.referral_rate) || 0.15 });
+    }
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return map;
+};
+
 // Fetch function extracted for React Query
 const fetchInventoryData = async (userId: string, salesPeriodDays: number): Promise<InventoryItem[]> => {
   console.log("Fetching synced inventory with keyset pagination...");
@@ -2138,6 +2167,24 @@ export default function SyncedInventory() {
     placeholderData: idbPlaceholder, // Show cached data instantly while fetching
   });
 
+  // Repricer's real per-ASIN fee cache (see fetchFeeCacheMap) — used as the ROI
+  // column's fee source when inventory.fees_json isn't populated, before falling
+  // back to the flat 15% estimate.
+  const { data: feeCacheByAsin = new Map<string, { fba_fee_fixed: number; referral_rate: number }>() } = useQuery({
+    queryKey: ['asin-fee-cache-map', user?.id],
+    queryFn: () => fetchFeeCacheMap(user!.id),
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  // Resolves the best available fee source for ROI math: inventory.fees_json
+  // first (rarely populated on this account), then the repricer's asin_fee_cache
+  // (real per-ASIN data), else null — estimateAmazonFees/estimateRoi fall back to
+  // a flat 15% estimate only when this returns null.
+  const resolveFees = (item: { asin: string; fees_json: any }) =>
+    item.fees_json || feeCacheByAsin.get(item.asin) || null;
+
   // Phase 7+ — track which displayed ASINs have a Created Listing so the cost
   // badge can show "Manual / No Purchase Record" and the
   // "Create purchase record" CTA only appears when no record exists.
@@ -2548,8 +2595,8 @@ export default function SyncedInventory() {
       return sortDirection === 'asc' ? aDate - bDate : bDate - aDate;
     }
     if (sortBy === 'roi') {
-      const aRoi = estimateRoi(a.price, a.unit_cost, a.fees_json) ?? -Infinity;
-      const bRoi = estimateRoi(b.price, b.unit_cost, b.fees_json) ?? -Infinity;
+      const aRoi = estimateRoi(a.price, a.unit_cost, resolveFees(a)) ?? -Infinity;
+      const bRoi = estimateRoi(b.price, b.unit_cost, resolveFees(b)) ?? -Infinity;
       return sortDirection === 'asc' ? aRoi - bRoi : bRoi - aRoi;
     }
     if (sortBy === 'sales') {
@@ -2847,11 +2894,12 @@ export default function SyncedInventory() {
                   let hasRoi = false;
                   let hasCachedFees = false;
                   if (item.price && unitCost > 0 && totalQty > 0) {
+                    const fees = resolveFees(item);
                     itemRevenue = item.price * totalQty;
-                    itemFees = estimateAmazonFees(item.fees_json, item.price) * totalQty;
+                    itemFees = estimateAmazonFees(fees, item.price) * totalQty;
                     itemRoiCost = unitCost * totalQty;
-                    hasCachedFees = !!item.fees_json;
-                    const roi = estimateRoi(item.price, unitCost, item.fees_json);
+                    hasCachedFees = !!fees;
+                    const roi = estimateRoi(item.price, unitCost, fees);
                     if (roi != null) {
                       itemRoiPercent = roi;
                       hasRoi = true;
@@ -3287,7 +3335,7 @@ export default function SyncedInventory() {
                     const physical = (item.available ?? 0) + (item.reserved ?? 0);
                     const totalUnits = physical + (item.inbound ?? 0);
                     const valueStock = (item.unit_cost ?? 0) * totalUnits;
-                    const roi = estimateRoi(item.price, item.unit_cost, item.fees_json);
+                    const roi = estimateRoi(item.price, item.unit_cost, resolveFees(item));
                     return (
                       <div key={item.id} className="rounded-lg border border-border bg-card p-3 flex gap-3">
                         {item.image_url ? (
@@ -3405,7 +3453,7 @@ export default function SyncedInventory() {
                         // Actual ROI from live price/cost, using cached Amazon fees when
                         // available or a flat 15% referral-only estimate otherwise (see
                         // estimateRoi) — never requires a live API call to display.
-                        const roi = estimateRoi(item.price, item.unit_cost, item.fees_json);
+                        const roi = estimateRoi(item.price, item.unit_cost, resolveFees(item));
 
                         return (
                           <tr key={item.id} className={`border-b border-border hover:bg-muted/50 transition-colors ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/30'}`}>
@@ -3598,12 +3646,12 @@ export default function SyncedInventory() {
                                     roi >= 30 ? "text-green-500" : roi < 0 ? "text-red-500" : ""
                                   )}
                                   title={
-                                    item.fees_json
+                                    resolveFees(item)
                                       ? "Actual ROI using cached Amazon fees — click to open calculator"
                                       : "Estimated ROI (no cached Amazon fees yet — assumes a flat 15% referral fee). Click to open the calculator for exact fees."
                                   }
                                 >
-                                  {item.fees_json ? '' : '~'}{roi.toFixed(0)}%
+                                  {resolveFees(item) ? '' : '~'}{roi.toFixed(0)}%
                                 </button>
                               ) : (
                                 <Button
