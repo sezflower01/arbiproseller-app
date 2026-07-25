@@ -237,6 +237,49 @@ const CALCULATOR_CARDS: StandaloneCard[] = [
   },
 ];
 
+// Everything that can tell you something is wrong -- errors, health checks,
+// worker load, cron/job diagnostics -- gathered in one place so you don't have
+// to remember which category each one originally lived under. These are the
+// same cards/pages as elsewhere on this page (intentionally duplicated here
+// for accessibility, not moved) -- see 2026-07-25 request.
+const ALERTS_CARDS: StandaloneCard[] = [
+  {
+    title: "Error Log",
+    desc: "All errors across every account: frontend, repricer, and backend -- grouped and categorized (infra vs Amazon throttling vs app).",
+    path: "/tools/error-log",
+    Icon: HeartPulse,
+    accent: "from-red-500/15 to-rose-500/5 border-red-400/30 text-red-300",
+  },
+  {
+    title: "Database Maintenance",
+    desc: "Cleanup retention, health alerts, performance snapshot, and VACUUM controls.",
+    path: "/tools/database-maintenance",
+    Icon: Database,
+    accent: "from-cyan-500/15 to-blue-500/5 border-cyan-400/30 text-cyan-300",
+  },
+  {
+    title: "Automation Status",
+    desc: "Live scheduler status, last run, and activity source breakdown.",
+    path: "/tools/repricer/automation-status",
+    Icon: Clock,
+    accent: "from-blue-500/15 to-sky-500/5 border-blue-400/30 text-blue-300",
+  },
+  {
+    title: "Workers",
+    desc: "Shard load per worker -- spot an overloaded or unprovisioned shard before it becomes a problem.",
+    path: "/tools/repricer/workers",
+    Icon: Server,
+    accent: "from-slate-500/15 to-zinc-500/5 border-slate-400/30 text-slate-300",
+  },
+  {
+    title: "Cron Diagnostics",
+    desc: "Inspect scheduled jobs, queues, and platform health.",
+    path: "/tools/cron-diagnostics",
+    Icon: Stethoscope,
+    accent: "from-amber-500/15 to-amber-500/5 border-amber-400/30 text-amber-300",
+  },
+];
+
 // Repricer admin tools -- moved out of the Repricer page's own tab bar so
 // Assignments/Rules/Settings stay the only tabs everyone sees there.
 const REPRICER_ADMIN_CARDS: StandaloneCard[] = [
@@ -492,6 +535,17 @@ export default function AdminOnlySettings() {
           Internal tools moved out of the main Tools Hub — visible only to admin accounts.
         </p>
       </div>
+
+      <section>
+        <header className="mb-5">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-300" />
+            Alerts & Monitoring
+          </h3>
+          <p className="text-sm text-gray-400">Errors, health checks, and worker load -- everything that flags a problem, in one place.</p>
+        </header>
+        <CardGrid cards={ALERTS_CARDS} />
+      </section>
 
       <section>
         <CardGrid cards={STANDALONE_CARDS} />
