@@ -2867,6 +2867,9 @@ export default function SyncedInventory() {
                 });
 
                 const projectedSale = totals.projectedRevenue;
+                const projectedProfit = totals.roiItems > 0
+                  ? totals.roiRevenue - totals.roiFees - totals.roiCost
+                  : null;
                 const projectedRoi = totals.roiCost > 0
                   ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
                   : null;
@@ -2945,12 +2948,21 @@ export default function SyncedInventory() {
                              </span>
                            </div>
                          </div>
-                         {/* Projected Sale & ROI — if all current stock sold at today's live price */}
-                         <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/10">
+                         {/* Projected Sale, Profit & ROI — if all current stock sold at today's live price */}
+                         <div className="grid grid-cols-3 gap-2 pt-2 mt-2 border-t border-white/10">
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Sale</span>
                              <span className="text-sm font-bold text-white tabular-nums mt-0.5">
                                ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                             </span>
+                           </div>
+                           <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
+                             <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Profit</span>
+                             <span className={cn(
+                               "text-sm font-bold tabular-nums mt-0.5",
+                               projectedProfit != null && projectedProfit >= 0 ? "text-emerald-400" : projectedProfit != null ? "text-red-400" : "text-white"
+                             )}>
+                               {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                              </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
@@ -3091,11 +3103,12 @@ export default function SyncedInventory() {
                         })()}
                       </div>
 
-                      {/* Projected Sale & ROI — if all current stock (Available + Reserved +
-                          Inbound + Unfulfilled) sold at today's live price. ROI is computed
-                          only from items with cached Amazon fees (fees_json — same cache the
-                          per-row ROI column reads) so the % stays accurate; items without
-                          cached fees still count toward Projected Sale (price × qty only). */}
+                      {/* Projected Sale, Profit & ROI — if all current stock (Available +
+                          Reserved + Inbound + Unfulfilled) sold at today's live price.
+                          Profit/ROI use cached Amazon fees (fees_json) when available, else
+                          a flat 15% referral-only estimate (see estimateAmazonFees) — same
+                          fallback the repricer uses, so they're never gated behind a fee
+                          cache. Projected Sale is price × qty only, no fee assumption. */}
                       <div className="mt-4 pt-4 border-t border-border/50 flex items-center gap-6 flex-wrap">
                         <div className="flex flex-col">
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -3106,6 +3119,20 @@ export default function SyncedInventory() {
                           </span>
                           <span className="text-[10px] text-muted-foreground">
                             If all current stock sold at today's price
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Projected Profit
+                          </span>
+                          <span className={cn(
+                            "text-lg font-bold tabular-nums",
+                            projectedProfit != null && projectedProfit >= 0 ? "text-green-500" : projectedProfit != null ? "text-red-500" : "text-foreground"
+                          )}>
+                            {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Sale minus fees and cost
                           </span>
                         </div>
                         <div className="flex flex-col">
