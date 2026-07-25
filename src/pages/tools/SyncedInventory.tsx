@@ -2803,7 +2803,31 @@ export default function SyncedInventory() {
                   const reserved = item.reserved || 0;
                   const inbound = item.inbound || 0;
                   const unfulfilled = item.unfulfilled || 0;
-                  
+                  const totalQty = available + reserved + inbound + unfulfilled;
+
+                  // Projected Sale: price × total qty, for any item with a live price —
+                  // a pure revenue figure, no fee assumptions needed.
+                  // Projected ROI: only accumulated for items with cached Amazon fees
+                  // (fees_json — the same fee cache the per-row ROI column reads), so
+                  // the ROI % stays accurate rather than guessing fees for uncached items.
+                  let itemRevenue = 0;
+                  let itemFees = 0;
+                  let itemRoiCost = 0;
+                  let hasFees = false;
+                  if (item.price && totalQty > 0) {
+                    itemRevenue = item.price * totalQty;
+                    if (item.fees_json) {
+                      itemFees = (
+                        Number(item.fees_json.referralFee || 0) +
+                        Number(item.fees_json.fbaFee || 0) +
+                        Number(item.fees_json.variableClosingFee || 0) +
+                        Number(item.fees_json.otherFees || 0)
+                      ) * totalQty;
+                      itemRoiCost = unitCost * totalQty;
+                      hasFees = true;
+                    }
+                  }
+
                   return {
                     availableUnits: acc.availableUnits + available,
                     availableValue: acc.availableValue + (unitCost * available),
@@ -2813,9 +2837,24 @@ export default function SyncedInventory() {
                     inboundValue: acc.inboundValue + (unitCost * inbound),
                     unfulfilledUnits: acc.unfulfilledUnits + unfulfilled,
                     unfulfilledValue: acc.unfulfilledValue + (unitCost * unfulfilled),
+                    projectedRevenue: acc.projectedRevenue + itemRevenue,
+                    projectedPricedItems: acc.projectedPricedItems + (item.price && totalQty > 0 ? 1 : 0),
+                    roiRevenue: acc.roiRevenue + (hasFees ? itemRevenue : 0),
+                    roiFees: acc.roiFees + itemFees,
+                    roiCost: acc.roiCost + itemRoiCost,
+                    roiItems: acc.roiItems + (hasFees ? 1 : 0),
                   };
-                }, { availableUnits: 0, availableValue: 0, reservedUnits: 0, reservedValue: 0, inboundUnits: 0, inboundValue: 0, unfulfilledUnits: 0, unfulfilledValue: 0 });
-                
+                }, {
+                  availableUnits: 0, availableValue: 0, reservedUnits: 0, reservedValue: 0, inboundUnits: 0, inboundValue: 0, unfulfilledUnits: 0, unfulfilledValue: 0,
+                  projectedRevenue: 0, projectedPricedItems: 0, roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0,
+                });
+
+                const projectedSale = totals.projectedRevenue;
+                const projectedRoi = totals.roiCost > 0
+                  ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
+                  : null;
+                const roiMissingItems = totals.projectedPricedItems - totals.roiItems;
+
                 const totalUnits = totals.availableUnits + totals.reservedUnits + totals.inboundUnits + totals.unfulfilledUnits;
                 const totalValue = totals.availableValue + totals.reservedValue + totals.inboundValue + totals.unfulfilledValue;
                 
@@ -2886,6 +2925,24 @@ export default function SyncedInventory() {
                              </span>
                              <span className="text-[9px] text-white/50 tabular-nums">
                                {totals.inboundUnits.toLocaleString()} units
+                             </span>
+                           </div>
+                         </div>
+                         {/* Projected Sale & ROI — if all current stock sold at today's live price */}
+                         <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/10">
+                           <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
+                             <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Sale</span>
+                             <span className="text-sm font-bold text-white tabular-nums mt-0.5">
+                               ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                             </span>
+                           </div>
+                           <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
+                             <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected ROI</span>
+                             <span className={cn(
+                               "text-sm font-bold tabular-nums mt-0.5",
+                               projectedRoi != null && projectedRoi >= 30 ? "text-emerald-400" : projectedRoi != null && projectedRoi < 0 ? "text-red-400" : "text-white"
+                             )}>
+                               {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
                              </span>
                            </div>
                          </div>
@@ -3015,6 +3072,41 @@ export default function SyncedInventory() {
                             </TooltipProvider>
                           );
                         })()}
+                      </div>
+
+                      {/* Projected Sale & ROI — if all current stock (Available + Reserved +
+                          Inbound + Unfulfilled) sold at today's live price. ROI is computed
+                          only from items with cached Amazon fees (fees_json — same cache the
+                          per-row ROI column reads) so the % stays accurate; items without
+                          cached fees still count toward Projected Sale (price × qty only). */}
+                      <div className="mt-4 pt-4 border-t border-border/50 flex items-center gap-6 flex-wrap">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Projected Sale
+                          </span>
+                          <span className="text-lg font-bold tabular-nums text-foreground">
+                            ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            If all current stock sold at today's price
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Projected ROI
+                          </span>
+                          <span className={cn(
+                            "text-lg font-bold tabular-nums",
+                            projectedRoi != null && projectedRoi >= 30 ? "text-green-500" : projectedRoi != null && projectedRoi < 0 ? "text-red-500" : "text-foreground"
+                          )}>
+                            {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {roiMissingItems > 0
+                              ? `Based on ${totals.roiItems} of ${totals.projectedPricedItems} priced items with cached fees`
+                              : 'Based on cached Amazon fees'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                    </div>
