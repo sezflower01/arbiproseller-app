@@ -154,6 +154,16 @@ const MobileInventoryValuation = () => {
               )}
             </div>
             <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-white">Investment</span>
+              {loading && !projected ? (
+                <Skeleton className="h-5 w-24 bg-white/10" />
+              ) : (
+                <span className="text-base font-bold tabular-nums text-white">
+                  {projected?.projectedInvestment != null ? `${homeCurrencySymbol}${fmtMoney(projected.projectedInvestment)}` : "—"}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-white">Profit</span>
               {loading && !projected ? (
                 <Skeleton className="h-5 w-24 bg-white/10" />

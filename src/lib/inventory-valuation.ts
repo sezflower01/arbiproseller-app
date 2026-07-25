@@ -329,6 +329,7 @@ async function getInventoryValuationTotalsLive(userId: string): Promise<Inventor
 
 export interface ProjectedValuationMetrics {
   projectedSale: number;
+  projectedInvestment: number | null;
   projectedProfit: number | null;
   projectedRoi: number | null;
   projectedMargin: number | null;
@@ -484,6 +485,9 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
   const profit = itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null;
   return {
     projectedSale: roiRevenue,
+    // Investment = the Cost basis itself (same thing as "Payout - Profit",
+    // Payout being Sale minus Fees) — read straight from the accumulator.
+    projectedInvestment: itemsWithRoi > 0 ? roiCost : null,
     projectedProfit: profit,
     projectedRoi: roiCost > 0 ? ((roiRevenue - roiFees - roiCost) / roiCost) * 100 : null,
     projectedMargin: profit != null && roiRevenue > 0 ? (profit / roiRevenue) * 100 : null,
