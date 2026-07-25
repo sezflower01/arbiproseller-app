@@ -3019,6 +3019,9 @@ export default function SyncedInventory() {
                              <span className="text-sm font-bold text-white tabular-nums mt-0.5">
                                ${projectedSale.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                              </span>
+                             <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
+                               at today's price
+                             </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected Profit</span>
@@ -3028,6 +3031,9 @@ export default function SyncedInventory() {
                              )}>
                                {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                              </span>
+                             <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
+                               {roiEstimatedItems > 0 ? `${totals.roiItemsWithCachedFees}/${totals.roiItems} actual fees` : 'actual fees'}
+                             </span>
                            </div>
                            <div className="flex flex-col items-center px-2 py-2 rounded-lg bg-white/5 border border-white/10">
                              <span className="text-[9px] font-medium text-white/60 uppercase tracking-wide">Projected ROI</span>
@@ -3036,6 +3042,9 @@ export default function SyncedInventory() {
                                projectedRoi != null && projectedRoi >= 30 ? "text-emerald-400" : projectedRoi != null && projectedRoi < 0 ? "text-red-400" : "text-white"
                              )}>
                                {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
+                             </span>
+                             <span className="text-[7px] text-white/40 leading-tight text-center mt-0.5">
+                               {roiEstimatedItems > 0 ? `${totals.roiItemsWithCachedFees}/${totals.roiItems} actual fees` : 'actual fees'}
                              </span>
                            </div>
                          </div>
