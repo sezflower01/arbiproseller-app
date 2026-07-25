@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -302,6 +302,13 @@ const REPRICER_ADMIN_CARDS: StandaloneCard[] = [
     path: "/tools/repricer/account-control",
     Icon: Users,
     accent: "from-rose-500/15 to-pink-500/5 border-rose-400/30 text-rose-300",
+  },
+  {
+    title: "Workers",
+    desc: "Manage parallel dispatch worker (shard) assignment as the user base grows.",
+    path: "/tools/repricer/workers",
+    Icon: Server,
+    accent: "from-slate-500/15 to-zinc-500/5 border-slate-400/30 text-slate-300",
   },
   {
     title: "Error Log",

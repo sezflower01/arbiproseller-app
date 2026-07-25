@@ -406,3 +406,6 @@ verify_jwt = false
 
 [functions.fbm-quick-check-all]
 verify_jwt = false
+
+[functions.admin-workers]
+verify_jwt = true

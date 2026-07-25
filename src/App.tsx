@@ -210,6 +210,7 @@ const RepricerRuleBehavior = lazyWithRetry(() => import("./pages/tools/RepricerR
 const RepricerCheckedAsins = lazyWithRetry(() => import("./pages/tools/RepricerCheckedAsins"));
 const RepricerSimulation = lazyWithRetry(() => import("./pages/tools/RepricerSimulation"));
 const RepricerAccountControl = lazyWithRetry(() => import("./pages/tools/RepricerAccountControl"));
+const RepricerWorkers = lazyWithRetry(() => import("./pages/tools/RepricerWorkers"));
 const RepricerSmartEngine = lazyWithRetry(() => import("./pages/tools/RepricerSmartEngine"));
 const OperatorQueue = lazyWithRetry(() => import("./pages/tools/OperatorQueue"));
 const CommercialTimeline = lazyWithRetry(() => import("./pages/tools/CommercialTimeline"));
@@ -356,6 +357,7 @@ function App() {
                   <Route path="/tools/repricer/checked-asins" element={<ProtectedRoute><RepricerCheckedAsins /></ProtectedRoute>} />
                   <Route path="/tools/repricer/simulation" element={<ProtectedRoute><RepricerSimulation /></ProtectedRoute>} />
                   <Route path="/tools/repricer/account-control" element={<ProtectedRoute><RepricerAccountControl /></ProtectedRoute>} />
+                  <Route path="/tools/repricer/workers" element={<ProtectedRoute><RepricerWorkers /></ProtectedRoute>} />
                   <Route path="/tools/repricer/smart-engine" element={<ProtectedRoute><RepricerSmartEngine /></ProtectedRoute>} />
                   <Route path="/tools/repricer/operator-queue" element={<ProtectedRoute><OperatorQueue /></ProtectedRoute>} />
                   <Route path="/tools/repricer/timeline/:asin" element={<ProtectedRoute><CommercialTimeline /></ProtectedRoute>} />
