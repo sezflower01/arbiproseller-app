@@ -3452,18 +3452,34 @@ export default function SyncedInventory() {
                               })()}
                             </td>
                             <td className="px-1 py-2 text-xs">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 gap-1"
-                                onClick={() => {
-                                  setSelectedRoiItem(item);
-                                  setRoiDialogOpen(true);
-                                }}
-                              >
-                                <Calculator className="h-3 w-3" />
-                                ROI
-                              </Button>
+                              {roi != null ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedRoiItem(item);
+                                    setRoiDialogOpen(true);
+                                  }}
+                                  className={cn(
+                                    "font-semibold hover:underline",
+                                    roi >= 30 ? "text-green-500" : roi < 0 ? "text-red-500" : ""
+                                  )}
+                                  title="Click to open the ROI calculator"
+                                >
+                                  {roi.toFixed(0)}%
+                                </button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 gap-1"
+                                  onClick={() => {
+                                    setSelectedRoiItem(item);
+                                    setRoiDialogOpen(true);
+                                  }}
+                                  title="No cached fees yet — open the calculator to check ROI"
+                                >
+                                  <Calculator className="h-3 w-3" />
+                                </Button>
+                              )}
                             </td>
                             <td className="px-1 py-2 text-center text-xs">{item.available ?? 0}</td>
                             <td className="px-1 py-2 text-center text-xs">{item.reserved ?? 0}</td>
