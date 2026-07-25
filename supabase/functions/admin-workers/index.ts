@@ -64,12 +64,23 @@ serve(async (req) => {
       const rows = settingsRows || [];
       const userIds = rows.map((r: any) => r.user_id);
 
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, email, first_name, last_name")
-        .in("id", userIds.length > 0 ? userIds : ["00000000-0000-0000-0000-000000000000"]);
+      // profiles can be missing a row for a given account (e.g. incomplete
+      // signup, test accounts) -- auth.users is the authoritative source
+      // every registered account actually has, same pattern as
+      // admin-manage-account's list_users.
+      const [{ data: profiles }, { data: authUsersPage, error: listErr }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, email, first_name, last_name")
+          .in("id", userIds.length > 0 ? userIds : ["00000000-0000-0000-0000-000000000000"]),
+        supabase.auth.admin.listUsers({ perPage: 1000 }),
+      ]);
+      if (listErr) log("listUsers error", { message: listErr.message });
+
       const profileMap: Record<string, any> = {};
       (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+      const authEmailMap: Record<string, string> = {};
+      (authUsersPage?.users || []).forEach((u: any) => { authEmailMap[u.id] = u.email; });
 
       const shardCounts: Record<string, { total: number; active: number }> = {};
       for (const row of rows) {
@@ -83,7 +94,7 @@ serve(async (req) => {
         const p = profileMap[r.user_id];
         return {
           user_id: r.user_id,
-          email: p?.email || "unknown",
+          email: p?.email || authEmailMap[r.user_id] || "unknown",
           name: [p?.first_name, p?.last_name].filter(Boolean).join(" ") || null,
           shard: r.dispatch_worker_shard || "A",
           scheduler_enabled: !!r.scheduler_enabled,
