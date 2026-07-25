@@ -146,6 +146,45 @@ type SlowSellingResult = {
   flags: string[];
 };
 
+// Amazon fee estimator: reads cached fees_json when available (either the legacy
+// dollar-amount shape — referralFee/fbaFee/variableClosingFee — or the rate-based
+// shape — referral_rate/fba_fee_fixed), same formats the repricer's own
+// calculateRoiFromPrice reads. When no fee cache exists yet (fees_json null),
+// falls back to a flat 15% referral-only estimate — the same fallback the
+// repricer uses — so ROI is always computable from price + cost alone and
+// never gated behind waiting for a fee-cache backfill or a live API call.
+function estimateAmazonFees(feesJson: any, price: number): number {
+  if (!feesJson) return price * 0.15;
+  const otherFees = Number(
+    feesJson.otherFees ?? feesJson.other_fees ?? feesJson.fixedClosingFee ??
+    feesJson.fixed_closing_fee ?? feesJson.closingFee ?? feesJson.FixedClosingFee ?? 0
+  );
+  if (feesJson.referralFee !== undefined || feesJson.fbaFee !== undefined) {
+    const referralFee = Number(feesJson.referralFee || 0);
+    const fbaFee = Number(feesJson.fbaFee || 0);
+    const variableClosingFee = Number(feesJson.variableClosingFee || 0);
+    const feesAtPrice = feesJson.price ? Number(feesJson.price) : 0;
+    if (feesAtPrice > 0 && Math.abs(feesAtPrice - price) > 0.01) {
+      const referralRate = referralFee / feesAtPrice;
+      return (price * referralRate) + fbaFee + variableClosingFee + otherFees;
+    }
+    return referralFee + fbaFee + variableClosingFee + otherFees;
+  }
+  if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
+    const referralRate = Number(feesJson.referral_rate ?? 0.15);
+    const fbaFeeFixed = Number(feesJson.fba_fee_fixed ?? 0);
+    const variableClosingFee = Number(feesJson.variable_closing_fee ?? feesJson.variableClosingFee ?? 0);
+    return (price * referralRate) + fbaFeeFixed + variableClosingFee + otherFees;
+  }
+  return price * 0.15;
+}
+
+function estimateRoi(price: number | null | undefined, unitCost: number | null | undefined, feesJson: any): number | null {
+  if (!price || !unitCost || unitCost <= 0) return null;
+  const totalFees = estimateAmazonFees(feesJson, price);
+  return ((price - totalFees - unitCost) / unitCost) * 100;
+}
+
 function calculateSlowSellingMetrics(item: {
   available?: number | null;
   inbound?: number | null;
@@ -2509,22 +2548,8 @@ export default function SyncedInventory() {
       return sortDirection === 'asc' ? aDate - bDate : bDate - aDate;
     }
     if (sortBy === 'roi') {
-      const calculateRoi = (item: InventoryItem): number => {
-        if (item.price && item.unit_cost && item.fees_json) {
-          const referralFee = Number(item.fees_json.referralFee || 0);
-          const fbaFee = Number(item.fees_json.fbaFee || 0);
-          const variableClosingFee = Number(item.fees_json.variableClosingFee || 0);
-          const otherFees = Number(item.fees_json.otherFees || 0);
-
-          const totalFees = referralFee + fbaFee + variableClosingFee + otherFees;
-          const profit = item.price - totalFees - item.unit_cost;
-          return (profit / item.unit_cost) * 100;
-        }
-        return -Infinity;
-      };
-
-      const aRoi = calculateRoi(a);
-      const bRoi = calculateRoi(b);
+      const aRoi = estimateRoi(a.price, a.unit_cost, a.fees_json) ?? -Infinity;
+      const bRoi = estimateRoi(b.price, b.unit_cost, b.fees_json) ?? -Infinity;
       return sortDirection === 'asc' ? aRoi - bRoi : bRoi - aRoi;
     }
     if (sortBy === 'sales') {
@@ -2805,27 +2830,19 @@ export default function SyncedInventory() {
                   const unfulfilled = item.unfulfilled || 0;
                   const totalQty = available + reserved + inbound + unfulfilled;
 
-                  // Projected Sale: price × total qty, for any item with a live price —
-                  // a pure revenue figure, no fee assumptions needed.
-                  // Projected ROI: only accumulated for items with cached Amazon fees
-                  // (fees_json — the same fee cache the per-row ROI column reads), so
-                  // the ROI % stays accurate rather than guessing fees for uncached items.
+                  // Projected Sale: price × total qty, for any item with a live price.
+                  // Projected ROI: revenue minus Amazon fees (cached fees_json when
+                  // available, else a flat 15% referral-only estimate — same
+                  // fallback the repricer uses, see estimateAmazonFees) minus cost.
                   let itemRevenue = 0;
                   let itemFees = 0;
                   let itemRoiCost = 0;
-                  let hasFees = false;
-                  if (item.price && totalQty > 0) {
+                  let hasCachedFees = false;
+                  if (item.price && unitCost > 0 && totalQty > 0) {
                     itemRevenue = item.price * totalQty;
-                    if (item.fees_json) {
-                      itemFees = (
-                        Number(item.fees_json.referralFee || 0) +
-                        Number(item.fees_json.fbaFee || 0) +
-                        Number(item.fees_json.variableClosingFee || 0) +
-                        Number(item.fees_json.otherFees || 0)
-                      ) * totalQty;
-                      itemRoiCost = unitCost * totalQty;
-                      hasFees = true;
-                    }
+                    itemFees = estimateAmazonFees(item.fees_json, item.price) * totalQty;
+                    itemRoiCost = unitCost * totalQty;
+                    hasCachedFees = !!item.fees_json;
                   }
 
                   return {
@@ -2837,23 +2854,23 @@ export default function SyncedInventory() {
                     inboundValue: acc.inboundValue + (unitCost * inbound),
                     unfulfilledUnits: acc.unfulfilledUnits + unfulfilled,
                     unfulfilledValue: acc.unfulfilledValue + (unitCost * unfulfilled),
-                    projectedRevenue: acc.projectedRevenue + itemRevenue,
-                    projectedPricedItems: acc.projectedPricedItems + (item.price && totalQty > 0 ? 1 : 0),
-                    roiRevenue: acc.roiRevenue + (hasFees ? itemRevenue : 0),
+                    projectedRevenue: acc.projectedRevenue + (item.price && totalQty > 0 ? item.price * totalQty : 0),
+                    roiRevenue: acc.roiRevenue + itemRevenue,
                     roiFees: acc.roiFees + itemFees,
                     roiCost: acc.roiCost + itemRoiCost,
-                    roiItems: acc.roiItems + (hasFees ? 1 : 0),
+                    roiItems: acc.roiItems + (itemRoiCost > 0 ? 1 : 0),
+                    roiItemsWithCachedFees: acc.roiItemsWithCachedFees + (hasCachedFees ? 1 : 0),
                   };
                 }, {
                   availableUnits: 0, availableValue: 0, reservedUnits: 0, reservedValue: 0, inboundUnits: 0, inboundValue: 0, unfulfilledUnits: 0, unfulfilledValue: 0,
-                  projectedRevenue: 0, projectedPricedItems: 0, roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0,
+                  projectedRevenue: 0, roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0, roiItemsWithCachedFees: 0,
                 });
 
                 const projectedSale = totals.projectedRevenue;
                 const projectedRoi = totals.roiCost > 0
                   ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
                   : null;
-                const roiMissingItems = totals.projectedPricedItems - totals.roiItems;
+                const roiEstimatedItems = totals.roiItems - totals.roiItemsWithCachedFees;
 
                 const totalUnits = totals.availableUnits + totals.reservedUnits + totals.inboundUnits + totals.unfulfilledUnits;
                 const totalValue = totals.availableValue + totals.reservedValue + totals.inboundValue + totals.unfulfilledValue;
@@ -3102,8 +3119,8 @@ export default function SyncedInventory() {
                             {projectedRoi != null ? `${projectedRoi.toFixed(0)}%` : '—'}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            {roiMissingItems > 0
-                              ? `Based on ${totals.roiItems} of ${totals.projectedPricedItems} priced items with cached fees`
+                            {roiEstimatedItems > 0
+                              ? `${totals.roiItemsWithCachedFees} of ${totals.roiItems} items use actual fees, rest estimated at 15%`
                               : 'Based on cached Amazon fees'}
                           </span>
                         </div>
@@ -3227,16 +3244,7 @@ export default function SyncedInventory() {
                     const physical = (item.available ?? 0) + (item.reserved ?? 0);
                     const totalUnits = physical + (item.inbound ?? 0);
                     const valueStock = (item.unit_cost ?? 0) * totalUnits;
-                    let roi: number | null = null;
-                    if (item.price && item.unit_cost && item.fees_json) {
-                      const totalFees =
-                        Number(item.fees_json.referralFee || 0) +
-                        Number(item.fees_json.fbaFee || 0) +
-                        Number(item.fees_json.variableClosingFee || 0) +
-                        Number(item.fees_json.otherFees || 0);
-                      const profit = item.price - totalFees - item.unit_cost;
-                      roi = (profit / item.unit_cost) * 100;
-                    }
+                    const roi = estimateRoi(item.price, item.unit_cost, item.fees_json);
                     return (
                       <div key={item.id} className="rounded-lg border border-border bg-card p-3 flex gap-3">
                         {item.image_url ? (
@@ -3351,18 +3359,10 @@ export default function SyncedInventory() {
                     </thead>
                     <tbody>
                       {paginatedInventory.map((item, idx) => {
-                        // Calculate ROI using actual Amazon fees from SP-API
-                        let roi: number | null = null;
-                        if (item.price && item.unit_cost && item.fees_json) {
-                          const referralFee = Number(item.fees_json.referralFee || 0);
-                          const fbaFee = Number(item.fees_json.fbaFee || 0);
-                          const variableClosingFee = Number(item.fees_json.variableClosingFee || 0);
-                          const otherFees = Number(item.fees_json.otherFees || 0);
-
-                          const totalFees = referralFee + fbaFee + variableClosingFee + otherFees;
-                          const profit = item.price - totalFees - item.unit_cost;
-                          roi = (profit / item.unit_cost) * 100;
-                        }
+                        // Actual ROI from live price/cost, using cached Amazon fees when
+                        // available or a flat 15% referral-only estimate otherwise (see
+                        // estimateRoi) — never requires a live API call to display.
+                        const roi = estimateRoi(item.price, item.unit_cost, item.fees_json);
 
                         return (
                           <tr key={item.id} className={`border-b border-border hover:bg-muted/50 transition-colors ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/30'}`}>
@@ -3554,9 +3554,13 @@ export default function SyncedInventory() {
                                     "font-semibold hover:underline",
                                     roi >= 30 ? "text-green-500" : roi < 0 ? "text-red-500" : ""
                                   )}
-                                  title="Click to open the ROI calculator"
+                                  title={
+                                    item.fees_json
+                                      ? "Actual ROI using cached Amazon fees — click to open calculator"
+                                      : "Estimated ROI (no cached Amazon fees yet — assumes a flat 15% referral fee). Click to open the calculator for exact fees."
+                                  }
                                 >
-                                  {roi.toFixed(0)}%
+                                  {item.fees_json ? '' : '~'}{roi.toFixed(0)}%
                                 </button>
                               ) : (
                                 <Button
@@ -3567,7 +3571,7 @@ export default function SyncedInventory() {
                                     setSelectedRoiItem(item);
                                     setRoiDialogOpen(true);
                                   }}
-                                  title="No cached fees yet — open the calculator to check ROI"
+                                  title="No cost set yet — open the calculator to enter cost and check ROI"
                                 >
                                   <Calculator className="h-3 w-3" />
                                 </Button>
