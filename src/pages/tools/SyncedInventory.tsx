@@ -3196,7 +3196,9 @@ export default function SyncedInventory() {
                             {projectedProfit != null ? `$${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            Sale minus fees and cost
+                            {roiEstimatedItems > 0
+                              ? `Sale minus fees and cost (${totals.roiItemsWithCachedFees} of ${totals.roiItems} use actual fees)`
+                              : 'Sale minus fees and cost'}
                           </span>
                         </div>
                         <div className="flex flex-col">
