@@ -159,7 +159,7 @@ export default function NeedBuyAgain() {
       periodStartDate.setDate(periodStartDate.getDate() - 30);
       const periodStartStr = periodStartDate.toISOString().split("T")[0];
 
-      const [inventoryData, recentSalesData, historicalSalesData, listingsData, feeCacheData] = await Promise.all([
+      const [inventoryData, recentSalesData, historicalSalesData, listingsData, feeCacheData, shipmentsData, shipmentItemsData] = await Promise.all([
         fetchAllPaged((from, to) =>
           supabase.from("inventory")
             .select("asin, title, image_url, available, inbound, reserved, sku, amazon_price, my_price, price, cost, listing_status")
@@ -204,7 +204,38 @@ export default function NeedBuyAgain() {
             .eq("marketplace", "US")
             .range(from, to)
         ),
+        fetchAllPaged((from, to) =>
+          supabase.from("fba_shipments")
+            .select("shipment_id, received_date")
+            .eq("user_id", userId)
+            .not("received_date", "is", null)
+            .range(from, to)
+        ),
+        fetchAllPaged((from, to) =>
+          supabase.from("fba_shipment_items")
+            .select("shipment_id, asin, quantity_received")
+            .eq("user_id", userId)
+            .gt("quantity_received", 0)
+            .range(from, to)
+        ),
       ]);
+
+      // Most recent FBA received_date per ASIN, used to judge whether current
+      // Reserved units are likely still checking in from a recent shipment
+      // (see reservedFreshDays in computeReplenishmentBreakdown) or long
+      // enough since any receiving that they're more likely already sold.
+      const receivedDateByShipment = new Map<string, string>();
+      for (const s of shipmentsData) {
+        if (s.shipment_id && s.received_date) receivedDateByShipment.set(s.shipment_id, s.received_date);
+      }
+      const lastReceivedByAsin = new Map<string, string>();
+      for (const si of shipmentItemsData) {
+        if (!si.asin) continue;
+        const receivedDate = receivedDateByShipment.get(si.shipment_id);
+        if (!receivedDate) continue;
+        const existing = lastReceivedByAsin.get(si.asin);
+        if (!existing || receivedDate > existing) lastReceivedByAsin.set(si.asin, receivedDate);
+      }
 
       // Build fee cache map (ASIN -> FeeCache)
       const feeCacheMap = new Map<string, { fbaFeeFixed: number; referralRate: number; isMedia: boolean }>();
@@ -374,6 +405,7 @@ export default function NeedBuyAgain() {
           ? Math.min(30, getDaysSince(recentSales.earliestOrderDate))
           : 30;
         const historicalSales = historicalSalesMap.get(item.asin);
+        const lastReceived = lastReceivedByAsin.get(item.asin);
 
         const breakdown = computeReplenishmentBreakdown({
           salesUnits: recentSales?.units ?? 0,
@@ -387,6 +419,7 @@ export default function NeedBuyAgain() {
           prepDays: cfg.prep_days,
           shippingToAmazonDays: cfg.shipping_to_amazon_days,
           amazonReceivingDays: cfg.amazon_receiving_days,
+          daysSinceLastReceived: lastReceived ? getDaysSince(lastReceived) : null,
           historicalSalesUnits: historicalSales?.totalUnits,
           historicalDays: historicalSales ? getDaysSince(historicalSales.earliestDate) : undefined,
         });
@@ -657,6 +690,14 @@ export default function NeedBuyAgain() {
                         </span>
                         <span className="text-xs text-muted-foreground">
                           Stock: {item.available} avail / {item.inbound} inbound / {item.reserved} reserved
+                          {b.reservedExcluded && (
+                            <span
+                              className="ml-1 text-amber-600 dark:text-amber-400"
+                              title="No shipment received in over 7 days — Reserved is treated as already sold to a customer, not counted toward future stock coverage."
+                            >
+                              (treated as sold)
+                            </span>
+                          )}
                         </span>
                         <span className="text-xs text-muted-foreground/70">
                           Sales: <span className="font-medium text-foreground/70">{item.sales7d}</span><span className="text-muted-foreground/50">·7d</span>{" "}

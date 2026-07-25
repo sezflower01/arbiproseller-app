@@ -18,6 +18,16 @@ export type ReplenishmentInput = {
   // Historical fallback for products with no recent sales
   historicalSalesUnits?: number;
   historicalDays?: number;
+  // Days since this ASIN's most recent FBA shipment was received (from
+  // fba_shipments.received_date), if known. Reserved units can mean either
+  // "still checking in from a recent shipment" (will soon become Available)
+  // or "already sold, awaiting shipment to the customer" (won't). When this
+  // is provided and stale (beyond reservedFreshDays), Reserved is treated as
+  // likely already sold and excluded from the pipeline stock used to plan
+  // future coverage. Left undefined (the default for all existing callers),
+  // Reserved is always counted in full, matching prior behavior.
+  daysSinceLastReceived?: number | null;
+  reservedFreshDays?: number; // default 7
 };
 
 export type ReplenishmentBreakdown = {
@@ -31,6 +41,7 @@ export type ReplenishmentBreakdown = {
   replenishQty: number;
   riskLevel: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
   riskLabel: string;
+  reservedExcluded: boolean; // true when Reserved was treated as already-sold and left out of totalPipelineStock
 };
 
 export function computeReplenishmentBreakdown(input: ReplenishmentInput): ReplenishmentBreakdown {
@@ -48,6 +59,8 @@ export function computeReplenishmentBreakdown(input: ReplenishmentInput): Replen
     amazonReceivingDays = 0,
     historicalSalesUnits,
     historicalDays,
+    daysSinceLastReceived = null,
+    reservedFreshDays = 7,
   } = input;
 
   // 1. Average Daily Sales
@@ -71,8 +84,15 @@ export function computeReplenishmentBreakdown(input: ReplenishmentInput): Replen
   // 3. Planning horizon = lead time + desired post-arrival coverage
   const planningDays = (coverageDays || 0) + totalLeadTimeDays;
 
-  // 4. Pipeline stock = anything we already have or that is on its way
-  const totalPipelineStock = (available || 0) + (inbound || 0) + (reserved || 0);
+  // 4. Pipeline stock = anything we already have or that is on its way.
+  // Reserved units sit in an ambiguous state: still checking in from a
+  // recent shipment (will become Available soon) or already committed to an
+  // existing customer order (won't). If we know this ASIN hasn't received a
+  // shipment in longer than reservedFreshDays, treat Reserved as likely
+  // already sold and exclude it — it can't cover *future* demand.
+  const reservedExcluded = daysSinceLastReceived != null && daysSinceLastReceived > reservedFreshDays;
+  const effectiveReserved = reservedExcluded ? 0 : (reserved || 0);
+  const totalPipelineStock = (available || 0) + (inbound || 0) + effectiveReserved;
 
   // 5. Forecast demand & safety
   const forecastDemand = ads * planningDays;
@@ -118,6 +138,7 @@ export function computeReplenishmentBreakdown(input: ReplenishmentInput): Replen
     replenishQty,
     riskLevel,
     riskLabel,
+    reservedExcluded,
   };
 }
 
