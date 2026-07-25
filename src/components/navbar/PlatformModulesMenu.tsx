@@ -191,9 +191,6 @@ function MostUsedPopover({
                     </p>
                     <p className="text-[10px] text-white/40 truncate">{targetPath}</p>
                   </div>
-                  <span className="text-[10px] font-bold text-orange-300/80 tabular-nums">
-                    {count}×
-                  </span>
                   <ArrowRight className="h-3 w-3 text-white/30 group-hover/row:text-white/80 transition-colors" />
                 </Link>
               );
