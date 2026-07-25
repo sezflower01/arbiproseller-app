@@ -2877,21 +2877,16 @@ export default function SyncedInventory() {
                   const unfulfilled = item.unfulfilled || 0;
                   const totalQty = available + reserved + inbound + unfulfilled;
 
-                  // Projected Sale/Profit: dollar totals — price × qty (revenue), and
+                  // Projected Sale/Profit/ROI: dollar totals — price × qty (revenue),
                   // revenue minus Amazon fees (cached fees_json when available, else a
                   // flat 15% referral-only estimate — see estimateAmazonFees) minus cost,
                   // summed across every item with stock (Available+Reserved+Inbound+
-                  // Unfulfilled > 0). These are correctly additive as dollar totals.
-                  //
-                  // Projected ROI is NOT dollar-weighted (that would let a few
-                  // high-value items dominate the %) — it's a plain average of each
-                  // item's own ROI%, one vote per listing, matching what the per-row
-                  // ROI column shows and what you'd get averaging that column by hand.
+                  // Unfulfilled > 0). ROI is dollar-weighted (total profit / total cost)
+                  // rather than a plain per-item average, so its sign always matches
+                  // Profit's sign — a real dollar loss should never show as positive ROI.
                   let itemRevenue = 0;
                   let itemFees = 0;
                   let itemRoiCost = 0;
-                  let itemRoiPercent = 0;
-                  let hasRoi = false;
                   let hasCachedFees = false;
                   if (item.price && unitCost > 0 && totalQty > 0) {
                     const fees = resolveFees(item);
@@ -2899,11 +2894,6 @@ export default function SyncedInventory() {
                     itemFees = estimateAmazonFees(fees, item.price) * totalQty;
                     itemRoiCost = unitCost * totalQty;
                     hasCachedFees = !!fees;
-                    const roi = estimateRoi(item.price, unitCost, fees);
-                    if (roi != null) {
-                      itemRoiPercent = roi;
-                      hasRoi = true;
-                    }
                   }
 
                   return {
@@ -2921,21 +2911,18 @@ export default function SyncedInventory() {
                     roiCost: acc.roiCost + itemRoiCost,
                     roiItems: acc.roiItems + (itemRoiCost > 0 ? 1 : 0),
                     roiItemsWithCachedFees: acc.roiItemsWithCachedFees + (hasCachedFees ? 1 : 0),
-                    roiPercentSum: acc.roiPercentSum + itemRoiPercent,
-                    roiPercentCount: acc.roiPercentCount + (hasRoi ? 1 : 0),
                   };
                 }, {
                   availableUnits: 0, availableValue: 0, reservedUnits: 0, reservedValue: 0, inboundUnits: 0, inboundValue: 0, unfulfilledUnits: 0, unfulfilledValue: 0,
                   projectedRevenue: 0, roiRevenue: 0, roiFees: 0, roiCost: 0, roiItems: 0, roiItemsWithCachedFees: 0,
-                  roiPercentSum: 0, roiPercentCount: 0,
                 });
 
                 const projectedSale = totals.projectedRevenue;
                 const projectedProfit = totals.roiItems > 0
                   ? totals.roiRevenue - totals.roiFees - totals.roiCost
                   : null;
-                const projectedRoi = totals.roiPercentCount > 0
-                  ? totals.roiPercentSum / totals.roiPercentCount
+                const projectedRoi = totals.roiCost > 0
+                  ? ((totals.roiRevenue - totals.roiFees - totals.roiCost) / totals.roiCost) * 100
                   : null;
                 const roiEstimatedItems = totals.roiItems - totals.roiItemsWithCachedFees;
 

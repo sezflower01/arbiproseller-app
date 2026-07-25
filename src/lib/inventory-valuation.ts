@@ -460,7 +460,7 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
 
   let projectedSale = 0;
   let roiRevenue = 0, roiFees = 0, roiCost = 0;
-  let roiPercentSum = 0, roiPercentCount = 0;
+  let itemsWithRoi = 0;
   let itemsWithCachedFees = 0;
 
   for (const g of grouped.values()) {
@@ -470,19 +470,19 @@ export async function getProjectedValuationMetrics(userId: string): Promise<Proj
     roiRevenue += revenue;
     roiFees += estimateAmazonFees(g.feesJson, g.price) * g.qty;
     roiCost += g.unitCost * g.qty;
+    itemsWithRoi += 1;
     if (g.feesJson) itemsWithCachedFees += 1;
-    const roi = estimateRoi(g.price, g.unitCost, g.feesJson);
-    if (roi != null) {
-      roiPercentSum += roi;
-      roiPercentCount += 1;
-    }
   }
 
+  // Dollar-weighted (total profit / total cost), not a per-item average —
+  // this guarantees ROI's sign always matches Profit's sign. A real dollar
+  // loss should never show as a positive ROI just because most individual
+  // listings happen to be healthy.
   return {
     projectedSale,
-    projectedProfit: roiPercentCount > 0 ? roiRevenue - roiFees - roiCost : null,
-    projectedRoi: roiPercentCount > 0 ? roiPercentSum / roiPercentCount : null,
+    projectedProfit: itemsWithRoi > 0 ? roiRevenue - roiFees - roiCost : null,
+    projectedRoi: roiCost > 0 ? ((roiRevenue - roiFees - roiCost) / roiCost) * 100 : null,
     itemsWithCachedFees,
-    itemsWithRoi: roiPercentCount,
+    itemsWithRoi,
   };
 }
