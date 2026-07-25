@@ -5,11 +5,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, RefreshCw, Warehouse, Zap } from "lucide-react";
-import { getInventoryValuationTotals, triggerInventoryValuationRefresh } from "@/lib/inventory-valuation";
-import { supabase } from "@/integrations/supabase/client";
-import { useSubscription } from "@/hooks/use-subscription";
-import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, RefreshCw, Warehouse } from "lucide-react";
+import {
+  getInventoryValuationTotals,
+  triggerInventoryValuationRefresh,
+  getProjectedValuationMetrics,
+  type ProjectedValuationMetrics,
+} from "@/lib/inventory-valuation";
 
 interface Totals {
   value: number;
@@ -29,13 +31,10 @@ const MobileInventoryValuation = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { homeCurrencySymbol } = useHomeMarketplace();
-  const { isAdmin } = useSubscription();
-  const { toast } = useToast();
   const [totals, setTotals] = useState<Totals | null>(null);
+  const [projected, setProjected] = useState<ProjectedValuationMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string>("");
-  const [liveUpdateInProgress, setLiveUpdateInProgress] = useState(false);
-  const [liveUpdateProgress, setLiveUpdateProgress] = useState<string | null>(null);
 
   const fetchTotals = useCallback(async (opts?: { force?: boolean }) => {
     if (!user?.id) return;
@@ -45,7 +44,10 @@ const MobileInventoryValuation = () => {
       // refreshes from multiple tabs into a single recompute.
       await triggerInventoryValuationRefresh();
     }
-    const valuation = await getInventoryValuationTotals(user.id);
+    const [valuation, projectedMetrics] = await Promise.all([
+      getInventoryValuationTotals(user.id),
+      getProjectedValuationMetrics(user.id),
+    ]);
     setTotals({
       value: Math.round(valuation.value * 100) / 100,
       units: valuation.units,
@@ -59,6 +61,7 @@ const MobileInventoryValuation = () => {
       inboundValue: Math.round(valuation.inboundValue * 100) / 100,
       unfulfilledValue: Math.round(valuation.unfulfilledValue * 100) / 100,
     });
+    setProjected(projectedMetrics);
     setUpdatedAt(
       new Date().toLocaleTimeString("en-US", {
         hour: "numeric",
@@ -79,130 +82,8 @@ const MobileInventoryValuation = () => {
     return () => clearInterval(id);
   }, [fetchTotals]);
 
-  // NOTE: The automatic 2-hour admin SP-API refresh has been removed.
-  // Admins can still trigger a full refresh manually via the
-  // "Manual SP-API Refresh" button below.
-
   const fmtMoney = (n: number) =>
     n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const handleLiveUpdateAll = async () => {
-    if (!user) return;
-    setLiveUpdateInProgress(true);
-    setLiveUpdateProgress('Preparing live update...');
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({ variant: "destructive", title: "Please log in first" });
-        return;
-      }
-
-      // Paginate to bypass Supabase's 1000-row default limit
-      const PAGE = 1000;
-      const rows: any[] = [];
-      for (let from = 0; from < 100000; from += PAGE) {
-        const { data: chunk, error: invErr } = await supabase
-          .from('inventory')
-          .select('asin, sku, available, reserved, inbound, listing_status, source')
-          .eq('user_id', user.id)
-          .range(from, from + PAGE - 1);
-        if (invErr) throw invErr;
-        if (!chunk || chunk.length === 0) break;
-        rows.push(...chunk);
-        if (chunk.length < PAGE) break;
-      }
-
-      const itemsToUpdate = Array.from(
-        new Map(
-          (rows ?? [])
-            .filter((item: any) => {
-              const listingStatus = (item.listing_status || '').toUpperCase();
-              return item.source !== 'created_listing' && listingStatus !== 'DELETED' && item.asin && item.sku;
-            })
-            .map((item: any) => [`${item.asin}::${item.sku}`, item])
-        ).values()
-      ) as any[];
-
-      if (itemsToUpdate.length === 0) {
-        toast({ title: "Nothing to update", description: "No synced Amazon SKUs found." });
-        return;
-      }
-
-      let checked = 0;
-      let updated = 0;
-      let verifiedUnchanged = 0;
-      let unresolved = 0;
-      let errors = 0;
-      let currentToken = session.access_token;
-      let lastTokenRefresh = Date.now();
-
-      for (const item of itemsToUpdate) {
-        checked += 1;
-        setLiveUpdateProgress(`Checking ${checked}/${itemsToUpdate.length}: ${item.sku}`);
-
-        if (Date.now() - lastTokenRefresh > 3 * 60 * 1000) {
-          try {
-            const { data: refreshed } = await supabase.auth.getSession();
-            if (refreshed?.session?.access_token) {
-              currentToken = refreshed.session.access_token;
-              lastTokenRefresh = Date.now();
-            }
-          } catch {
-            // continue with current token
-          }
-        }
-
-        try {
-          const before = {
-            available: item.available ?? 0,
-            reserved: item.reserved ?? 0,
-            inbound: item.inbound ?? 0,
-          };
-
-          const { data: result, error: rescueError } = await supabase.functions.invoke('rescue-inventory-asin', {
-            headers: { Authorization: `Bearer ${currentToken}` },
-            body: { asin: item.asin, sku: item.sku },
-          });
-
-          if (rescueError) {
-            errors += 1;
-          } else {
-            const after = (result as any)?.updated_db || (result as any)?.live_stock;
-            const changed =
-              (after?.available ?? 0) !== before.available ||
-              (after?.reserved ?? 0) !== before.reserved ||
-              (after?.inbound ?? 0) !== before.inbound;
-
-            if ((result as any)?.verification_status === 'corrected' || changed) {
-              updated += 1;
-            } else if ((result as any)?.verification_status === 'verified_unchanged') {
-              verifiedUnchanged += 1;
-            } else {
-              unresolved += 1;
-            }
-          }
-        } catch {
-          errors += 1;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-
-      toast({
-        title: "Live update complete",
-        description: `Checked ${checked} items: ${updated} corrected, ${verifiedUnchanged} verified unchanged, ${unresolved} unresolved${errors > 0 ? `, ${errors} errors` : ''}`,
-      });
-
-      await fetchTotals();
-    } catch (err: any) {
-      console.error("Live update error:", err);
-      toast({ variant: "destructive", title: "Live update failed", description: err?.message || "Unknown error" });
-    } finally {
-      setLiveUpdateInProgress(false);
-      setLiveUpdateProgress(null);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#0f1c3f] text-white">
@@ -238,26 +119,6 @@ const MobileInventoryValuation = () => {
       </header>
 
       <main className="px-4 pb-24 pt-5 max-w-md mx-auto space-y-4">
-        {isAdmin && (
-          <Button
-            onClick={handleLiveUpdateAll}
-            disabled={liveUpdateInProgress || !user}
-            variant="outline"
-            className="w-full gap-2 border-cyan-500/50 hover:bg-cyan-500/10 text-cyan-300 bg-cyan-500/5"
-          >
-            {liveUpdateInProgress ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                <span className="text-xs truncate">{liveUpdateProgress || 'Updating...'}</span>
-              </>
-            ) : (
-              <>
-                <Zap className="h-4 w-4" />
-                Manual SP-API Refresh
-              </>
-            )}
-          </Button>
-        )}
         {/* Hero: Total Value */}
         <section className="rounded-2xl bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent border border-amber-400/25 p-5 shadow-lg shadow-amber-500/5">
           <div className="text-[10px] uppercase tracking-wider font-bold text-amber-300/90">
@@ -274,6 +135,62 @@ const MobileInventoryValuation = () => {
             Available + Reserved + Inbound + Unfulfilled × unit cost
             {updatedAt ? ` · Updated ${updatedAt}` : ""}
           </div>
+        </section>
+
+        {/* Projected Sale, Profit & ROI — if all current stock sold at today's live price */}
+        <section className="rounded-2xl bg-white/[0.04] border border-white/10 p-4">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-white/50 mb-3">
+            Projected (at today's price)
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="text-center">
+              <div className="text-[9px] uppercase tracking-wide text-white/40">Sale</div>
+              {loading && !projected ? (
+                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+              ) : (
+                <div className="text-lg font-bold tabular-nums mt-0.5">
+                  {homeCurrencySymbol}{fmtMoney(projected?.projectedSale ?? 0)}
+                </div>
+              )}
+            </div>
+            <div className="text-center">
+              <div className="text-[9px] uppercase tracking-wide text-white/40">Profit</div>
+              {loading && !projected ? (
+                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+              ) : (
+                <div className={`text-lg font-bold tabular-nums mt-0.5 ${
+                  projected?.projectedProfit != null && projected.projectedProfit >= 0
+                    ? "text-emerald-300"
+                    : projected?.projectedProfit != null
+                      ? "text-red-300"
+                      : ""
+                }`}>
+                  {projected?.projectedProfit != null ? `${homeCurrencySymbol}${fmtMoney(projected.projectedProfit)}` : "—"}
+                </div>
+              )}
+            </div>
+            <div className="text-center">
+              <div className="text-[9px] uppercase tracking-wide text-white/40">ROI</div>
+              {loading && !projected ? (
+                <Skeleton className="h-6 w-16 mt-1 mx-auto bg-white/10" />
+              ) : (
+                <div className={`text-lg font-bold tabular-nums mt-0.5 ${
+                  projected?.projectedRoi != null && projected.projectedRoi >= 30
+                    ? "text-emerald-300"
+                    : projected?.projectedRoi != null && projected.projectedRoi < 0
+                      ? "text-red-300"
+                      : ""
+                }`}>
+                  {projected?.projectedRoi != null ? `${projected.projectedRoi.toFixed(0)}%` : "—"}
+                </div>
+              )}
+            </div>
+          </div>
+          {projected && projected.itemsWithRoi > 0 && projected.itemsWithCachedFees < projected.itemsWithRoi && (
+            <div className="mt-2 text-[10px] text-white/40 text-center">
+              {projected.itemsWithCachedFees} of {projected.itemsWithRoi} items use actual fees, rest estimated at 15%
+            </div>
+          )}
         </section>
 
         {/* Units + SKUs */}

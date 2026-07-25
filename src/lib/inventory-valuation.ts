@@ -318,3 +318,171 @@ async function getInventoryValuationTotalsLive(userId: string): Promise<Inventor
     mostRecentSync,
   };
 }
+
+// ---- Projected Sale / Profit / ROI ----
+// Always live-computed (no server cache table for this yet, unlike the totals
+// above) — no live Amazon API calls, just DB reads. Fee source priority per
+// item: cached inventory.fees_json, then the repricer's own asin_fee_cache
+// (real per-ASIN fba_fee_fixed + referral_rate), else a flat 15%
+// referral-only estimate. Matches SyncedInventory.tsx's desktop/mobile logic
+// exactly so the two pages never disagree.
+
+export interface ProjectedValuationMetrics {
+  projectedSale: number;
+  projectedProfit: number | null;
+  projectedRoi: number | null;
+  itemsWithCachedFees: number;
+  itemsWithRoi: number;
+}
+
+export function estimateAmazonFees(feesJson: any, price: number): number {
+  if (!feesJson) return price * 0.15;
+  const otherFees = Number(
+    feesJson.otherFees ?? feesJson.other_fees ?? feesJson.fixedClosingFee ??
+    feesJson.fixed_closing_fee ?? feesJson.closingFee ?? feesJson.FixedClosingFee ?? 0
+  );
+  if (feesJson.referralFee !== undefined || feesJson.fbaFee !== undefined) {
+    const referralFee = Number(feesJson.referralFee || 0);
+    const fbaFee = Number(feesJson.fbaFee || 0);
+    const variableClosingFee = Number(feesJson.variableClosingFee || 0);
+    const feesAtPrice = feesJson.price ? Number(feesJson.price) : 0;
+    if (feesAtPrice > 0 && Math.abs(feesAtPrice - price) > 0.01) {
+      const referralRate = referralFee / feesAtPrice;
+      return (price * referralRate) + fbaFee + variableClosingFee + otherFees;
+    }
+    return referralFee + fbaFee + variableClosingFee + otherFees;
+  }
+  if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
+    const referralRate = Number(feesJson.referral_rate ?? 0.15);
+    const fbaFeeFixed = Number(feesJson.fba_fee_fixed ?? 0);
+    const variableClosingFee = Number(feesJson.variable_closing_fee ?? feesJson.variableClosingFee ?? 0);
+    return (price * referralRate) + fbaFeeFixed + variableClosingFee + otherFees;
+  }
+  return price * 0.15;
+}
+
+export function estimateRoi(price: number | null | undefined, unitCost: number | null | undefined, feesJson: any): number | null {
+  if (!price || !unitCost || unitCost <= 0) return null;
+  return ((price - estimateAmazonFees(feesJson, price) - unitCost) / unitCost) * 100;
+}
+
+async function fetchFeeCacheMap(userId: string): Promise<Map<string, { fba_fee_fixed: number; referral_rate: number }>> {
+  const map = new Map<string, { fba_fee_fixed: number; referral_rate: number }>();
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("asin_fee_cache")
+      .select("asin, fba_fee_fixed, referral_rate")
+      .eq("user_id", userId)
+      .eq("marketplace", "US")
+      .range(from, from + pageSize - 1);
+    if (error || !data) break;
+    for (const row of data) {
+      if (row.asin) map.set(row.asin, { fba_fee_fixed: Number(row.fba_fee_fixed) || 0, referral_rate: Number(row.referral_rate) || 0.15 });
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return map;
+}
+
+export async function getProjectedValuationMetrics(userId: string): Promise<ProjectedValuationMetrics> {
+  const [inventoryRows, listingRows, overridesByAsin, feeCacheByAsin] = await Promise.all([
+    fetchAllKeyset<InventoryRow & { price: number | null; fees_json: any }>(
+      "inventory",
+      "id,available,reserved,inbound,unfulfilled,cost,amount,units,unit_cost_manual,listing_status,asin,sku,created_at,price,fees_json",
+      userId,
+    ),
+    fetchAllKeyset<ListingRow>(
+      "created_listings",
+      "id,asin,sku,cost,amount,units,created_at,updated_at",
+      userId,
+    ),
+    fetchAsinCostOverrides(userId),
+    fetchFeeCacheMap(userId),
+  ]);
+
+  // Same cost-map + resolution precedence as getInventoryValuationTotalsLive,
+  // so this page's numbers can never drift from the Value total above.
+  const costBySku = new Map<string, CostEntry>();
+  const costByAsin = new Map<string, CostEntry>();
+  for (const row of listingRows) {
+    if (!row.asin) continue;
+    const entry: CostEntry = {
+      unitCost: getListingUnitCost({ cost: row.cost, amount: row.amount, units: row.units }),
+      totalCost: getListingTotalCost({ cost: row.cost, amount: row.amount, units: row.units }),
+      units: row.units !== null && row.units !== undefined ? Number(row.units) : null,
+    };
+    if (row.sku && !costBySku.has(row.sku)) costBySku.set(row.sku, entry);
+    const existing = costByAsin.get(row.asin);
+    if (!existing || existing.units === null || existing.units <= 0) {
+      costByAsin.set(row.asin, entry);
+    }
+  }
+
+  const grouped = new Map<string, { qty: number; unitCost: number; price: number | null; feesJson: any }>();
+  for (const row of inventoryRows) {
+    const status = String(row.listing_status || "").toUpperCase();
+    if (status === "NOT_IN_CATALOG" || status === "DELETED") continue;
+
+    const costEntry = costBySku.get(row.sku) ?? costByAsin.get(row.asin);
+    const override = overridesByAsin.get(row.asin);
+    let unitCost: number;
+    if (override !== undefined) {
+      unitCost = override;
+    } else if (row.unit_cost_manual && row.cost !== null && row.cost !== undefined) {
+      unitCost = Number(row.cost);
+    } else {
+      const fromEntry = costEntry?.unitCost;
+      if (fromEntry !== null && fromEntry !== undefined) {
+        unitCost = Number(fromEntry);
+      } else if (row.cost !== null && row.cost !== undefined) {
+        unitCost = Number(row.cost);
+      } else {
+        unitCost = getInventoryUnitCost({ cost: row.cost, amount: row.amount, units: row.units }) ?? 0;
+      }
+    }
+
+    const qty = (row.available ?? 0) + (row.reserved ?? 0) + (row.inbound ?? 0) + (row.unfulfilled ?? 0);
+    const key = `${row.asin}::${row.sku}`;
+    const feesJson = row.fees_json || feeCacheByAsin.get(row.asin) || null;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.qty += qty;
+      if (!existing.unitCost && unitCost) existing.unitCost = unitCost;
+      if (existing.price == null) existing.price = row.price ?? null;
+      if (!existing.feesJson) existing.feesJson = feesJson;
+    } else {
+      grouped.set(key, { qty, unitCost, price: row.price ?? null, feesJson });
+    }
+  }
+
+  let projectedSale = 0;
+  let roiRevenue = 0, roiFees = 0, roiCost = 0;
+  let roiPercentSum = 0, roiPercentCount = 0;
+  let itemsWithCachedFees = 0;
+
+  for (const g of grouped.values()) {
+    if (!g.price || g.unitCost <= 0 || g.qty <= 0) continue;
+    const revenue = g.price * g.qty;
+    projectedSale += revenue;
+    roiRevenue += revenue;
+    roiFees += estimateAmazonFees(g.feesJson, g.price) * g.qty;
+    roiCost += g.unitCost * g.qty;
+    if (g.feesJson) itemsWithCachedFees += 1;
+    const roi = estimateRoi(g.price, g.unitCost, g.feesJson);
+    if (roi != null) {
+      roiPercentSum += roi;
+      roiPercentCount += 1;
+    }
+  }
+
+  return {
+    projectedSale,
+    projectedProfit: roiPercentCount > 0 ? roiRevenue - roiFees - roiCost : null,
+    projectedRoi: roiPercentCount > 0 ? roiPercentSum / roiPercentCount : null,
+    itemsWithCachedFees,
+    itemsWithRoi: roiPercentCount,
+  };
+}
