@@ -34,29 +34,29 @@ const Hero = () => {
               <span className="text-white">Make better sourcing decisions. Price smarter with AI. Scale with confidence.</span>
             </h1>
 
-            <p className="text-base md:text-lg text-muted-foreground mb-6 animate-slide-up leading-relaxed" style={{ animationDelay: '0.15s' }}>
+            <p className="text-base md:text-lg text-white/90 mb-6 animate-slide-up leading-relaxed" style={{ animationDelay: '0.15s' }}>
               Inventory S.P.R.I.N.T. helps you organize proven Amazon products, track suppliers, and automate pricing with AI that protects your margins — and gets smarter over time.
             </p>
 
             <div className="mb-7 animate-slide-up text-left w-full" style={{ animationDelay: '0.25s' }}>
               <div className="space-y-2">
-                <div className="flex items-start gap-3 text-muted-foreground">
+                <div className="flex items-start gap-3 text-white/90">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                   <span className="break-words min-w-0">Organize and store your proven Amazon products</span>
                 </div>
-                <div className="flex items-start gap-3 text-muted-foreground">
+                <div className="flex items-start gap-3 text-white/90">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                   <span className="break-words min-w-0">Track supplier links and product history in one place</span>
                 </div>
-                <div className="flex items-start gap-3 text-muted-foreground">
+                <div className="flex items-start gap-3 text-white/90">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                   <span className="break-words min-w-0">Reorder faster with direct supplier access</span>
                 </div>
-                <div className="flex items-start gap-3 text-muted-foreground">
+                <div className="flex items-start gap-3 text-white/90">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                   <span className="break-words min-w-0">Know what to reorder before you run out</span>
                 </div>
-                <div className="flex items-start gap-3 text-muted-foreground">
+                <div className="flex items-start gap-3 text-white/90">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                   <span className="break-words min-w-0">Automate pricing with AI reviewed by Gemini to improve performance over time</span>
                 </div>
@@ -68,15 +68,15 @@ const Hero = () => {
               <h3 className="text-lg font-bold mb-1">
                 <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span>
               </h3>
-              <p className="text-muted-foreground text-sm mb-4">Smart pricing that protects your margins — not a bot racing to the bottom.</p>
+              <p className="text-white/90 text-sm mb-4">Smart pricing that protects your margins — not a bot racing to the bottom.</p>
               <div className="grid grid-cols-2 gap-3 text-left">
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Doesn't blindly lower prices</span>
+                  <span className="text-white/90 text-xs">Doesn't blindly lower prices</span>
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Proven with real tests before it's trusted</span>
+                  <span className="text-white/90 text-xs">Proven with real tests before it's trusted</span>
                 </div>
               </div>
             </div>
@@ -95,7 +95,7 @@ const Hero = () => {
             </div>
 
             {/* Trust indicators */}
-            <div className="hidden flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2 text-sm text-muted-foreground animate-slide-up" style={{ animationDelay: '0.5s' }} aria-hidden="true">
+            <div className="hidden flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2 text-sm text-white/90 animate-slide-up" style={{ animationDelay: '0.5s' }} aria-hidden="true">
               <span className="flex items-center">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse" />
                 No Credit Card Required
