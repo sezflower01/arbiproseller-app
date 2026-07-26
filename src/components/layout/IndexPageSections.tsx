@@ -2,6 +2,7 @@
 import React, { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Hero from "@/components/Hero";
+import SprintModulesBanner from "@/components/SprintModulesBanner";
 import AiBanner from "@/components/AiBanner";
 import ProductLibraryBanner from "@/components/ProductLibraryBanner";
 import ChromeExtensionBanner from "@/components/ChromeExtensionBanner";
@@ -34,6 +35,7 @@ const IndexPageSections = () => {
   return (
     <>
       <Hero />
+      <SprintModulesBanner />
       <AiBanner />
       <ProductLibraryBanner />
       <ChromeExtensionBanner />
