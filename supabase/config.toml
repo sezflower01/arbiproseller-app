@@ -326,6 +326,9 @@ verify_jwt = true
 [functions.enforce-subscription]
 verify_jwt = false
 
+[functions.repricer-billing-cycle-check]
+verify_jwt = false
+
 [functions.auth-email-hook]
 verify_jwt = false
 

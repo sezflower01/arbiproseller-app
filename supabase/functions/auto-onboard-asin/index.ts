@@ -403,13 +403,14 @@ Deno.serve(async (req) => {
 
     const planLimit = planData?.listing_limit ?? 100;
 
-    // If already at or over limit and this is a NEW assignment, skip
+    // Grace-period policy (2026-07-26): never block real-time activation on
+    // capacity, no matter how far over plan the account runs mid-cycle. The
+    // 110%-over-plan check is evaluated ONLY at each account's own billing
+    // renewal by repricer-billing-cycle-check, which auto-upgrades the plan
+    // if the account is still meaningfully over at that moment. This keeps
+    // logging for visibility without ever skipping the activation itself.
     if (!existing && (currentActiveCount ?? 0) >= planLimit) {
-      console.log(`[auto-onboard-asin] ⚠️ Plan limit reached (${currentActiveCount}/${planLimit}), skipping ${asin}`);
-      return new Response(
-        JSON.stringify({ skipped: true, reason: "plan_limit_reached", current: currentActiveCount, limit: planLimit }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.log(`[auto-onboard-asin] Over plan (${currentActiveCount}/${planLimit}) but activating anyway -- reconciled at next billing cycle for ${asin}`);
     }
 
     // Build assignment

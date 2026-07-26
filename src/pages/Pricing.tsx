@@ -263,6 +263,16 @@ const Pricing = () => {
               </CardContent>
             </Card>
           </div>
+          <p className="text-center text-xs text-gray-500 mt-6 max-w-2xl mx-auto leading-relaxed">
+            <span className="text-gray-400 font-medium">Grace period:</span>{" "}
+            if a temporary spike pushes you over your plan's listing capacity,
+            the repricer keeps working without interruption — we never cut off
+            service mid-cycle. We only check your usage against your plan
+            once, at your billing renewal. If you're back within 10% of your
+            plan by then, nothing changes. If you're still meaningfully over,
+            we move you to the smallest plan that covers your usage — no
+            surprise overage fees, just the plan that fits.
+          </p>
         </section>
 
         {/* What's included grid */}
