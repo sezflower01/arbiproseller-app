@@ -1,5 +1,5 @@
 
-import { Download, CheckCircle, Zap, TrendingUp, FlaskConical } from 'lucide-react';
+import { Download, CheckCircle, Zap, TrendingUp, FlaskConical, ShieldCheck } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 const Hero = () => {
@@ -76,7 +76,11 @@ const Hero = () => {
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-white/90 text-xs">Proven with real tests before it's trusted</span>
+                  <span className="text-white/90 text-xs">Tests every change before trusting it</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-white/90 text-xs">Every change is proven before it goes live</span>
                 </div>
               </div>
             </div>
