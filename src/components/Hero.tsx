@@ -1,5 +1,5 @@
 
-import { Download, CheckCircle, Zap, TrendingUp, FlaskConical, ShieldCheck, ArrowUpCircle } from 'lucide-react';
+import { Download, CheckCircle, Zap, TrendingUp, FlaskConical, ShieldCheck, ArrowUpCircle, Clock } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 const Hero = () => {
@@ -77,6 +77,14 @@ const Hero = () => {
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <ArrowUpCircle className="w-4 h-4 text-primary flex-shrink-0" />
                   <span className="text-white/90 text-xs">Raises prices when the market allows</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <Zap className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-white/90 text-xs">Reacts instantly — no delays</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <Clock className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-white/90 text-xs">Monitors your prices around the clock</span>
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
