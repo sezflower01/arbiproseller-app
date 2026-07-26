@@ -134,7 +134,10 @@ const NavbarLinks: React.FC<NavbarLinksProps> = ({
   return (
     <div className={`flex items-center ${spacingClass} text-sm`}>
 
-      {!user && <ProductsMegaMenu />}
+      {/* Products mega menu hidden for now (2026-07-26 request, landing page
+          only -- this only ever rendered for logged-out visitors anyway).
+          ProductsMegaMenu import above is unused but left in place to
+          restore easily. */}
 
       {!user && (
         <Button
