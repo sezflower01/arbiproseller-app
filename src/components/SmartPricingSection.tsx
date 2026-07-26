@@ -1,8 +1,9 @@
 
-import { TrendingUp, FlaskConical, ShieldCheck } from 'lucide-react';
+import { TrendingUp, FlaskConical, ShieldCheck, ArrowUpCircle } from 'lucide-react';
 
 const points = [
   { icon: TrendingUp, text: "Doesn't blindly lower prices" },
+  { icon: ArrowUpCircle, text: "Raises prices when the market allows" },
   { icon: FlaskConical, text: "Tests every change before trusting it" },
   { icon: ShieldCheck, text: "Every change is proven before it goes live" },
 ];
