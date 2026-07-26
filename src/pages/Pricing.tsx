@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { Check, Sparkles, Zap, Shield, Rocket, Clock, Gift, TrendingUp, Star, Crown } from "lucide-react";
+import { Check, Sparkles, Zap, Shield, Rocket, Clock, Gift, TrendingUp, Star, Crown, XCircle, RefreshCw, PackageCheck } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Card, CardContent } from "@/components/ui/card";
@@ -202,6 +202,68 @@ const Pricing = () => {
           </button>{" "}
           for custom Enterprise pricing.
         </p>
+
+        {/* Why our listing limits are different */}
+        <section className="container mx-auto px-4 mt-20 max-w-5xl">
+          <div className="text-center mb-10">
+            <Badge className="mb-3 bg-violet-500/15 text-violet-300 border border-violet-400/30">
+              <RefreshCw className="h-3 w-3 mr-1" />
+              What Makes Our Plans Different
+            </Badge>
+            <h2 className="text-3xl font-bold text-white mb-2">
+              Your listing count stays accurate — automatically
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Most repricers count every ASIN you've ever added, active or
+              not. Ours only counts what's actually live, and keeps it that
+              way without you lifting a finger.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <Card className="border border-red-500/20 bg-[hsl(222,80%,7%)]/80 backdrop-blur-sm">
+              <CardContent className="p-6">
+                <h3 className="text-sm font-bold uppercase tracking-widest text-red-400 mb-4">
+                  Other Repricers
+                </h3>
+                <ul className="space-y-3">
+                  {[
+                    "Your ASIN cap includes every listing you've ever added — active, out of stock, or discontinued",
+                    "You have to manually find and remove inactive ASINs to stay under the limit",
+                    "Miss the cleanup and you can't add newly restocked ASINs without upgrading",
+                    "You end up paying for capacity taken up by listings that aren't even selling",
+                  ].map((t) => (
+                    <li key={t} className="flex items-start gap-2.5 text-sm text-gray-300">
+                      <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-emerald-400/40 bg-[hsl(222,80%,7%)]/80 backdrop-blur-sm shadow-[0_20px_60px_-20px_hsl(160,84%,45%/0.3)]">
+              <CardContent className="p-6">
+                <h3 className="text-sm font-bold uppercase tracking-widest text-emerald-400 mb-4">
+                  InventorySprint
+                </h3>
+                <ul className="space-y-3">
+                  {[
+                    "Only active listings count toward your plan — never inactive or out-of-stock ASINs",
+                    "The moment inbound stock is detected, the ASIN auto-activates in the repricer",
+                    "The moment an ASIN goes inactive, it auto-deactivates and stops counting",
+                    "Zero manual maintenance — your plan always matches what's actually live",
+                  ].map((t) => (
+                    <li key={t} className="flex items-start gap-2.5 text-sm text-gray-200">
+                      <PackageCheck className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
 
         {/* What's included grid */}
         <section className="container mx-auto px-4 mt-20 max-w-6xl">
