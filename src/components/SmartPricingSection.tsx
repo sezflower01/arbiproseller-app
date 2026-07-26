@@ -1,12 +1,11 @@
 
-import { TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, Brain, FlaskConical } from 'lucide-react';
+import { TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, FlaskConical } from 'lucide-react';
 
 const points = [
   { icon: TrendingUp, text: "Doesn't blindly lower prices" },
   { icon: ShieldCheck, text: 'Avoids unprofitable sales' },
   { icon: ArrowUpCircle, text: 'Raises prices when market allows' },
   { icon: RefreshCw, text: 'Adapts automatically in real time' },
-  { icon: Brain, text: 'Every decision reviewed by Gemini AI' },
   { icon: FlaskConical, text: "Proven with real tests before it's trusted" },
 ];
 

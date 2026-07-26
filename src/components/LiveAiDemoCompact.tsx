@@ -19,7 +19,7 @@ const LiveAiDemoCompact = () => {
               Live AI in Action
             </p>
             <p className="text-[10px] text-muted-foreground leading-tight truncate">
-              Every pricing decision is executed by your engine — and reviewed by Gemini AI.
+              Every pricing decision is executed by your engine.
             </p>
           </div>
         </div>
@@ -32,10 +32,7 @@ const LiveAiDemoCompact = () => {
         </span>
         <span className="font-semibold text-emerald-300">Live</span>
         <span className="text-gray-500">·</span>
-        <span className="inline-flex items-center gap-2 text-base font-semibold text-primary">
-          <Brain className="h-5 w-5" />
-          Gemini AI continuously reviewing decisions to improve outcomes
-        </span>
+        <span>Actively monitoring your listings</span>
       </div>
 
       <div className="px-4 py-3.5 border-t border-primary/20 bg-gradient-to-r from-primary/10 via-purple-500/5 to-primary/10">

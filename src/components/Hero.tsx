@@ -1,5 +1,5 @@
 
-import { Download, CheckCircle, Zap, TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, Brain, FlaskConical } from 'lucide-react';
+import { Download, CheckCircle, Zap, TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, FlaskConical } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import LiveAiDemoCompact from "@/components/LiveAiDemoCompact";
 
@@ -112,10 +112,6 @@ const Hero = () => {
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <RefreshCw className="w-4 h-4 text-primary flex-shrink-0" />
                   <span className="text-muted-foreground text-xs">Adapts automatically in real time</span>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <Brain className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Every decision reviewed by Gemini AI</span>
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
