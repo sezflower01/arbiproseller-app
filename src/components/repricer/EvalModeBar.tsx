@@ -38,13 +38,17 @@ export default function EvalModeBar({ marketplace }: EvalModeBarProps) {
     if (!user) return;
     setLoading(true);
     try {
-      // Fetch active assignments for this marketplace
+      // Fetch active assignments for this marketplace. Filters on
+      // is_enabled, not `status` -- status is essentially always 'active'
+      // regardless of whether the assignment is actually enabled (confirmed
+      // live: 99% of rows are status='active' even when is_enabled=false),
+      // so it never reflected real activity.
       const { data, error } = await (supabase as any)
         .from("repricer_assignments")
         .select("eval_mode, active_eval_mode, eval_mode_switched_at, eval_mode_reason, status")
         .eq("user_id", user.id)
         .eq("marketplace", marketplace)
-        .eq("status", "active");
+        .eq("is_enabled", true);
 
       if (error || !data) {
         setCounts(null);

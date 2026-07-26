@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Brain, Zap, Settings2, RefreshCw } from "lucide-react";
@@ -15,16 +16,26 @@ interface ModeCount {
 }
 
 export default function EvalModeDistributionPanel() {
+  const { user } = useAuth();
   const [counts, setCounts] = useState<ModeCount | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchCounts = async () => {
+    if (!user) return;
     setLoading(true);
     try {
+      // Filters on is_enabled, not `status` -- status is essentially always
+      // 'active' regardless of whether the assignment is actually enabled
+      // (confirmed live: 99% of rows are status='active' even when
+      // is_enabled=false), so it never reflected real activity. Also scopes
+      // to the current user explicitly rather than relying solely on RLS,
+      // since the "Monitors can view assignments" policy would otherwise mix
+      // in every account's assignments for a monitor-role viewer.
       const { data, error } = await (supabase as any)
         .from("repricer_assignments")
         .select("eval_mode, active_eval_mode")
-        .eq("status", "active");
+        .eq("user_id", user.id)
+        .eq("is_enabled", true);
 
       if (error || !data) {
         setCounts(null);
@@ -60,7 +71,7 @@ export default function EvalModeDistributionPanel() {
 
   useEffect(() => {
     fetchCounts();
-  }, []);
+  }, [user]);
 
   if (!counts && !loading) return null;
 
