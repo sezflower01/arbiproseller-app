@@ -268,10 +268,13 @@ const Pricing = () => {
             if a temporary spike pushes you over your plan's listing capacity,
             the repricer keeps working without interruption — we never cut off
             service mid-cycle. We only check your usage against your plan
-            once, at your billing renewal. If you're back within 10% of your
-            plan by then, nothing changes. If you're still meaningfully over,
-            we move you to the smallest plan that covers your usage — no
-            surprise overage fees, just the plan that fits.
+            once, at your billing renewal, and it works both ways: if you're
+            within 10% of your plan, nothing changes; if you're meaningfully
+            over, we move you to the smallest plan that covers your usage; and
+            if your usage has dropped enough that a cheaper plan now covers
+            you comfortably, we move you down too. No surprise overage fees,
+            no overpaying for capacity you're not using — just the plan that
+            fits.
           </p>
         </section>
 

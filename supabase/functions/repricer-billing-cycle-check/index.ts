@@ -4,12 +4,17 @@
 //   - The repricer never blocks activation in real time, no matter how far
 //     over plan an account runs mid-cycle (see auto-onboard-asin).
 //   - Instead, each account's OWN capacity vs. plan is only reconciled at
-//     THEIR billing renewal. If still meaningfully over plan at that exact
-//     moment (>110% of listing_limit), the subscription is auto-upgraded to
-//     the smallest tier that covers the current active-listing count.
-//   - If usage dropped back within 110% by renewal, nothing happens -- the
-//     account simply renews at its current plan. A mid-cycle spike that
-//     resolves itself before renewal is never charged for.
+//     THEIR billing renewal, and it's symmetric: the account is moved to
+//     the smallest plan tier whose grace-adjusted capacity (110% of
+//     listing_limit) still covers current usage -- whether that means
+//     upgrading (usage grew past the current plan) or downgrading (usage
+//     shrank enough that a cheaper tier now covers it comfortably). A
+//     regular customer should never keep overpaying for capacity they
+//     stopped using, any more than they should get free capacity they've
+//     outgrown.
+//   - If usage is still within the current plan's 110% grace zone, nothing
+//     changes. A mid-cycle spike that resolves itself before renewal is
+//     never charged for.
 //
 // Runs hourly via cron. For every active/trialing, non-admin-overridden
 // subscription, we ask Stripe directly for the authoritative
@@ -81,7 +86,8 @@ serve(async (req) => {
     let checked = 0;
     let renewed = 0;
     let upgraded = 0;
-    const upgradeLog: Array<{ user_id: string; from_plan: string; to_plan: string; active_count: number; limit: number }> = [];
+    let downgraded = 0;
+    const changeLog: Array<{ user_id: string; direction: "upgrade" | "downgrade"; from_plan: string; to_plan: string; active_count: number }> = [];
 
     for (const sub of subs ?? []) {
       if (overriddenUsers.has(sub.user_id)) continue;
@@ -105,41 +111,46 @@ serve(async (req) => {
         if (justRenewed && currentPlan) {
           const { data: countsData } = await supabase.rpc("get_managed_listings_counts", { p_user_id: sub.user_id });
           const activeCount = (countsData as any)?.total ?? 0;
-          const threshold = currentPlan.listing_limit * GRACE_MULTIPLIER;
 
-          if (activeCount > threshold) {
-            const nextPlan = (plans ?? []).find(p => p.listing_limit >= activeCount);
-            if (nextPlan && nextPlan.id !== currentPlan.id) {
-              const newPriceId = sub.billing_interval === "annual" ? nextPlan.stripe_annual_price_id : nextPlan.stripe_price_id;
-              if (newPriceId) {
-                const items = stripeSub.items.data;
-                await stripe.subscriptions.update(sub.stripe_subscription_id!, {
-                  items: [{ id: items[0].id, price: newPriceId }],
-                  proration_behavior: "none",
-                });
-                newPlanId = nextPlan.id;
-                upgraded++;
-                upgradeLog.push({
-                  user_id: sub.user_id, from_plan: currentPlan.id, to_plan: nextPlan.id,
-                  active_count: activeCount, limit: currentPlan.listing_limit,
-                });
+          // Symmetric right-sizing: the smallest tier whose grace-adjusted
+          // capacity (110% of listing_limit) still covers current usage.
+          // If that's bigger than the current plan, it's an upgrade; if
+          // smaller, a downgrade; if it IS the current plan, no change.
+          const rightSizedPlan = (plans ?? []).find(p => activeCount <= p.listing_limit * GRACE_MULTIPLIER);
 
-                await supabase.from("subscription_events").insert({
-                  user_id: sub.user_id,
-                  event_type: "auto_upgrade_capacity",
-                  details: {
-                    from_plan: currentPlan.id,
-                    to_plan: nextPlan.id,
-                    active_listings: activeCount,
-                    previous_limit: currentPlan.listing_limit,
-                    grace_threshold: threshold,
-                    reconciled_at: new Date().toISOString(),
-                  },
-                });
-                log("Auto-upgraded for capacity", { userId: sub.user_id, from: currentPlan.id, to: nextPlan.id, activeCount });
-              } else {
-                log("No stripe price for target plan/interval, skipping upgrade", { userId: sub.user_id, targetPlan: nextPlan.id, interval: sub.billing_interval });
-              }
+          if (rightSizedPlan && rightSizedPlan.id !== currentPlan.id) {
+            const direction: "upgrade" | "downgrade" =
+              rightSizedPlan.listing_limit > currentPlan.listing_limit ? "upgrade" : "downgrade";
+            const newPriceId = sub.billing_interval === "annual" ? rightSizedPlan.stripe_annual_price_id : rightSizedPlan.stripe_price_id;
+            if (newPriceId) {
+              const items = stripeSub.items.data;
+              await stripe.subscriptions.update(sub.stripe_subscription_id!, {
+                items: [{ id: items[0].id, price: newPriceId }],
+                proration_behavior: "none",
+              });
+              newPlanId = rightSizedPlan.id;
+              if (direction === "upgrade") upgraded++; else downgraded++;
+              changeLog.push({
+                user_id: sub.user_id, direction, from_plan: currentPlan.id, to_plan: rightSizedPlan.id,
+                active_count: activeCount,
+              });
+
+              await supabase.from("subscription_events").insert({
+                user_id: sub.user_id,
+                event_type: direction === "upgrade" ? "auto_upgrade_capacity" : "auto_downgrade_capacity",
+                details: {
+                  direction,
+                  from_plan: currentPlan.id,
+                  to_plan: rightSizedPlan.id,
+                  active_listings: activeCount,
+                  previous_limit: currentPlan.listing_limit,
+                  new_limit: rightSizedPlan.listing_limit,
+                  reconciled_at: new Date().toISOString(),
+                },
+              });
+              log(`Auto-${direction}d for capacity fit`, { userId: sub.user_id, from: currentPlan.id, to: rightSizedPlan.id, activeCount });
+            } else {
+              log("No stripe price for target plan/interval, skipping right-size", { userId: sub.user_id, targetPlan: rightSizedPlan.id, interval: sub.billing_interval });
             }
           }
         }
@@ -164,9 +175,9 @@ serve(async (req) => {
       }
     }
 
-    log("Run complete", { checked, renewed, upgraded });
+    log("Run complete", { checked, renewed, upgraded, downgraded });
     return new Response(
-      JSON.stringify({ success: true, checked, renewed, upgraded, upgrades: upgradeLog }),
+      JSON.stringify({ success: true, checked, renewed, upgraded, downgraded, changes: changeLog }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
