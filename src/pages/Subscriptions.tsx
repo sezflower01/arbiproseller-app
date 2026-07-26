@@ -222,7 +222,12 @@ const Subscriptions = () => {
   const activeSliderIndex = sliderIndex ?? currentPlanIndex;
   const selectedPlan = displayPlans[activeSliderIndex];
 
-  const usagePct = effectivePlan ? Math.min((activeListings / effectivePlan.listing_limit) * 100, 100) : 0;
+  const rawUsagePct = effectivePlan ? (activeListings / effectivePlan.listing_limit) * 100 : 0;
+  const usagePct = Math.min(rawUsagePct, 100);
+  const graceLimit = effectivePlan ? effectivePlan.listing_limit * 1.10 : 0;
+  const overLimit = !!effectivePlan && activeListings > effectivePlan.listing_limit;
+  const overGrace = !!effectivePlan && activeListings > graceLimit;
+  const overageCount = effectivePlan ? Math.max(activeListings - effectivePlan.listing_limit, 0) : 0;
 
   const perAsinCost = selectedPlan
     ? ((billingCycle === 'annual' ? selectedPlan.annual_price : selectedPlan.monthly_price) / selectedPlan.listing_limit).toFixed(2)
@@ -334,15 +339,19 @@ const Subscriptions = () => {
                 <span className="text-gray-400">
                   {listingsLoading ? (
                     'Loading managed listings…'
-                  ) : usagePct >= 100 ? (
+                  ) : overGrace ? (
                     <span className="text-destructive font-medium">
-                      Limit reached — upgrade your plan to add more listings
+                      {overageCount.toLocaleString()} over your plan — nothing is paused, your plan will automatically move up at your next billing renewal
                     </span>
-                  ) : usagePct >= 90 ? (
+                  ) : overLimit ? (
+                    <span className="text-amber-400 font-medium">
+                      Grace period active — {overageCount.toLocaleString()} over plan, reconciled automatically at your next renewal
+                    </span>
+                  ) : rawUsagePct >= 90 ? (
                     <span className="text-amber-400 font-medium">
                       Almost full — upgrade to keep growing
                     </span>
-                  ) : usagePct >= 80 ? (
+                  ) : rawUsagePct >= 80 ? (
                     <span className="text-amber-300/80 font-medium">
                       {(effectivePlan.listing_limit - activeListings).toLocaleString()} slots left — consider upgrading soon
                     </span>
@@ -673,10 +682,10 @@ const Subscriptions = () => {
         {/* Comparison */}
         <Card className="mt-6 border-white/10 bg-white/5 backdrop-blur-sm">
           <CardContent className="p-5">
-            <h3 className="text-sm font-semibold text-white mb-3">ArbiPro vs Competitors</h3>
+            <h3 className="text-sm font-semibold text-white mb-3">InventorySprint vs Competitors</h3>
             <div className="grid grid-cols-3 gap-4 text-xs">
               <div />
-              <div className="text-center font-semibold text-blue-400">ArbiPro</div>
+              <div className="text-center font-semibold text-blue-400">InventorySprint</div>
               <div className="text-center font-semibold text-gray-500">Others</div>
 
               <div className="text-gray-400">Pricing model</div>
