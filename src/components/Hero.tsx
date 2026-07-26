@@ -1,5 +1,5 @@
 
-import { Download, CheckCircle, Zap, TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw } from 'lucide-react';
+import { Download, CheckCircle, Zap, TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, Brain, FlaskConical } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import LiveAiDemoCompact from "@/components/LiveAiDemoCompact";
 
@@ -95,7 +95,7 @@ const Hero = () => {
               <h3 className="text-lg font-bold text-white mb-1">
                 <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span> — Not Just Undercutting
               </h3>
-              <p className="text-muted-foreground text-sm mb-4">Your pricing engine acts instantly — Gemini ensures it keeps improving.</p>
+              <p className="text-muted-foreground text-sm mb-4">Your pricing engine acts instantly — Gemini reviews every decision, and only acts on changes it's already proven help.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
@@ -112,6 +112,14 @@ const Hero = () => {
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <RefreshCw className="w-4 h-4 text-primary flex-shrink-0" />
                   <span className="text-muted-foreground text-xs">Adapts automatically in real time</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <Brain className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-xs">Every decision reviewed by Gemini AI</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-xs">Proven with real tests before it's trusted</span>
                 </div>
               </div>
             </div>
