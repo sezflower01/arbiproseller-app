@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       access_requests: {
@@ -4820,6 +4845,8 @@ export type Database = {
       keepa_seller_name_cache: {
         Row: {
           business_name: string | null
+          current_rating: number | null
+          current_rating_count: number | null
           expires_at: string
           fetched_at: string
           is_amazon: boolean
@@ -4829,6 +4856,8 @@ export type Database = {
         }
         Insert: {
           business_name?: string | null
+          current_rating?: number | null
+          current_rating_count?: number | null
           expires_at?: string
           fetched_at?: string
           is_amazon?: boolean
@@ -4838,6 +4867,8 @@ export type Database = {
         }
         Update: {
           business_name?: string | null
+          current_rating?: number | null
+          current_rating_count?: number | null
           expires_at?: string
           fetched_at?: string
           is_amazon?: boolean
@@ -5900,6 +5931,105 @@ export type Database = {
           throttled?: boolean
           users_errored?: number
           users_processed?: number
+        }
+        Relationships: []
+      }
+      price_alerts: {
+        Row: {
+          asin: string
+          confirm_token: string
+          confirmed_at: string | null
+          created_at: string
+          direction: string
+          fired_at: string | null
+          id: string
+          last_checked_at: string | null
+          last_price_seen: number | null
+          marketplace: string
+          notify_email: string
+          status: string
+          target_price: number
+          user_id: string
+        }
+        Insert: {
+          asin: string
+          confirm_token?: string
+          confirmed_at?: string | null
+          created_at?: string
+          direction?: string
+          fired_at?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_price_seen?: number | null
+          marketplace?: string
+          notify_email: string
+          status?: string
+          target_price: number
+          user_id: string
+        }
+        Update: {
+          asin?: string
+          confirm_token?: string
+          confirmed_at?: string | null
+          created_at?: string
+          direction?: string
+          fired_at?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_price_seen?: number | null
+          marketplace?: string
+          notify_email?: string
+          status?: string
+          target_price?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pricing_suppression_check_queue: {
+        Row: {
+          asin: string | null
+          attempts: number
+          created_at: string
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          marketplace: string
+          priority: number
+          processed_at: string | null
+          sku: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          asin?: string | null
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          marketplace?: string
+          priority?: number
+          processed_at?: string | null
+          sku: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          asin?: string | null
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          marketplace?: string
+          priority?: number
+          processed_at?: string | null
+          sku?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -8630,6 +8760,7 @@ export type Database = {
           min_profit_dollars: number | null
           min_roi: number | null
           min_roi_enabled: boolean
+          min_roi_enabled_marketplace_overrides: Json
           min_roi_marketplace_overrides: Json
           min_roi_percent: number | null
           min_roi_percent_base: number | null
@@ -8737,6 +8868,7 @@ export type Database = {
           min_profit_dollars?: number | null
           min_roi?: number | null
           min_roi_enabled?: boolean
+          min_roi_enabled_marketplace_overrides?: Json
           min_roi_marketplace_overrides?: Json
           min_roi_percent?: number | null
           min_roi_percent_base?: number | null
@@ -8844,6 +8976,7 @@ export type Database = {
           min_profit_dollars?: number | null
           min_roi?: number | null
           min_roi_enabled?: boolean
+          min_roi_enabled_marketplace_overrides?: Json
           min_roi_marketplace_overrides?: Json
           min_roi_percent?: number | null
           min_roi_percent_base?: number | null
@@ -11657,6 +11790,7 @@ export type Database = {
           admin_approved_by: string | null
           admin_rejection_reason: string | null
           applied_at: string | null
+          auto_graduated: boolean
           confidence_bucket: string | null
           confidence_score: number | null
           created_at: string
@@ -11684,6 +11818,7 @@ export type Database = {
           admin_approved_by?: string | null
           admin_rejection_reason?: string | null
           applied_at?: string | null
+          auto_graduated?: boolean
           confidence_bucket?: string | null
           confidence_score?: number | null
           created_at?: string
@@ -11711,6 +11846,7 @@ export type Database = {
           admin_approved_by?: string | null
           admin_rejection_reason?: string | null
           applied_at?: string | null
+          auto_graduated?: boolean
           confidence_bucket?: string | null
           confidence_score?: number | null
           created_at?: string
@@ -11931,6 +12067,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sp_api_rate_limit_state: {
+        Row: {
+          created_at: string | null
+          last_called_at: string | null
+          operation: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          last_called_at?: string | null
+          operation: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          last_called_at?: string | null
+          operation?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       spapi_health_alerts: {
         Row: {
@@ -13613,6 +13770,7 @@ export type Database = {
       cleanup_inventory_refresh_queue: { Args: never; Returns: number }
       cleanup_old_monitor_snapshots: { Args: never; Returns: number }
       cleanup_pg_cron_history: { Args: { _keep_days?: number }; Returns: Json }
+      cleanup_pricing_suppression_check_queue: { Args: never; Returns: number }
       cleanup_repricer_ai_decisions: {
         Args: { _keep_days?: number }
         Returns: Json
@@ -13665,6 +13823,17 @@ export type Database = {
           user_id: string
         }[]
       }
+      dequeue_pricing_suppression_check: {
+        Args: { p_limit?: number }
+        Returns: {
+          asin: string
+          attempts: number
+          id: string
+          marketplace: string
+          sku: string
+          user_id: string
+        }[]
+      }
       derive_health_severity: {
         Args: {
           _attempt: number
@@ -13695,6 +13864,14 @@ export type Database = {
         Returns: Json
       }
       enqueue_full_inventory_refresh_all_users: { Args: never; Returns: Json }
+      enqueue_pricing_suppression_check: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
+      enqueue_pricing_suppression_check_all_users: {
+        Args: never
+        Returns: Json
+      }
       estimate_cleanup: {
         Args: { _keep_days: number; _table_key: string }
         Returns: Json
@@ -14145,6 +14322,20 @@ export type Database = {
         Args: { _hours?: number; _id: string }
         Returns: undefined
       }
+      insert_download_record: {
+        Args: {
+          city: string
+          country: string
+          downloaded_at: string
+          file_type: string
+          ip_address: string
+          latitude: number
+          longitude: number
+          region: string
+          user_agent: string
+        }
+        Returns: boolean
+      }
       is_active_created_listing: {
         Args: { _validation_status: string }
         Returns: boolean
@@ -14193,6 +14384,14 @@ export type Database = {
         Returns: undefined
       }
       mark_inventory_refresh_success: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      mark_pricing_suppression_check_error: {
+        Args: { p_error: string; p_id: string; p_max_attempts?: number }
+        Returns: undefined
+      }
+      mark_pricing_suppression_check_success: {
         Args: { p_id: string }
         Returns: undefined
       }
@@ -14647,6 +14846,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_action: ["view", "run", "edit", "admin"],

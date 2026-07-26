@@ -40,6 +40,7 @@ interface TuningRecommendation {
   status: string;
   safety_bound_json: any;
   created_at: string;
+  auto_graduated: boolean;
 }
 
 interface TuningAction {
@@ -344,6 +345,19 @@ export default function SmartEngineLearning() {
           return reviewRatio >= 0.2 || (d.count >= 20 && d.asins.size >= 8);
         });
 
+      // Graduation: once a recommendation_type has proven itself across
+      // GRADUATION_MIN_IMPROVED prior experiments (launched via "Launch
+      // experiment", measured by smart-engine-evaluate-outcomes) with zero
+      // "worse" outcomes, new instances of that same type skip manual review
+      // and go straight to status="approved" -- repricer-ai-evaluate picks
+      // approved recommendations up on its very next cycle. Tracked
+      // platform-wide (not per user): a pattern proven safe on one account
+      // should benefit every account immediately, not make each one re-earn
+      // trust from zero. A single "worse" outcome anywhere permanently blocks
+      // graduation until investigated -- this only loosens the gate for
+      // patterns with a clean track record, never widens what's tunable.
+      const GRADUATION_MIN_IMPROVED = 3;
+
       for (const [key, data] of highConfidence) {
         const rec = generateRecommendation(key, data, { avgUndercut, avgCooldown });
         if (rec) {
@@ -363,6 +377,15 @@ export default function SmartEngineLearning() {
               .eq("user_id", user.id)
               .limit(1);
 
+            const { data: pastOutcomes } = await supabase
+              .from("smart_engine_tuning_recommendations")
+              .select("outcome_direction")
+              .eq("recommendation_type", rec.recommendation_type)
+              .not("outcome_direction", "is", null);
+            const improvedCount = (pastOutcomes || []).filter(o => o.outcome_direction === "improved").length;
+            const worseCount = (pastOutcomes || []).filter(o => o.outcome_direction === "worse").length;
+            const isGraduated = improvedCount >= GRADUATION_MIN_IMPROVED && worseCount === 0;
+
             await supabase.from("smart_engine_tuning_recommendations").insert({
               user_id: user.id,
               signal_id: sigRow?.[0]?.id || null,
@@ -370,10 +393,13 @@ export default function SmartEngineLearning() {
               parameter_key: rec.parameter_key,
               current_value: rec.current_value,
               suggested_value: rec.suggested_value,
-              reason: `${rec.reason} (Evidence: ${data.count} events, ${data.asins.size} ASINs, ${data.count7d} in last 7d)`,
+              reason: isGraduated
+                ? `${rec.reason} (Evidence: ${data.count} events, ${data.asins.size} ASINs, ${data.count7d} in last 7d) — Auto-applied: this tuning type has ${improvedCount} prior proven improvements and 0 regressions.`
+                : `${rec.reason} (Evidence: ${data.count} events, ${data.asins.size} ASINs, ${data.count7d} in last 7d)`,
               supporting_signal_count: data.count,
               confidence_score: Math.min(100, (data.count / 10) * 50 + (data.asins.size / 5) * 50),
-              status: "draft",
+              status: isGraduated ? "approved" : "draft",
+              auto_graduated: isGraduated,
               safety_bound_json: rec.safety_bound,
             });
           }
@@ -629,6 +655,11 @@ export default function SmartEngineLearning() {
                       <span className="text-sm font-medium font-mono">{rec.parameter_key}</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      {rec.auto_graduated && (
+                        <Badge className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" title="Auto-applied: this tuning type has a proven track record and skipped manual review">
+                          🎓 Auto-applied
+                        </Badge>
+                      )}
                       {confidenceBadge(rec.confidence_score)}
                       <Badge variant={rec.status === "draft" ? "secondary" : rec.status === "applied" ? "default" : "outline"} className="text-[10px]">
                         {rec.status}
