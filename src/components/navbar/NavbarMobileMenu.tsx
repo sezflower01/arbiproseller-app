@@ -244,8 +244,9 @@ const NavbarMobileMenu: React.FC<NavbarMobileMenuProps> = ({
             )}
           </div>
           
-          <BlogMobileSection navigate={navigate} />
-          
+          {/* Blog menu hidden for now (2026-07-26 request) -- BlogMobileSection
+              is still defined above, just not rendered. */}
+
           <a
             onClick={handleAboutClick}
             className="py-2 px-4 text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded transition-colors cursor-pointer"

@@ -151,41 +151,9 @@ const NavbarLinks: React.FC<NavbarLinksProps> = ({
         </Button>
       )}
 
-      {!user && (
-        <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            className="h-9 rounded-full border border-primary/30 bg-primary/10 px-4 backdrop-blur-sm hover:bg-primary/20 hover:border-primary/50 transition-all duration-200 group"
-          >
-            <BookOpen className="mr-1.5 h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" />
-            <span className="font-bold text-primary text-xs tracking-wide uppercase">Blog</span>
-            <ChevronDown className="ml-1.5 h-3 w-3 text-primary/60 group-hover:text-primary transition-colors" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="w-80 p-2 bg-[hsl(222,84%,6%)] border border-white/10 backdrop-blur-xl shadow-2xl shadow-primary/10 rounded-xl"
-        >
-          <div className="px-3 py-2 mb-1">
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary/70">Latest Articles</p>
-          </div>
-          <DropdownMenuSeparator className="bg-white/5" />
-          {blogItems.map((blog) => (
-            <DropdownMenuItem
-              key={blog.to}
-              className="cursor-pointer rounded-lg px-3 py-2.5 my-0.5 focus:bg-primary/10 hover:bg-primary/10 transition-colors group/item"
-              onClick={() => navigate(blog.to)}
-            >
-              <span className="mr-2.5 text-base">{blog.emoji}</span>
-              <span className="text-sm font-medium text-white/80 group-hover/item:text-white transition-colors leading-snug">
-                {blog.title}
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      )}
+      {/* Blog menu hidden for now (2026-07-26 request) -- blogItems and the
+          DropdownMenu imports above are still in this file, just unused,
+          so the dropdown is cheap to restore if needed again. */}
 
       {user && (
         <PlatformModulesMenu isAdmin={isAdmin} />
