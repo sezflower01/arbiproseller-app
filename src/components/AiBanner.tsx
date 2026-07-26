@@ -33,7 +33,7 @@ const AiBanner = () => {
 
           {/* Sub-headline */}
           <p className="text-lg md:text-xl text-muted-foreground/90 max-w-2xl mx-auto leading-relaxed">
-            Continuously improves your results with AI reviewed by Gemini.
+            Gets smarter over time with AI reviewed by Gemini.
           </p>
 
           {/* Feature pills */}

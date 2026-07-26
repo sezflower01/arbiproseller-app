@@ -19,7 +19,7 @@ const SmartPricingSection = () => {
             AI Pricing Powered by Gemini — <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">Not Just Undercutting</span>
           </h2>
           <p className="text-muted-foreground mb-10 text-lg">
-            Your pricing engine acts instantly — Gemini reviews every decision, and only acts on changes it's already proven help.
+            Your pricing engine acts instantly — Gemini regularly reviews key decisions, and only acts on changes it's already proven help.
           </p>
           <div className="grid grid-cols-1 gap-3 max-w-xl mx-auto">
             {points.map((p, i) => {
