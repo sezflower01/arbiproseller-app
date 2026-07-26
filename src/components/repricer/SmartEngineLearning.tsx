@@ -192,6 +192,7 @@ export default function SmartEngineLearning() {
         current_price: e.current_price,
         next_competitor_price: e.next_competitor_price,
         buy_box_price: e.buy_box_price,
+        action_type: e.action_type,
       }));
       const reviewItems2 = (reviewRes.data || []).map((r: any) => ({
         asin: r.asin,
@@ -247,6 +248,10 @@ export default function SmartEngineLearning() {
 
         for (const sig of sigs) {
           const key = sig.toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").substring(0, 100);
+          // Real API/price-change failures belong in the Error Log for root-cause
+          // debugging, not in the "ambiguous hold" tuning signal -- exclude them
+          // so a burst of unrelated failures never nudges cooldown_minutes.
+          if (key === "constrained_hold" && (item as any).action_type === "price_change_failed") continue;
           const existing = signalMap.get(key);
           const marginGap = item.next_competitor_price && item.current_price
             ? Number(item.next_competitor_price) - Number(item.current_price) : null;
@@ -312,6 +317,21 @@ export default function SmartEngineLearning() {
         }, { onConflict: "user_id,marketplace,signal_key" });
       }
 
+      // Baseline current values -- only cooldown_minutes and undercut_amount are
+      // actually read/applied live by repricer-ai-evaluate's LEARNING_ALLOWED_KEYS,
+      // so recommendations are only ever proposed for those two.
+      const { data: userRules } = await supabase
+        .from("repricer_rules")
+        .select("undercut_amount, cooldown_minutes")
+        .eq("user_id", user.id)
+        .eq("is_enabled", true);
+      const avgUndercut = userRules && userRules.length > 0
+        ? userRules.reduce((s, r) => s + (r.undercut_amount ?? 0), 0) / userRules.length
+        : 0.01;
+      const avgCooldown = userRules && userRules.length > 0
+        ? userRules.reduce((s, r) => s + (r.cooldown_minutes ?? 10), 0) / userRules.length
+        : 10;
+
       // Generate recommendations gated by internal evidence thresholds
       // Requirements: ≥10 occurrences, ≥5 distinct ASINs, seen in last 7d, ≥60% non-review judgments
       const highConfidence = Array.from(signalMap.entries())
@@ -325,7 +345,7 @@ export default function SmartEngineLearning() {
         });
 
       for (const [key, data] of highConfidence) {
-        const rec = generateRecommendation(key, data);
+        const rec = generateRecommendation(key, data, { avgUndercut, avgCooldown });
         if (rec) {
           const { data: existing } = await supabase
             .from("smart_engine_tuning_recommendations")
@@ -700,51 +720,54 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-// Generate bounded recommendations from signal patterns
-function generateRecommendation(signalKey: string, data: { label: string; count: number; asins: Set<string>; marginGaps: number[]; bbGaps: number[] }) {
-  const avgMargin = data.marginGaps.length > 0
-    ? data.marginGaps.reduce((a, b) => a + b, 0) / data.marginGaps.length : 0;
+// Maps the REAL signal vocabulary written by smart-engine-auto-review's
+// categorization ("BB loss detected" -> bb_loss_detected, "Constrained hold" ->
+// constrained_hold, etc.) to the only 2 parameters repricer-ai-evaluate's
+// LEARNING_ALLOWED_KEYS actually reads and applies live: cooldown_minutes and
+// undercut_amount. "Price raised" and "BB winner stable" are healthy states;
+// "Floor protection active" is a cost/floor issue, which is explicitly
+// forbidden territory for automated tuning -- none of those three ever
+// produce a recommendation here, by design.
+function generateRecommendation(
+  signalKey: string,
+  data: { label: string; count: number; asins: Set<string>; marginGaps: number[]; bbGaps: number[] },
+  baseline: { avgUndercut: number; avgCooldown: number },
+) {
+  const UNDERCUT_STEP = 0.01;
+  const UNDERCUT_MAX = 0.05;
+  const COOLDOWN_STEP = 3;
+  const COOLDOWN_MIN = 3;
 
-  // Raise too conservative
-  if (signalKey.includes("raise_progressing") || signalKey.includes("moderate_gap")) {
+  // Lowered price but still not winning the Buy Box -- undercut isn't deep
+  // enough to actually flip it.
+  if (signalKey === "bb_loss_detected") {
+    const current = Math.round(baseline.avgUndercut * 100) / 100;
+    const suggested = Math.min(UNDERCUT_MAX, Math.round((current + UNDERCUT_STEP) * 100) / 100);
+    if (suggested <= current) return null;
     return {
-      recommendation_type: "raise_step",
-      parameter_key: "raise_micro_step_pct",
-      current_value: "1%",
-      suggested_value: "2%",
-      reason: `${data.count} reviews show raise is progressing but gap remains (avg $${avgMargin.toFixed(2)}). Increasing raise step could capture margin faster.`,
-      safety_bound: { min: 0.5, max: 3, unit: "%" },
+      recommendation_type: "undercut_tuning",
+      parameter_key: "undercut_amount",
+      current_value: String(current),
+      suggested_value: String(suggested),
+      reason: `${data.count} events across ${data.asins.size} ASINs show the repricer lowering price but still not winning the Buy Box. A slightly more aggressive undercut may close the gap.`,
+      safety_bound: { min: 0, max: UNDERCUT_MAX },
     };
   }
 
-  // Recapture slow
-  if (signalKey.includes("recapture_slow") || signalKey.includes("no_competitive_moves")) {
+  // Ambiguous hold with no clear competitive signal (real price-change errors
+  // are excluded upstream -- those belong in the Error Log, not tuning).
+  if (signalKey === "constrained_hold") {
+    const current = Math.round(baseline.avgCooldown);
+    const suggested = Math.max(COOLDOWN_MIN, current - COOLDOWN_STEP);
+    if (suggested >= current) return null;
     return {
-      recommendation_type: "urgency",
-      parameter_key: "bb_rotation_patience",
-      current_value: "5",
-      suggested_value: "3",
-      reason: `${data.count} reviews show slow recapture with no competitive moves. Reducing patience could speed BB recovery.`,
-      safety_bound: { min: 1, max: 10, unit: "cycles" },
+      recommendation_type: "cooldown_tuning",
+      parameter_key: "cooldown_minutes",
+      current_value: String(current),
+      suggested_value: String(suggested),
+      reason: `${data.count} events across ${data.asins.size} ASINs show ambiguous holds with no clear competitive signal. Re-evaluating sooner may resolve these faster.`,
+      safety_bound: { min: COOLDOWN_MIN, max: 60 },
     };
-  }
-
-  // Floor prevents recapture (many times)
-  if (signalKey.includes("floor_prevents") || signalKey.includes("unprofitable_market")) {
-    return {
-      recommendation_type: "floor_review",
-      parameter_key: "auto_floor_aggressiveness",
-      current_value: "moderate",
-      suggested_value: "conservative",
-      reason: `${data.count} ASINs are permanently blocked by floor. Consider reviewing auto-floor restore speed.`,
-      safety_bound: { options: ["conservative", "moderate", "aggressive"] },
-    };
-  }
-
-  // Filtered competitor holding well
-  if (signalKey.includes("filtered_competitor") || signalKey.includes("not_worth_chasing")) {
-    // No change needed — this is healthy
-    return null;
   }
 
   return null;
