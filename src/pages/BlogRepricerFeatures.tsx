@@ -55,7 +55,7 @@ const features = [
     title: "Strategy Presets & Custom Rules",
     color: "cyan",
     content: [
-      "Choose from built-in strategy profiles — Margin Protection, Aggressive Capture, Balanced, Profit Extractor, Liquidation, and Momentum Builder — each with different aggression levels, raise caps, and cooldown timers.",
+      "Choose from built-in strategy profiles — Momentum Builder, Aggressive Capture, and Profit Extractor — each with different aggression levels, raise caps, and cooldown timers.",
       "Or build your own custom rules with full control over undercut amounts, raise triggers, cooldowns, and competitive behavior. Assign different rules to different products.",
     ],
     highlight: "One size doesn't fit all. Your strategy should match your product.",

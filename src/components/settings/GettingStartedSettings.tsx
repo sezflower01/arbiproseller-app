@@ -24,11 +24,8 @@ const steps = [
     accent: 'from-rose-500 to-pink-500',
     details: [
       { icon: CheckCircle, text: '📈 Momentum Builder ⭐ — Best balance of sales and profit' },
-      { icon: CheckCircle, text: '⚖️ Balanced — Stable and low-risk pricing' },
       { icon: CheckCircle, text: '🚀 Aggressive Capture — Get more sales fast' },
-      { icon: CheckCircle, text: '💰 Margin Protection — Higher profit, slower sales' },
       { icon: CheckCircle, text: '🏆 Profit Extractor — Maximize profit when competition is low' },
-      { icon: CheckCircle, text: '🔥 Liquidation — Sell inventory quickly' },
     ],
   },
   {
