@@ -338,6 +338,9 @@ verify_jwt = false
 [functions.smart-engine-outcome-snapshot]
 verify_jwt = false
 
+[functions.smart-engine-evaluate-outcomes]
+verify_jwt = false
+
 [functions.clean-ghost-listings]
 verify_jwt = false
 
