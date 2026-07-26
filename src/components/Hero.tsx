@@ -1,7 +1,6 @@
 
 import { Download, CheckCircle, Zap, TrendingUp, FlaskConical } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import LiveAiDemoCompact from "@/components/LiveAiDemoCompact";
 
 const Hero = () => {
   const handleDownloadClick = () => {
@@ -86,10 +85,8 @@ const Hero = () => {
             </div>
           </div>
 
-          {/* Right: Live AI Demo + AI Pricing Points */}
+          {/* Right: AI Pricing Points */}
           <div className="animate-fade-in w-full max-w-md mx-auto lg:max-w-none flex flex-col gap-6" style={{ animationDelay: '0.3s' }}>
-            <LiveAiDemoCompact />
-            
             {/* AI Pricing Points - Moved from SmartPricingSection */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
               <h3 className="text-lg font-bold text-white mb-1">
