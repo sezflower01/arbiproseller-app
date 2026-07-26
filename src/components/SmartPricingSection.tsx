@@ -1,11 +1,8 @@
 
-import { TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, FlaskConical } from 'lucide-react';
+import { TrendingUp, FlaskConical } from 'lucide-react';
 
 const points = [
   { icon: TrendingUp, text: "Doesn't blindly lower prices" },
-  { icon: ShieldCheck, text: 'Avoids unprofitable sales' },
-  { icon: ArrowUpCircle, text: 'Raises prices when market allows' },
-  { icon: RefreshCw, text: 'Adapts automatically in real time' },
   { icon: FlaskConical, text: "Proven with real tests before it's trusted" },
 ];
 
@@ -16,10 +13,10 @@ const SmartPricingSection = () => {
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            AI Pricing Powered by Gemini — <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">Not Just Undercutting</span>
+            AI Pricing Powered by <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">Gemini</span>
           </h2>
           <p className="text-muted-foreground mb-10 text-lg">
-            Your pricing engine acts instantly — Gemini regularly reviews key decisions, and only acts on changes it's already proven help.
+            Smart pricing that protects your margins — not a bot racing to the bottom.
           </p>
           <div className="grid grid-cols-1 gap-3 max-w-xl mx-auto">
             {points.map((p, i) => {

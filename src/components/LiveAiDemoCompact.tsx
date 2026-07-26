@@ -34,13 +34,6 @@ const LiveAiDemoCompact = () => {
         <span className="text-gray-500">·</span>
         <span>Actively monitoring your listings</span>
       </div>
-
-      <div className="px-4 py-3.5 border-t border-primary/20 bg-gradient-to-r from-primary/10 via-purple-500/5 to-primary/10">
-        <div className="flex items-center justify-center gap-2.5 text-sm md:text-base font-semibold text-primary text-center">
-          <Brain className="h-5 w-5 md:h-6 md:w-6 flex-shrink-0" />
-          <span>Select decisions are reviewed by <span className="text-white">Gemini 2.5 Flash</span> and <span className="text-white">Gemini 2.5 Pro</span> (deep analysis)</span>
-        </div>
-      </div>
     </div>
   );
 };

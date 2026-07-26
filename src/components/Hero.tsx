@@ -1,5 +1,5 @@
 
-import { Download, CheckCircle, Zap, TrendingUp, ShieldCheck, ArrowUpCircle, RefreshCw, FlaskConical } from 'lucide-react';
+import { Download, CheckCircle, Zap, TrendingUp, FlaskConical } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import LiveAiDemoCompact from "@/components/LiveAiDemoCompact";
 
@@ -93,25 +93,13 @@ const Hero = () => {
             {/* AI Pricing Points - Moved from SmartPricingSection */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
               <h3 className="text-lg font-bold text-white mb-1">
-                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span> — Not Just Undercutting
+                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span>
               </h3>
-              <p className="text-muted-foreground text-sm mb-4">Your pricing engine acts instantly — Gemini regularly reviews key decisions, and only acts on changes it's already proven help.</p>
+              <p className="text-muted-foreground text-sm mb-4">Smart pricing that protects your margins — not a bot racing to the bottom.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
                   <span className="text-muted-foreground text-xs">Doesn't blindly lower prices</span>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Avoids unprofitable sales</span>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <ArrowUpCircle className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Raises prices when the market allows</span>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <RefreshCw className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Adapts automatically in real time</span>
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
                   <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
