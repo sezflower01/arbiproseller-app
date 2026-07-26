@@ -21,13 +21,13 @@ const Hero = () => {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
       <div className="container mx-auto px-4 py-20 md:py-24 relative z-10">
-        <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-10 lg:gap-12 items-center">
-          {/* Left: Copy */}
-          <div className="w-full max-w-2xl min-w-0 text-center lg:text-left mx-auto lg:mx-0">
+        <div className="flex justify-center">
+          {/* Copy */}
+          <div className="w-full max-w-2xl min-w-0 text-center mx-auto">
             <div className="w-full max-w-[calc(100vw-2rem)] min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-xl sm:p-6 md:p-8">
             <div className="inline-flex items-start gap-2 px-4 py-1.5 rounded-2xl border border-primary/30 bg-primary/10 text-primary text-xs sm:text-sm font-medium mb-6 animate-fade-in max-w-full min-w-0">
               <Zap className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span className="break-words">Not Just a Repricer — A Complete Arbitrage System</span>
+              <span className="break-words">Not Just a Repricer — A Complete Inventory Management System</span>
             </div>
 
             <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-4 animate-fade-in leading-tight">
@@ -62,6 +62,24 @@ const Hero = () => {
                 </div>
               </div>
             </div>
+
+            {/* AI Pricing Points */}
+            <div className="pt-6 mt-1 border-t border-white/10">
+              <h3 className="text-lg font-bold mb-1">
+                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span>
+              </h3>
+              <p className="text-muted-foreground text-sm mb-4">Smart pricing that protects your margins — not a bot racing to the bottom.</p>
+              <div className="grid grid-cols-2 gap-3 text-left">
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-xs">Doesn't blindly lower prices</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
+                  <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground text-xs">Proven with real tests before it's trusted</span>
+                </div>
+              </div>
+            </div>
             </div>
 
             {/* CTA Button */}
@@ -82,27 +100,6 @@ const Hero = () => {
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse" />
                 No Credit Card Required
               </span>
-            </div>
-          </div>
-
-          {/* Right: AI Pricing Points */}
-          <div className="animate-fade-in w-full max-w-md mx-auto lg:max-w-none flex flex-col gap-6" style={{ animationDelay: '0.3s' }}>
-            {/* AI Pricing Points - Moved from SmartPricingSection */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
-              <h3 className="text-lg font-bold text-white mb-1">
-                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">AI Pricing Powered by Gemini</span>
-              </h3>
-              <p className="text-muted-foreground text-sm mb-4">Smart pricing that protects your margins — not a bot racing to the bottom.</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Doesn't blindly lower prices</span>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                  <FlaskConical className="w-4 h-4 text-primary flex-shrink-0" />
-                  <span className="text-muted-foreground text-xs">Proven with real tests before it's trusted</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
