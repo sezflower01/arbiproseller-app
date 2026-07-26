@@ -215,9 +215,10 @@ const Pricing = () => {
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Most repricers count every ASIN you've ever added, forever —
-              even ones that never made it onto the repricer at all. Ours
-              only counts real, onboarded slots, and drops one automatically
-              once it's genuinely gone.
+              even ones that are permanently out of stock or never made it
+              onto the repricer at all. Ours only counts listings that are
+              actually active and in stock right now, and adjusts
+              automatically the moment that changes.
             </p>
           </div>
 
@@ -250,10 +251,10 @@ const Pricing = () => {
                 </h3>
                 <ul className="space-y-3">
                   {[
-                    "Only real, onboarded slots count — never ghost rows that failed to sync",
-                    "The moment inbound stock is detected, the ASIN auto-activates in the repricer",
-                    "A temporary pause or stock-out doesn't cost you the slot — no re-onboarding when you restock",
-                    "Once a listing is genuinely gone, it's dropped from your count automatically",
+                    "Only real, active listings count — never ghost rows that failed to sync",
+                    "The moment stock — including inbound — is detected, the ASIN counts toward your plan",
+                    "Goes out of stock? It stops counting automatically, no action needed",
+                    "Restock later and it's counted again the moment inventory arrives — no re-onboarding",
                   ].map((t) => (
                     <li key={t} className="flex items-start gap-2.5 text-sm text-gray-200">
                       <PackageCheck className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
