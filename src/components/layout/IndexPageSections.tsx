@@ -4,7 +4,9 @@ import { useLocation } from "react-router-dom";
 import Hero from "@/components/Hero";
 import AiBanner from "@/components/AiBanner";
 import ProductLibraryBanner from "@/components/ProductLibraryBanner";
+import ChromeExtensionBanner from "@/components/ChromeExtensionBanner";
 import SalesDashboardBanner from "@/components/SalesDashboardBanner";
+import MobileAppBanner from "@/components/MobileAppBanner";
 
 import SmartPricingSection from "@/components/SmartPricingSection";
 import SafetySection from "@/components/SafetySection";
@@ -34,7 +36,9 @@ const IndexPageSections = () => {
       <Hero />
       <AiBanner />
       <ProductLibraryBanner />
+      <ChromeExtensionBanner />
       <SalesDashboardBanner />
+      <MobileAppBanner />
       <SmartPricingSection />
       <SafetySection />
       <ComparisonSection />
