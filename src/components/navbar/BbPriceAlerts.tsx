@@ -277,6 +277,21 @@ export default function BbPriceAlerts() {
                           >
                             {alert.asin}
                           </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await navigator.clipboard.writeText(alert.asin);
+                                toast.success(`Copied ${alert.asin}`);
+                              } catch {
+                                toast.error("Failed to copy ASIN");
+                              }
+                            }}
+                            className="text-muted-foreground hover:text-foreground shrink-0"
+                            title="Copy ASIN"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
                           <MarketplaceBadge marketplace={alert.marketplace} />
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${severityColor}`}>
                             ↓{fmt(alert.drop_abs)} ({alert.drop_pct?.toFixed(1)}%)
