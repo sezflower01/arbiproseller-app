@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscription } from "@/hooks/use-subscription";
@@ -42,6 +43,25 @@ export default function Repricer() {
     setSelectedMarketplaceRaw(mp);
     try { localStorage.setItem("repricer.selectedMarketplace", mp); } catch { /* ignore */ }
   }, []);
+
+  // Deep-link support (e.g. a Buy Box alert's "Fix Price Now" button):
+  // ?marketplace=BR&asin=B0... jumps straight to that marketplace tab with
+  // the ASIN pre-filled in search. Applied once, then the params are
+  // cleared so they don't re-trigger on subsequent navigation.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [deepLinkSearchTerm, setDeepLinkSearchTerm] = useState<string | undefined>(undefined);
+  const appliedDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLinkRef.current) return;
+    const mp = searchParams.get("marketplace");
+    const asin = searchParams.get("asin");
+    if (!mp && !asin) return;
+    appliedDeepLinkRef.current = true;
+    if (mp) setSelectedMarketplace(mp);
+    if (asin) setDeepLinkSearchTerm(asin);
+    setActiveTab("assignments");
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, setSelectedMarketplace]);
 
   const fetchRules = useCallback(async () => {
     if (!user) return;
@@ -112,6 +132,7 @@ export default function Repricer() {
                   marketplace={selectedMarketplace}
                   onMarketplaceChange={setSelectedMarketplace}
                   isAdmin={isAdmin}
+                  initialSearchTerm={deepLinkSearchTerm}
                 />
               </TabsContent>
             )}

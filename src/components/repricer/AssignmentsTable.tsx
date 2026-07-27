@@ -237,6 +237,7 @@ interface AssignmentsTableProps {
   marketplace?: string; // Selected marketplace filter
   onMarketplaceChange?: (marketplace: string) => void;
   isAdmin?: boolean;
+  initialSearchTerm?: string; // One-time deep-link search (e.g. from a Buy Box alert)
 }
 
 // Helper: paginate supabase queries — prevents silent 1000-row truncation
@@ -1371,7 +1372,7 @@ const _assignmentsFilterCache = {
   pageSize: 50 as 50 | 250,
 };
 
-export default function AssignmentsTable({ rules, marketplace = "US", onMarketplaceChange, isAdmin = false }: AssignmentsTableProps) {
+export default function AssignmentsTable({ rules, marketplace = "US", onMarketplaceChange, isAdmin = false, initialSearchTerm }: AssignmentsTableProps) {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { syncState: globalSyncState } = useSalesSync();
@@ -1636,6 +1637,18 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   }, [rules, cachedItems]);
 
   const [searchTerm, setSearchTerm] = useState(_assignmentsFilterCache.searchTerm);
+
+  // One-time deep-link search (e.g. from a Buy Box alert's "Fix Price Now"
+  // button) — applies once per incoming value, then never overrides the
+  // user's own subsequent edits to the search box.
+  const appliedInitialSearchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialSearchTerm) return;
+    if (appliedInitialSearchRef.current === initialSearchTerm) return;
+    appliedInitialSearchRef.current = initialSearchTerm;
+    setSearchTerm(initialSearchTerm);
+  }, [initialSearchTerm]);
+
   const [liveTodayUnitsByAsin, setLiveTodayUnitsByAsin] = useState<Record<string, number>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [syncingMinMax, setSyncingMinMax] = useState<Set<string>>(new Set());

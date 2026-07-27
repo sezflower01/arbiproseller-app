@@ -263,6 +263,32 @@ export default function BbPriceAlerts() {
                 const severityColor = severity === "red" ? "text-red-600 bg-red-50" : severity === "orange" ? "text-orange-600 bg-orange-50" : "text-yellow-600 bg-yellow-50";
                 const timeAgo = getTimeAgo(alert.created_at);
 
+                // Plain-language urgency, prioritizing whether the user is
+                // now actually priced above the new Buy Box (the one thing
+                // that's genuinely actionable) over the raw drop percentage.
+                const losingBuyBox = gapToBb != null && gapToBb > 0;
+                let headline: string;
+                let urgent: boolean;
+                if (losingBuyBox) {
+                  headline = `You're priced $${gapToBb!.toFixed(2)} above the new Buy Box price — you're likely losing this sale right now.`;
+                  urgent = true;
+                } else if (severity === "red") {
+                  headline = `A competitor just slashed their price ${alert.drop_pct?.toFixed(1)}% — act fast to stay competitive.`;
+                  urgent = true;
+                } else if (severity === "orange") {
+                  headline = "A competitor lowered their price — worth a quick check.";
+                  urgent = false;
+                } else {
+                  headline = "Small price move detected — your repricer is already handling this.";
+                  urgent = false;
+                }
+                const ctaLabel = urgent ? "Fix Price Now" : "Review Listing";
+
+                const goToListing = () => {
+                  setIsOpen(false);
+                  navigate(`/tools/repricer?marketplace=${encodeURIComponent(alert.marketplace)}&asin=${encodeURIComponent(alert.asin)}`);
+                };
+
                 return (
                   <div
                     key={alert.id}
@@ -272,7 +298,7 @@ export default function BbPriceAlerts() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => { setIsOpen(false); navigate("/tools/repricer"); }}
+                            onClick={goToListing}
                             className="font-mono text-sm font-medium text-primary hover:underline"
                           >
                             {alert.asin}
@@ -293,17 +319,31 @@ export default function BbPriceAlerts() {
                             <Copy className="h-3 w-3" />
                           </button>
                           <MarketplaceBadge marketplace={alert.marketplace} />
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${severityColor}`}>
-                            ↓{fmt(alert.drop_abs)} ({alert.drop_pct?.toFixed(1)}%)
-                          </span>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-x-3">
-                          <span>BB Before: {fmt(alert.bb_before)}</span>
-                          <span>BB Now: <span className="font-medium text-foreground">{fmt(alert.bb_now)}</span></span>
-                          <span>My Price: {fmt(alert.my_price)}</span>
-                          <span>Gap: {gapToBb != null ? (gapToBb > 0 ? `+${fmt(gapToBb)}` : fmt(gapToBb)) : "—"}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
+                        <p className={`text-sm font-medium mt-1.5 ${urgent ? 'text-red-600' : 'text-foreground'}`}>
+                          {urgent && "⚠️ "}{headline}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant={urgent ? "default" : "outline"}
+                          className="mt-2 h-7 text-xs"
+                          onClick={goToListing}
+                        >
+                          {ctaLabel} →
+                        </Button>
+                        <details className="mt-2 group">
+                          <summary className="text-xs text-muted-foreground cursor-pointer select-none hover:text-foreground list-none flex items-center gap-1">
+                            <span className="group-open:hidden">Show details</span>
+                            <span className="hidden group-open:inline">Hide details</span>
+                          </summary>
+                          <div className="text-xs text-muted-foreground mt-1.5 grid grid-cols-2 gap-x-3">
+                            <span>BB Before: {fmt(alert.bb_before)}</span>
+                            <span>BB Now: <span className="font-medium text-foreground">{fmt(alert.bb_now)}</span></span>
+                            <span>My Price: {fmt(alert.my_price)}</span>
+                            <span>Gap: {gapToBb != null ? (gapToBb > 0 ? `+${fmt(gapToBb)}` : fmt(gapToBb)) : "—"}</span>
+                          </div>
+                        </details>
+                        <div className="text-xs text-muted-foreground mt-1">
                           {alert.sku && <span className="mr-2">SKU: {alert.sku}</span>}
                           <span>{timeAgo}</span>
                         </div>
