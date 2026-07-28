@@ -692,6 +692,21 @@ const MobileLiveSales = () => {
   const [resyncingRefunds, setResyncingRefunds] = useState(false);
   const [loading, setLoading] = useState(true);
   const [revalidating, setRevalidating] = useState(false);
+  // fetchToday() can take a couple seconds (several sequential queries +
+  // client-side computation), so showing a skeleton the instant
+  // revalidating flips true made it flash almost continuously every poll
+  // cycle. Only reveal the skeleton if a fetch is still running after 400ms
+  // -- quick refreshes (the common case) update seamlessly with no flash;
+  // only genuinely slow ones show the placeholder.
+  const [showRevalidatingSkeleton, setShowRevalidatingSkeleton] = useState(false);
+  useEffect(() => {
+    if (!revalidating) {
+      setShowRevalidatingSkeleton(false);
+      return;
+    }
+    const t = setTimeout(() => setShowRevalidatingSkeleton(true), 400);
+    return () => clearTimeout(t);
+  }, [revalidating]);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
@@ -2358,7 +2373,7 @@ const MobileLiveSales = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-sm uppercase tracking-wider font-bold text-white">Net Profit</div>
-                  {sideloadsReady && !revalidating ? (
+                  {sideloadsReady && !showRevalidatingSkeleton ? (
                     <>
                       <div className={`text-3xl font-extrabold tabular-nums tracking-tight leading-tight ${disp.profit >= 0 ? "text-white" : "text-rose-300"}`}>
                         {disp.profit < 0 ? "−" : ""}{homeCurrencySymbol}{Math.abs(disp.profit).toFixed(2)}
@@ -2388,7 +2403,7 @@ const MobileLiveSales = () => {
                 </div>
                 <div>
                   <div className="text-xs uppercase tracking-wider font-bold text-white">{periodInfo.label} Sales</div>
-                  {revalidating ? (
+                  {showRevalidatingSkeleton ? (
                     <Skeleton className="h-7 w-24 bg-white/10" />
                   ) : (
                     <div
@@ -2631,7 +2646,7 @@ const MobileLiveSales = () => {
                         <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-200/90">Est. Amazon Payout</div>
                         <div className="text-[10px] text-emerald-200/60 font-medium">Sales − Fees − Refunds</div>
                       </div>
-                      {revalidating ? (
+                      {showRevalidatingSkeleton ? (
                         <Skeleton className="h-7 w-20 bg-white/10" />
                       ) : (
                         <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${payout >= 0 ? "text-emerald-200" : "text-rose-300"}`}>
@@ -2644,7 +2659,7 @@ const MobileLiveSales = () => {
                         <div className="text-[11px] uppercase tracking-wider font-bold text-rose-200/90">Refund %</div>
                         <div className="text-[10px] text-rose-200/60 font-medium">Refunds ÷ Revenue (gross sales incl. shipping)</div>
                       </div>
-                      {revalidating ? (
+                      {showRevalidatingSkeleton ? (
                         <Skeleton className="h-7 w-16 bg-white/10" />
                       ) : (
                         <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${refundPct >= 5 ? "text-rose-300" : refundPct >= 2 ? "text-amber-200" : "text-rose-200"}`}>
@@ -2656,7 +2671,7 @@ const MobileLiveSales = () => {
                 );
               })()}
 
-              {revalidating ? (
+              {showRevalidatingSkeleton ? (
                 <Skeleton className="mt-2 h-5 w-40 bg-white/10" />
               ) : (
                 <div className="mt-2 text-sm font-semibold text-white tabular-nums">
