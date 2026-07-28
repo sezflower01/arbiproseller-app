@@ -395,8 +395,11 @@ serve(async (req: Request) => {
     // Run all syncs in background without blocking redirect
     (globalThis as any).EdgeRuntime?.waitUntil(runAllSyncs());
 
-    // Redirect back to the app with success message
-    const redirectUrl = `${clientOrigin}/tools/amazon-connect?success=true`;
+    // Redirect back to the app with success message. Echo back marketplace_id
+    // so the frontend knows which marketplace was just connected — the page
+    // fully reloads on this redirect, so any client-side "selected marketplace"
+    // state from before the Amazon consent screen is gone.
+    const redirectUrl = `${clientOrigin}/tools/amazon-connect?success=true&marketplace_id=${encodeURIComponent(marketplaceId)}`;
     return new Response(null, {
       status: 302,
       headers: {

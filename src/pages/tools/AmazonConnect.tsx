@@ -43,6 +43,29 @@ const MARKETPLACE_LABELS: Record<string, string> = {
   A21TJRUUN4KGV: 'India',
 };
 
+// Amazon marketplace_id -> short code used by backend functions (auto-assign-bulk,
+// repricer engine, etc). Only US/CA/MX/BR are currently handled end-to-end by the
+// repricer; other codes are passed through as-is (functions fall back to US-routing
+// defaults for anything they don't yet support).
+const MARKETPLACE_ID_TO_CODE: Record<string, string> = {
+  ATVPDKIKX0DER: 'US',
+  A2EUQ1WTGCTBG2: 'CA',
+  A1AM78C64UM0Y8: 'MX',
+  A2Q3Y263D00KWC: 'BR',
+  A1F83G8C2ARO7P: 'UK',
+  A1PA6795UKMFR9: 'DE',
+  A13V1IB3VIYZZH: 'FR',
+  APJ6JRA9NG5V4: 'IT',
+  A1RKKUPIHCS9HS: 'ES',
+  A1805IZSGTT6HS: 'NL',
+  A2NODRKZP88ZB9: 'SE',
+  A1C3SOZRARQ6R3: 'PL',
+  AMEN7PMS3EDWL: 'BE',
+  A39IBJ37TRP1C6: 'AU',
+  A1VC38T7YXB528: 'JP',
+  A21TJRUUN4KGV: 'IN',
+};
+
 const MARKETPLACE_OPTIONS = [
   { id: 'ATVPDKIKX0DER', name: 'United States', authUrl: 'https://sellercentral.amazon.com/apps/authorize/consent' },
   { id: 'A2EUQ1WTGCTBG2', name: 'Canada', authUrl: 'https://sellercentral.amazon.ca/apps/authorize/consent' },
@@ -220,8 +243,12 @@ export default function AmazonConnect() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Auto-start full sync in background (no user interaction required)
-  const startAutoFullSync = async () => {
+  // Auto-start full sync in background (no user interaction required).
+  // marketplaceCode is the marketplace that was JUST connected/reauthorized —
+  // callers must pass it explicitly rather than relying on `selectedMarketplaceId`,
+  // which resets to its default on the full-page reload that follows the Amazon
+  // OAuth redirect.
+  const startAutoFullSync = async (marketplaceCode: string = 'US') => {
     try {
       cancelRequestedRef.current = false;
       activeProgressIdRef.current = null;
@@ -343,7 +370,7 @@ export default function AmazonConnect() {
       console.log('Auto-sync: Starting bulk auto-assign...');
       const { data: assignData, error: assignError } = await supabase.functions.invoke('auto-assign-bulk', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { marketplace: 'US' },
+        body: { marketplace: marketplaceCode },
       });
 
       if (assignError) {
@@ -480,13 +507,14 @@ export default function AmazonConnect() {
       }
 
       toast.success('Amazon seller account connected successfully!');
-      
-      // Start auto sync
-      startAutoFullSync();
-      
+
+      // Start auto sync for whichever marketplace was just (re)authorized
+      const marketplaceCode = MARKETPLACE_ID_TO_CODE[data?.marketplace_id] || 'US';
+      startAutoFullSync(marketplaceCode);
+
       // Reload authorizations
       loadAuthorizations();
-      
+
     } catch (err: any) {
       console.error('Code exchange error:', err);
       toast.error('Failed to connect Amazon account');
@@ -548,8 +576,13 @@ export default function AmazonConnect() {
 
       // AUTOMATIC full sync - no dialog, no user action required
       if (user) {
+        // amazon-oauth-callback echoes back the marketplace_id that was just
+        // connected — selectedMarketplaceId can't be trusted here since this
+        // component just remounted from the full-page OAuth redirect.
+        const callbackMarketplaceId = searchParams.get('marketplace_id');
+        const marketplaceCode = MARKETPLACE_ID_TO_CODE[callbackMarketplaceId || ''] || 'US';
         // Start full historical sync automatically in background
-        startAutoFullSync();
+        startAutoFullSync(marketplaceCode);
       }
 
       // Clear URL parameters

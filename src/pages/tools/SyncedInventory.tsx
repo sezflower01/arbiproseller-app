@@ -42,6 +42,7 @@ import {
   getListingUnitCost,
   getListingTotalCost,
 } from "@/lib/cost-contract";
+import { getMarketplaceFromId } from "@/lib/marketplaceCurrency";
 
 interface InventoryItem {
   id: string;
@@ -1140,6 +1141,35 @@ export default function SyncedInventory() {
   // Find & assign missing repricer assignments
   const [assigningMissing, setAssigningMissing] = useState(false);
 
+  // auto-assign-bulk only processes ONE marketplace per call — loop over every
+  // marketplace this seller has actually connected (seller_authorizations)
+  // instead of assuming US, so CA/MX/BR-primary sellers get assignments for
+  // their real marketplace(s) too.
+  const runAutoAssignAllMarketplaces = async (accessToken: string) => {
+    const { data: auths } = await supabase
+      .from('seller_authorizations')
+      .select('marketplace_id')
+      .eq('user_id', user!.id);
+    const codes = Array.from(new Set((auths || []).map((a: any) => getMarketplaceFromId(a.marketplace_id))));
+    const marketplaces = codes.length > 0 ? codes : ['US'];
+
+    let created = 0;
+    let skipped = 0;
+    for (const marketplace of marketplaces) {
+      const { data, error } = await supabase.functions.invoke('auto-assign-bulk', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: { marketplace },
+      });
+      if (error) {
+        console.warn(`auto-assign-bulk failed for ${marketplace} (continuing):`, error);
+        continue;
+      }
+      created += data?.created || 0;
+      skipped += data?.skipped || 0;
+    }
+    return { created, skipped };
+  };
+
   const handleAssignMissing = async () => {
     setAssigningMissing(true);
     try {
@@ -1148,13 +1178,7 @@ export default function SyncedInventory() {
         toast({ variant: "destructive", title: "Please log in first" });
         return;
       }
-      const { data, error } = await supabase.functions.invoke('auto-assign-bulk', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { marketplace: 'US' },
-      });
-      if (error) throw error;
-      const created = data?.created || 0;
-      const skipped = data?.skipped || 0;
+      const { created, skipped } = await runAutoAssignAllMarketplaces(session.access_token);
       toast({
         title: "Auto-assign complete",
         description: `Created ${created} new assignments. ${skipped > 0 ? `Skipped ${skipped} (already assigned or missing data).` : ''}`,
@@ -1441,12 +1465,8 @@ export default function SyncedInventory() {
               await fetchInventory();
               let assignmentBackfillCreated = 0;
               try {
-                const { data: assignData, error: assignError } = await supabase.functions.invoke('auto-assign-bulk', {
-                  headers: { Authorization: `Bearer ${session.access_token}` },
-                  body: { marketplace: 'US' },
-                });
-                if (assignError) throw assignError;
-                assignmentBackfillCreated = assignData?.created || 0;
+                const { created } = await runAutoAssignAllMarketplaces(session.access_token);
+                assignmentBackfillCreated = created;
               } catch (assignErr) {
                 console.warn('Auto-assign after full sync failed:', assignErr);
               }
