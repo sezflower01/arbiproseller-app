@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Users } from "lucide-react";
 import AccountControlPanel from "@/components/admin/AccountControlPanel";
+import MarketplaceSimulationCard from "@/components/admin/MarketplaceSimulationCard";
 
 export default function RepricerAccountControl() {
   const { user } = useAuth();
@@ -55,6 +56,7 @@ export default function RepricerAccountControl() {
               Account-level repricer controls and overrides.
             </p>
           </div>
+          <MarketplaceSimulationCard />
           <AccountControlPanel />
         </main>
         <Footer />

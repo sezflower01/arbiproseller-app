@@ -117,11 +117,22 @@ async function detectForUser(
 
   const { data: settings } = await admin
     .from("repricer_settings")
-    .select("primary_marketplace, home_currency")
+    .select("primary_marketplace, home_currency, primary_marketplace_manual_override")
     .eq("user_id", userId)
     .maybeSingle();
   const previous = (settings as any)?.primary_marketplace || null;
   const currentHomeCurrency = (settings as any)?.home_currency ?? null;
+
+  // Manually pinned (e.g. an admin simulating a CA/MX/BR-primary seller) —
+  // leave it alone. Otherwise this weekly/self-service detection would
+  // silently revert it back to the real sales-volume-derived marketplace.
+  if ((settings as any)?.primary_marketplace_manual_override === true) {
+    return {
+      user_id: userId, previous, detected: previous, changed: false,
+      currency_changed: false, method: "none", totals_usd: {},
+      reason: "manual_override",
+    };
+  }
 
   const orders: { marketplace: string | null; total_sale_amount: number | null }[] = [];
   const PAGE = 1000;
