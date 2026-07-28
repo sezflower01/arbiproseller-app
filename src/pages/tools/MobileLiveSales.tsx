@@ -732,6 +732,14 @@ const MobileLiveSales = () => {
   }, [salesMode]);
 
   const fetchIdRef = useRef(0);
+  // True for the whole lifetime of any in-flight fetchToday() call, reset
+  // unconditionally when it finishes (unlike isStale()-gated loading/
+  // revalidating resets below, which intentionally skip resetting when a
+  // newer call has superseded an older one). Lets the 5s poll skip a tick
+  // if the previous one hasn't finished yet, instead of overlapping and
+  // leaving revalidating stuck true forever (every completing call finding
+  // itself "stale" relative to the next one that already started).
+  const fetchInFlightRef = useRef(false);
   const latestReconciledRequestIdRef = useRef("");
   const lastProfitRenderRef = useRef<any>(null);
   const lastSyncKickRef = useRef(0);
@@ -1094,6 +1102,7 @@ const MobileLiveSales = () => {
     if (!user?.id || isAmazonConnected === null) return;
     const myFetchId = ++fetchIdRef.current;
     const isStale = () => fetchIdRef.current !== myFetchId;
+    fetchInFlightRef.current = true;
     // SWR: if we already have data on screen (cache hydrated or prior fetch),
     // revalidate silently instead of blanking the UI with a full-screen loader.
     if (hasDataRef.current) setRevalidating(true);
@@ -1980,6 +1989,7 @@ const MobileLiveSales = () => {
         setLoading(false);
         setRevalidating(false);
       }
+      fetchInFlightRef.current = false;
     }
   }, [user?.id, isAmazonConnected, fxRates, period, cacheKeyForPeriod, salesMode, marketplaceFilter, fetchAdjustmentTotalsForRange, fetchPromotionTotalsForRange, fetchPendingEstTotalsForRange]);
 
@@ -2030,7 +2040,7 @@ const MobileLiveSales = () => {
   useEffect(() => {
     if (!user?.id) return;
     const tick = () => {
-      if (document.visibilityState === "visible") void fetchToday();
+      if (document.visibilityState === "visible" && !fetchInFlightRef.current) void fetchToday();
     };
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
