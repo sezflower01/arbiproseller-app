@@ -18,6 +18,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Globe, ChevronDown, Zap, Clock, Moon, AlertTriangle } from "lucide-react";
+import { MARKETPLACE_CONFIGS } from "@/lib/marketplaceCurrency";
 
 export type MarketplaceRole = "primary" | "secondary" | "maintenance";
 
@@ -59,15 +60,11 @@ const ROLE_CONFIG: Record<MarketplaceRole, { label: string; color: string; icon:
   },
 };
 
-const MARKETPLACE_FLAGS: Record<string, string> = {
-  US: "🇺🇸",
-  CA: "🇨🇦",
-  MX: "🇲🇽",
-  BR: "🇧🇷",
-  UK: "🇬🇧",
-  DE: "🇩🇪",
-  ES: "🇪🇸",
-};
+// Sourced from the shared marketplace config so new marketplaces (e.g. EU
+// expansion) only need to be added in one place (src/lib/marketplaceCurrency).
+const MARKETPLACE_FLAGS: Record<string, string> = Object.fromEntries(
+  Object.values(MARKETPLACE_CONFIGS).map((m) => [m.id, m.flag])
+);
 
 // The other five presets that used to live here (US-First, CA-First,
 // Balanced, Overnight International, Sequenced Intl) all hardcoded an

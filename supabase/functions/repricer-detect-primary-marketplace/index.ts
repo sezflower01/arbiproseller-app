@@ -9,6 +9,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { requireInternalCall } from "../_shared/require-internal.ts";
+import { MARKETPLACE_META, marketplaceCurrency } from "../_shared/marketplace-map.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,10 +18,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-const MARKETPLACE_CURRENCY: Record<string, string> = {
-  US: "USD", CA: "CAD", MX: "MXN", BR: "BRL",
-};
 
 // Below this many total orders across all marketplaces in the trailing
 // window, there isn't enough signal to trust — leave the setting as-is
@@ -63,7 +60,7 @@ async function detectFromListingCount(
     if (!page || page.length === 0) break;
     for (const row of page as any[]) {
       const mp = String(row.marketplace || "").toUpperCase();
-      if (!mp || !(mp in MARKETPLACE_CURRENCY)) continue;
+      if (!mp || !(mp in MARKETPLACE_META)) continue;
       counts[mp] = (counts[mp] || 0) + 1;
     }
     if (page.length < PAGE) break;
@@ -109,7 +106,7 @@ async function detectForUser(
   }
 
   const toUsd = (amount: number, mp: string) => {
-    const currency = MARKETPLACE_CURRENCY[mp] || "USD";
+    const currency = marketplaceCurrency(mp);
     if (currency === "USD") return amount;
     const rate = fxRates[currency];
     return rate && rate > 0 ? amount / rate : amount;
@@ -120,7 +117,7 @@ async function detectForUser(
   let totalOrders = 0;
   for (const o of orders) {
     const mp = String(o.marketplace || "").toUpperCase();
-    if (!mp || !(mp in MARKETPLACE_CURRENCY)) continue;
+    if (!mp || !(mp in MARKETPLACE_META)) continue;
     const usd = toUsd(Number(o.total_sale_amount) || 0, mp);
     totalsUsd[mp] = (totalsUsd[mp] || 0) + usd;
     counts[mp] = (counts[mp] || 0) + 1;

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import MarketplaceScheduleEditor, { type MarketplaceScheduleMap } from "./MarketplaceScheduleEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { MARKETPLACE_LIST } from "@/lib/marketplaceCurrency";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,12 +82,12 @@ const TARGET_ANCHORS = [
   { value: "lowest_offer", label: "Lowest Offer" },
 ];
 
-const MARKETPLACES = [
-  { value: "US", label: "🇺🇸 US" },
-  { value: "CA", label: "🇨🇦 Canada" },
-  { value: "MX", label: "🇲🇽 Mexico" },
-  { value: "BR", label: "🇧🇷 Brazil" },
-];
+// Sourced from the shared marketplace config (src/lib/marketplaceCurrency)
+// instead of a hardcoded 4-item list — otherwise a genuinely authorized
+// marketplace outside that fixed set (e.g. UK, DE) would get silently
+// dropped by the `visibleMarketplaces` filter below, even though
+// `authorizedMarketplaces` correctly detected it from seller_authorizations.
+const MARKETPLACES = MARKETPLACE_LIST.map((m) => ({ value: m.id, label: `${m.flag} ${m.name}` }));
 
 const getRuleUndercutMode = (rule: RepricerRule): 'managed' | 'custom' => {
   const storedMode = String(

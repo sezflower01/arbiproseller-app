@@ -102,6 +102,90 @@ export const MARKETPLACE_CONFIGS: Record<string, MarketplaceConfig> = {
     defaultCooldownMinutes: 30,
     defaultMaxStepAmount: 0.50,
   },
+  FR: {
+    id: "FR",
+    name: "France",
+    flag: "🇫🇷",
+    currency: "EUR",
+    currencySymbol: "€",
+    marketplaceId: "A13V1IB3VIYZZH",
+    domain: "amazon.fr",
+    defaultUndercutStep: 0.01,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 0.50,
+  },
+  IT: {
+    id: "IT",
+    name: "Italy",
+    flag: "🇮🇹",
+    currency: "EUR",
+    currencySymbol: "€",
+    marketplaceId: "APJ6JRA9NG5V4",
+    domain: "amazon.it",
+    defaultUndercutStep: 0.01,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 0.50,
+  },
+  NL: {
+    id: "NL",
+    name: "Netherlands",
+    flag: "🇳🇱",
+    currency: "EUR",
+    currencySymbol: "€",
+    marketplaceId: "A1805IZSGTT6HS",
+    domain: "amazon.nl",
+    defaultUndercutStep: 0.01,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 0.50,
+  },
+  SE: {
+    id: "SE",
+    name: "Sweden",
+    flag: "🇸🇪",
+    currency: "SEK",
+    currencySymbol: "kr",
+    marketplaceId: "A2NODRKZP88ZB9",
+    domain: "amazon.se",
+    defaultUndercutStep: 0.10,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 5.00,
+  },
+  PL: {
+    id: "PL",
+    name: "Poland",
+    flag: "🇵🇱",
+    currency: "PLN",
+    currencySymbol: "zł",
+    marketplaceId: "A1C3SOZRARQ6R3",
+    domain: "amazon.pl",
+    defaultUndercutStep: 0.05,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 2.00,
+  },
+  BE: {
+    id: "BE",
+    name: "Belgium",
+    flag: "🇧🇪",
+    currency: "EUR",
+    currencySymbol: "€",
+    marketplaceId: "AMEN7PMS3EDWL",
+    domain: "amazon.com.be",
+    defaultUndercutStep: 0.01,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 0.50,
+  },
+  TR: {
+    id: "TR",
+    name: "Turkey",
+    flag: "🇹🇷",
+    currency: "TRY",
+    currencySymbol: "₺",
+    marketplaceId: "A33AVAJ2PDY3EV",
+    domain: "amazon.com.tr",
+    defaultUndercutStep: 0.50,
+    defaultCooldownMinutes: 30,
+    defaultMaxStepAmount: 20.00,
+  },
 };
 
 export const MARKETPLACE_LIST = Object.values(MARKETPLACE_CONFIGS);
@@ -163,7 +247,7 @@ export function getMarketplaceFromId(marketplaceId: string): string {
 
 // Region groupings for API endpoint selection
 export const NA_MARKETPLACES = ["US", "CA", "MX", "BR"];
-export const EU_MARKETPLACES = ["UK", "DE", "ES"];
+export const EU_MARKETPLACES = ["UK", "DE", "FR", "IT", "ES", "NL", "SE", "PL", "BE", "TR"];
 
 // Get the SP-API endpoint based on marketplace region
 export function getSpApiEndpoint(marketplace: string): string {
