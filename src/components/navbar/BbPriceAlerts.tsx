@@ -70,13 +70,13 @@ export default function BbPriceAlerts() {
     if (!user) return;
     if (isQueryCircuitOpen('bb_price_alerts')) return;
 
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // No time cutoff — alerts persist until the user dismisses them, not
+    // just until they age out of an arbitrary window.
     const { data, error } = await supabase
       .from("bb_price_alerts")
       .select("*")
       .eq("user_id", user.id)
       .eq("dismissed", false)
-      .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(30);
 
