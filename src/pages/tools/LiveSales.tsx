@@ -601,6 +601,10 @@ const dedupeSalesRowsForLiveTotals = <T extends { order_id?: string | null; asin
 
 /* ── page component ── */
 export type TimeRangeKey = "today" | "yesterday" | "week" | "month" | "last_month" | "year";
+// Cheap, fast-changing ranges get a snappy background poll; heavier
+// reconciled ranges (Week/Month/Last Month/Year) get a much slower one --
+// see the poll effect further down for why.
+const FAST_POLL_RANGES: TimeRangeKey[] = ["today", "yesterday"];
 export type LiveSalesPeriod = {
   timeRange: TimeRangeKey;
   rangeStart: string;
@@ -701,6 +705,35 @@ const LiveSales = ({
   const [fecCoverage, setFecCoverage] = useState<{ rows: number; rangeEnd: string; loaded: boolean }>({ rows: 0, rangeEnd: "", loaded: false });
   const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
 
+  // True once fetchSales has successfully painted data at least once --
+  // gates whether a subsequent non-silent call shows the SWR "revalidating"
+  // skeleton (data already on screen) vs. the full first-load spinner.
+  const hasDataRef = useRef(false);
+  // True for the whole lifetime of any in-flight fetchSales() call, reset
+  // unconditionally on completion (unlike the isStale()-gated resets used
+  // elsewhere, which intentionally skip resetting when a newer call has
+  // superseded an older one). Lets the background poll skip a tick if the
+  // previous fetch hasn't finished yet, instead of overlapping.
+  const fetchInFlightRef = useRef(false);
+  const [revalidating, setRevalidating] = useState(false);
+  // fetchSales can take a while (multiple paginated queries + heavy
+  // per-row COGS/fee computation), so only reveal a skeleton if a
+  // revalidating fetch is still running after 400ms -- quick refreshes
+  // update seamlessly with no flash; only genuinely slow ones show it.
+  const [showRevalidatingSkeleton, setShowRevalidatingSkeleton] = useState(false);
+  useEffect(() => {
+    if (!revalidating) {
+      setShowRevalidatingSkeleton(false);
+      return;
+    }
+    const t = setTimeout(() => setShowRevalidatingSkeleton(true), 400);
+    return () => clearTimeout(t);
+  }, [revalidating]);
+  // Bumped by the background poll to re-trigger the refunds/adjustments/
+  // fecCoverage/feesCost/promotions effects below on the same cadence,
+  // without touching their internals.
+  const [pollTick, setPollTick] = useState(0);
+
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -720,7 +753,7 @@ const LiveSales = ({
     };
     run();
     return () => { cancelled = true; };
-  }, [user?.id, selectedMarketplace, timeRange]);
+  }, [user?.id, selectedMarketplace, timeRange, pollTick]);
 
   // Fetch refunds for the SELECTED period (deducted from revenue display)
   useEffect(() => {
@@ -752,10 +785,10 @@ const LiveSales = ({
       setTodayRefunds({ count: canon.refundEventCount, amount: canon.refundCostNet });
     };
     run();
-    // CPU-pressure control: periodic auto-refresh removed. Refreshes happen on
-    // initial mount, filter change, and explicit user Refresh action only.
+    // Background poll (below) bumps pollTick to re-run this on the same
+    // cadence as fetchSales, in addition to mount/filter-change/manual Refresh.
     return () => { cancelled = true; };
-  }, [user?.id, selectedMarketplace, timeRange]);
+  }, [user?.id, selectedMarketplace, timeRange, pollTick]);
 
   // Settlement-level adjustments (FEC) for the SELECTED period — EXCLUDES the
   // four per-order fee columns already aggregated in sales_orders to avoid
@@ -819,9 +852,10 @@ const LiveSales = ({
       }
     };
     run();
-    // CPU-pressure control: periodic auto-refresh removed (was 120s heavy FEC scan).
+    // Background poll (below) bumps pollTick to re-run this on the same
+    // cadence as fetchSales, in addition to mount/filter-change/manual Refresh.
     return () => { cancelled = true; };
-  }, [user?.id, selectedMarketplace, timeRange]);
+  }, [user?.id, selectedMarketplace, timeRange, pollTick]);
 
 
   // FEC coverage probe for the selected period.
@@ -848,7 +882,7 @@ const LiveSales = ({
       }
     })();
     return () => { cancelled = true; };
-  }, [user?.id, selectedMarketplace, timeRange]);
+  }, [user?.id, selectedMarketplace, timeRange, pollTick]);
 
 
   // Fetch Amazon fees + cost of goods for the SELECTED period (mirrors MobileLiveSales logic)
@@ -1048,9 +1082,10 @@ const LiveSales = ({
       }
     };
     run();
-    // CPU-pressure control: periodic auto-refresh removed (was 60s heavy fees/cost scan).
+    // Background poll (below) bumps pollTick to re-run this on the same
+    // cadence as fetchSales, in addition to mount/filter-change/manual Refresh.
     return () => { cancelled = true; };
-  }, [user?.id, selectedMarketplace, timeRange, fxRates]);
+  }, [user?.id, selectedMarketplace, timeRange, fxRates, pollTick]);
 
   const [chartSource, setChartSource] = useState<"sales_orders" | "reconciled" | "error" | null>(null);
   
@@ -1303,11 +1338,20 @@ const LiveSales = ({
     detectMarketplaces();
   }, [user?.id]);
 
-  const fetchSales = useCallback(async () => {
+  const fetchSales = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!user?.id || isAmazonConnected === null) return;
     const fetchId = ++latestFetchIdRef.current;
     const isStale = () => latestFetchIdRef.current !== fetchId;
-    setLoading(true);
+    fetchInFlightRef.current = true;
+    // Fully silent (background poll) calls skip loading/revalidating
+    // entirely -- no skeleton, just a quiet data update. The skeleton is
+    // reserved for deliberate actions: first load, manual Refresh, and
+    // switching time ranges.
+    if (!silent) {
+      if (hasDataRef.current) setRevalidating(true);
+      else setLoading(true);
+    }
     chartRowsByDayRef.current = new Map();
     try {
       const todayStr = getLocalDateStr(new Date());
@@ -1808,14 +1852,17 @@ const LiveSales = ({
         units: pendingUnitsSum,
       });
       setRows(Array.from(asinMap.values()).sort((a, b) => b.revenue - a.revenue));
+      hasDataRef.current = true;
     } catch (err: any) {
       console.error("[LiveSales] Error:", err);
       if (!isStale()) setChartSource("error");
     } finally {
       if (!isStale()) {
         setLoading(false);
+        setRevalidating(false);
         setIsSwitchingRange(false);
       }
+      fetchInFlightRef.current = false;
     }
   }, [user?.id, selectedMarketplace, fxRates, isAmazonConnected, timeRange, todayRevenueStatus, chartMode, todaySummary.revenue]);
 
@@ -1842,6 +1889,28 @@ const LiveSales = ({
     // CPU-pressure control: 60s periodic refresh removed. Users click Refresh
     // for fresh data; opening N tabs no longer multiplies Supabase load.
   }, [user?.id, refreshLiveSales]);
+
+  // Local-only ticker: silently re-reads already-synced Supabase tables on a
+  // range-aware cadence so numbers update without a manual tap, without
+  // adding extra Amazon API calls (silent fetches never touch the actual
+  // sync). Today/Yesterday are cheap and change fast (intraday orders), so
+  // they get a snappy 5s poll. Week/Month/Last Month/Year involve much
+  // heavier reconciled calculations (COGS/fee resolution across many rows),
+  // so they get a much slower 60s cadence instead. Bumping pollTick also
+  // re-runs the refunds/adjustments/fecCoverage/feesCost/promotions effects
+  // above on the same cadence. Paused while the tab is backgrounded.
+  useEffect(() => {
+    if (!user?.id) return;
+    const intervalMs = FAST_POLL_RANGES.includes(timeRange) ? 5000 : 60000;
+    const tick = () => {
+      if (document.visibilityState === "visible" && !fetchInFlightRef.current) {
+        void fetchSales({ silent: true });
+        setPollTick((t) => t + 1);
+      }
+    };
+    const id = setInterval(tick, intervalMs);
+    return () => clearInterval(id);
+  }, [user?.id, fetchSales, timeRange]);
 
   const hasChartData = dailySales.length > 0;
   const shouldHoldRevenue = todayRevenueStatus === "preparing" && timeRange === "today" && todaySummary.revenue <= 0;
@@ -1962,7 +2031,11 @@ const LiveSales = ({
                         </span>
                       )}
                     </div>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${loading ? 'text-muted-foreground/70' : 'text-foreground'}`}>{todaySummary.units}</span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-10" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${loading ? 'text-muted-foreground/70' : 'text-foreground'}`}>{todaySummary.units}</span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div className="flex flex-col items-end">
@@ -1972,6 +2045,8 @@ const LiveSales = ({
                         <Skeleton className="h-6 w-24" />
                         <span className="text-[10px] text-muted-foreground">Updating {periodLabelLower}&apos;s revenue…</span>
                       </div>
+                    ) : showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-24" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${loading ? 'text-emerald-600/50' : 'text-emerald-600'}`}>{homeCurrencySymbol}{todaySummary.revenue.toFixed(2)}</span>
                     )}
@@ -1984,32 +2059,48 @@ const LiveSales = ({
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                       {periodLabel} Pending Est.{pendingEstimateRevenue.orders > 0 ? ` (${pendingEstimateRevenue.orders})` : ""}
                     </span>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${pendingEstimateRevenue.usd > 0 ? 'text-muted-foreground italic' : 'text-muted-foreground'}`}>
-                      ~{homeCurrencySymbol}{pendingEstimateRevenue.usd.toFixed(2)}
-                    </span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-20" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${pendingEstimateRevenue.usd > 0 ? 'text-muted-foreground italic' : 'text-muted-foreground'}`}>
+                        ~{homeCurrencySymbol}{pendingEstimateRevenue.usd.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                       {periodLabel} Refunds{todayRefunds.count > 0 ? ` (${todayRefunds.count})` : ""}
                     </span>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${todayRefunds.amount > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {todayRefunds.amount > 0 ? '−' : ''}{homeCurrencySymbol}{todayRefunds.amount.toFixed(2)}
-                    </span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${todayRefunds.amount > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {todayRefunds.amount > 0 ? '−' : ''}{homeCurrencySymbol}{todayRefunds.amount.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{periodLabel} Amazon Fees</span>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.fees > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                      {periodFeesCost.fees > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.fees.toFixed(2)}
-                    </span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.fees > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                        {periodFeesCost.fees > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.fees.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{periodLabel} Cost</span>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.cost > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
-                      {periodFeesCost.cost > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.cost.toFixed(2)}
-                    </span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.cost > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
+                        {periodFeesCost.cost > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.cost.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <button
@@ -2021,7 +2112,9 @@ const LiveSales = ({
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                       {periodLabel} Adjustments <span className="opacity-70">{adjustmentsOpen ? "▴" : "▾"}</span>
                     </span>
-                    {(() => {
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (() => {
                       const v = periodAdjustments.net;
                       const cls = v === 0 ? 'text-muted-foreground' : v > 0 ? 'text-emerald-600' : 'text-destructive';
                       const sign = v > 0 ? '+' : v < 0 ? '−' : '';
@@ -2049,14 +2142,20 @@ const LiveSales = ({
                     title={`Promotions deducted from profit via shared Promotions Deducted calculation (${periodPromotions.rows} rows).`}
                   >
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{periodLabel} Promotions</span>
-                    <span className={`text-lg font-bold tabular-nums leading-tight ${periodPromotions.total > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {periodPromotions.total > 0 ? '−' : ''}{homeCurrencySymbol}{periodPromotions.total.toFixed(2)}
-                    </span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${periodPromotions.total > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {periodPromotions.total > 0 ? '−' : ''}{homeCurrencySymbol}{periodPromotions.total.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{periodLabel} Net Profit</span>
-                    {(() => {
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-16" />
+                    ) : (() => {
                       const net = todaySummary.revenue - todayRefunds.amount - periodFeesCost.fees - periodFeesCost.cost + periodAdjustments.net - periodPromotions.total;
                       return (
                         <span className={`text-lg font-bold tabular-nums leading-tight ${net >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>
@@ -2071,7 +2170,9 @@ const LiveSales = ({
                     title={"Order-level ROI: revenue − promotions − (referral + FBA + closing fees) − COGS − refunds + settlement adjustments.\n\nFor non-US marketplaces (MX/CA/BR) this is an ESTIMATE while orders are pending — it does NOT yet include Remote Fulfillment cross-border fees, FX drift, storage, long-term storage, returns, or reimbursements. Those settle 5–14 days later and can materially reduce true ROI."}
                   >
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{periodLabel} Order ROI</span>
-                    {(() => {
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-6 w-12" />
+                    ) : (() => {
                       const net = todaySummary.revenue - todayRefunds.amount - periodFeesCost.fees - periodFeesCost.cost + periodAdjustments.net - periodPromotions.total;
                       const roi = periodFeesCost.cost > 0 ? (net / periodFeesCost.cost) * 100 : null;
                       const cls = roi === null ? 'text-muted-foreground' : roi >= 0 ? 'text-emerald-600' : 'text-destructive';
@@ -2190,12 +2291,18 @@ const LiveSales = ({
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs uppercase tracking-wider text-muted-foreground">Units</span>
-                    <span className="text-base font-bold text-foreground tabular-nums">{monthSummary.units}</span>
+                    {showRevalidatingSkeleton ? (
+                      <Skeleton className="h-5 w-10" />
+                    ) : (
+                      <span className="text-base font-bold text-foreground tabular-nums">{monthSummary.units}</span>
+                    )}
                   </div>
                   <div className="w-px h-5 bg-border" />
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs uppercase tracking-wider text-muted-foreground">Revenue</span>
                     {shouldHoldRevenue ? (
+                      <Skeleton className="h-5 w-20" />
+                    ) : showRevalidatingSkeleton ? (
                       <Skeleton className="h-5 w-20" />
                     ) : (
                       <span className="text-base font-bold text-emerald-600 tabular-nums">{homeCurrencySymbol}{monthSummary.revenue.toFixed(2)}</span>

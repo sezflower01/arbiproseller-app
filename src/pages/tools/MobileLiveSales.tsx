@@ -63,6 +63,10 @@ const MONTH_PERIODS: MonthPeriod[] = [
 // still compile; the selector, prev/next swipe, and saved-period restore all
 // derive from PERIOD_ORDER and will silently drop it.
 const PERIOD_ORDER: Period[] = ["last_month", "yesterday", "today", "this_week", "mtd", "forecast"];
+// Cheap, fast-changing periods get a snappy poll; heavier reconciled
+// periods (This Week/MTD/Forecast/Last Month) get a much slower one --
+// see the poll effect below for why.
+const FAST_POLL_PERIODS: Period[] = ["today", "yesterday"];
 
 const addDaysISO = (dateStr: string, delta: number) => {
   const d = new Date(`${dateStr}T12:00:00`);
@@ -2051,20 +2055,25 @@ const MobileLiveSales = () => {
   // Switching back to the tab no longer triggers a heavy sales sync; user
   // taps Refresh when they want fresh data.
 
-  // Fast local-only ticker: re-reads already-synced Supabase tables every
-  // 5s so numbers visibly update as soon as new data lands from the
-  // existing ~55s Amazon sync cadence (unchanged, still throttled below) --
-  // gives a "live" feel without adding any extra Amazon API calls. Paused
-  // while the tab/app is backgrounded to respect the CPU-pressure intent
-  // that removed the old periodic sync above.
+  // Local-only ticker: re-reads already-synced Supabase tables on a
+  // period-aware cadence so numbers update without a manual tap, without
+  // adding extra Amazon API calls (silent fetches never touch the actual
+  // sync). Today/Yesterday are cheap and change fast (intraday orders), so
+  // they get a snappy 5s poll. This Week/MTD/Forecast/Last Month involve
+  // much heavier reconciled calculations (MTD/YTD can take minutes on a
+  // cold cache) -- polling those every 5s would be wasteful and pile up
+  // expensive queries, so they get a much slower 60s cadence instead.
+  // Paused while the tab/app is backgrounded to respect the CPU-pressure
+  // intent that removed the old periodic sync entirely.
   useEffect(() => {
     if (!user?.id) return;
+    const intervalMs = FAST_POLL_PERIODS.includes(period) ? 5000 : 60000;
     const tick = () => {
       if (document.visibilityState === "visible" && !fetchInFlightRef.current) void fetchToday({ silent: true });
     };
-    const id = setInterval(tick, 5000);
+    const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
-  }, [user?.id, fetchToday]);
+  }, [user?.id, fetchToday, period]);
 
   const activeMarketplaces = useMemo(() => {
     const set = new Set<string>(["US", "CA", "BR", "MX"]);
