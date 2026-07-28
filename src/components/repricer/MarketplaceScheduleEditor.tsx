@@ -225,6 +225,12 @@ interface MarketplaceScheduleEditorProps {
 
 export default function MarketplaceScheduleEditor({ marketplaces, schedule, onChange, userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone }: MarketplaceScheduleEditorProps) {
   const [expandedMp, setExpandedMp] = useState<string | null>(null);
+  // Most sellers never need to touch budget share, cadence, or exception
+  // triggers — an even split across intl marketplaces already works well
+  // in practice. Default to a simple continuous-vs-scheduled choice per
+  // marketplace (matching how other commercial repricers present this),
+  // and tuck the underlying knobs behind an explicit "Advanced" toggle.
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Ensure all selected marketplaces have a config
   const ensuredSchedule: MarketplaceScheduleMap = { ...schedule };
@@ -257,12 +263,19 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
           Marketplace Scheduling Policy
           <span className="text-[10px] font-normal text-muted-foreground">({userTimezone})</span>
         </Label>
-        <Badge
-          variant="outline"
-          className={totalBudget === 100 ? "text-green-600 border-green-500/30" : "text-destructive border-destructive/30"}
-        >
-          Budget: {totalBudget}%
-        </Badge>
+        <div className="flex items-center gap-2">
+          {showAdvanced && (
+            <Badge
+              variant="outline"
+              className={totalBudget === 100 ? "text-green-600 border-green-500/30" : "text-destructive border-destructive/30"}
+            >
+              Budget: {totalBudget}%
+            </Badge>
+          )}
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAdvanced((v) => !v)}>
+            {showAdvanced ? "Hide advanced settings" : "Show advanced settings"}
+          </Button>
+        </div>
       </div>
 
       {/* Presets */}
@@ -281,7 +294,7 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
         ))}
       </div>
 
-      {totalBudget !== 100 && (
+      {showAdvanced && totalBudget !== 100 && (
         <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 rounded px-2 py-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />
           Budget shares should total 100% (currently {totalBudget}%)
@@ -295,6 +308,74 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
           const roleInfo = ROLE_CONFIG[config.role];
           const isExpanded = expandedMp === mp;
 
+          // ── SIMPLE MODE ──
+          // A plain continuous-vs-scheduled choice, no roles/budget/cadence
+          // jargon. Primary marketplaces aren't editable here at all — that
+          // designation lives in account settings, not per-rule.
+          if (!showAdvanced) {
+            if (config.role === "primary") {
+              return (
+                <Card key={mp} className="overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{MARKETPLACE_FLAGS[mp] || "🌐"}</span>
+                      <span className="font-medium text-sm">{mp}</span>
+                      <Badge variant="outline" className={`text-xs ${ROLE_CONFIG.primary.color}`}>
+                        {ROLE_CONFIG.primary.icon}
+                        <span className="ml-1">Primary</span>
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Always evaluated continuously</span>
+                  </div>
+                </Card>
+              );
+            }
+
+            const isContinuous = config.role === "secondary";
+            return (
+              <Card key={mp} className="overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{MARKETPLACE_FLAGS[mp] || "🌐"}</span>
+                    <span className="font-medium text-sm">{mp}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{isContinuous ? "Runs continuously" : "Runs on a schedule"}</span>
+                    <Switch
+                      checked={isContinuous}
+                      onCheckedChange={(checked) =>
+                        updateMp(mp, checked ? defaultSecondary(config.budget_share_pct) : defaultMaintenance(config.budget_share_pct))
+                      }
+                    />
+                  </div>
+                </div>
+                {!isContinuous && (
+                  <div className="grid grid-cols-2 gap-3 px-3 pb-3">
+                    <div>
+                      <Label className="text-xs">Runs from</Label>
+                      <Input
+                        type="time"
+                        value={config.schedule_window_start}
+                        onChange={(e) => updateMp(mp, { schedule_window_start: e.target.value })}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Until</Label>
+                      <Input
+                        type="time"
+                        value={config.schedule_window_end}
+                        onChange={(e) => updateMp(mp, { schedule_window_end: e.target.value })}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          }
+
+          // ── ADVANCED MODE ── full role/budget/cadence/exception controls
           return (
             <Collapsible key={mp} open={isExpanded} onOpenChange={(open) => setExpandedMp(open ? mp : null)}>
               <Card className="overflow-hidden">
