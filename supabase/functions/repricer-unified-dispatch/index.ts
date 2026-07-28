@@ -287,15 +287,27 @@ async function processUser(
   const isOverCapacity = scoreMetrics.capacityUtilRatio > 1 || scoreMetrics.capBlockedCount >= 100;
   const isSeverelyOverCapacity = scoreMetrics.capacityUtilRatio > 1.1 || scoreMetrics.capBlockedCount >= 180;
   if (primaryHot.length > HOT_POOL_CAP) {
-    console.log(`[unified-dispatch] HOT POOL CAP: ${primaryHot.length} HOT items capped to ${HOT_POOL_CAP}`);
+    // Recovery-mode detection below must see the FULL hot backlog, not just
+    // the top-150 slice that fit in the cap — otherwise items ranked >150
+    // (real, e.g. losing-BB items) are invisible to the SLA/backlog alarms
+    // and never trigger the budget-boost/warm-suppression escalation meant
+    // to rescue exactly this situation.
+    const excludedHot = primaryHot.slice(HOT_POOL_CAP);
+    const oldestExcludedAge = Math.round(Math.max(...excludedHot.map(c => c.hot_age_min)));
+    const excludedStale60m = excludedHot.filter(c => c.hot_age_min >= 60).length;
+    console.log(`[unified-dispatch] ${userId}: HOT POOL CAP: ${primaryHot.length} HOT items, ${excludedHot.length} excluded from ${HOT_POOL_CAP}-slot cap (oldest_excluded_age=${oldestExcludedAge}m, excluded_60m+=${excludedStale60m})`);
   }
 
   // ── RECOVERY MODE DETECTION ──
-  // When stale backlog is detected, temporarily boost HOT throughput
-  const staleHot15m = cappedHot.filter(c => c.hot_age_min >= 15);
-  const severelyStarvedHot = cappedHot.filter(c => c.hot_age_min >= 30);
-  const criticallyStarvedHot = cappedHot.filter(c => c.hot_age_min >= 60);
-  const backlogHot = cappedHot.filter(c => c.hot_age_min >= 10);
+  // Sourced from the FULL hot set (primaryHot), not cappedHot — a genuinely
+  // stale item ranked outside the top 150 is still part of the real backlog
+  // and must still be able to trigger recovery mode / budget expansion.
+  // (cappedHot itself remains the actual per-cycle selection pool below —
+  // this only widens what counts toward detecting how bad things are.)
+  const staleHot15m = primaryHot.filter(c => c.hot_age_min >= 15);
+  const severelyStarvedHot = primaryHot.filter(c => c.hot_age_min >= 30);
+  const criticallyStarvedHot = primaryHot.filter(c => c.hot_age_min >= 60);
+  const backlogHot = primaryHot.filter(c => c.hot_age_min >= 10);
 
   // Recovery mode triggers when significant stale pressure exists
   const isRecoveryMode = criticallyStarvedHot.length >= 1 || severelyStarvedHot.length >= 3 || staleHot15m.length >= 5;
