@@ -1097,9 +1097,16 @@ async function scoreAllCandidates(
     return nowTotal >= startTotal || nowTotal < endTotal;
   }
 
-  // Default international window: 02:00–06:00 local time for any intl marketplace
-  // without an explicit schedule config on its rule
-  const DEFAULT_INTL_WINDOW = { role: 'maintenance', schedule_window_start: '02:00', schedule_window_end: '06:00', cadence_minutes: 60, exception_triggers: { starred: true, lost_buybox: true, recent_sale: true } };
+  // Default for any intl marketplace without an explicit schedule config on
+  // its rule. Was 'maintenance' (a narrow 2-6am window only) — but customers
+  // pay for international marketplace coverage, and real usage shows primary
+  // typically uses well under half of the real account-wide Amazon throughput
+  // ceiling, leaving substantial idle headroom. 'secondary' makes intl
+  // eligible all day (no window gate), still deliberately scored lower than
+  // primary so it only draws from that idle headroom rather than competing
+  // head-on. schedule_window_* / cadence_minutes are unused by 'secondary'
+  // (kept only in case a rule's role is ever changed back to 'maintenance').
+  const DEFAULT_INTL_WINDOW = { role: 'secondary', schedule_window_start: '02:00', schedule_window_end: '06:00', cadence_minutes: 60, exception_triggers: { starred: true, lost_buybox: true, recent_sale: true } };
 
   function getMarketplaceRole(mkt: string, ruleId: string | null): string {
     if (mkt === primaryMarketplace) return 'primary';
