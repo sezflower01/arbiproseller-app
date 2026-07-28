@@ -394,7 +394,9 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                 || (settings as any)?.primary_marketplace || "US"}
             </Badge>
             <span className="text-[11px] text-muted-foreground">
-              Auto-detected from sales volume
+              {(settings as any)?.primary_marketplace_detection_method === "listing_count"
+                ? "Auto-detected from active listings (not enough sales history yet)"
+                : "Auto-detected from sales volume"}
               {(settings as any)?.primary_marketplace_detected_at
                 ? ` — last updated ${new Date((settings as any).primary_marketplace_detected_at).toLocaleDateString()}`
                 : " — updates weekly"}

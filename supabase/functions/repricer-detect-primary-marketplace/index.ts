@@ -33,8 +33,49 @@ interface DetectResult {
   previous: string | null;
   detected: string | null;
   changed: boolean;
+  method: "sales_volume" | "listing_count" | "none";
   totals_usd: Record<string, number>;
   reason?: string;
+}
+
+// Cold-start fallback: brand-new accounts have zero sales history, so the
+// sales-volume signal never has enough to work with — without this, they'd
+// silently fall back to the code-level 'US' default regardless of where
+// they actually operate (e.g. a Canada-based seller mid-onboarding). Active
+// listings/assignments exist from the moment a seller connects and syncs,
+// well before any sale happens, so use whichever marketplace has the most
+// as an interim signal until real sales volume takes over.
+async function detectFromListingCount(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string | null> {
+  const counts: Record<string, number> = {};
+  const PAGE = 1000;
+  for (let from = 0; from < 20000; from += PAGE) {
+    const { data: page, error } = await admin
+      .from("repricer_assignments")
+      .select("marketplace")
+      .eq("user_id", userId)
+      .eq("is_enabled", true)
+      .not("rule_id", "is", null)
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!page || page.length === 0) break;
+    for (const row of page as any[]) {
+      const mp = String(row.marketplace || "").toUpperCase();
+      if (!mp || !(mp in MARKETPLACE_CURRENCY)) continue;
+      counts[mp] = (counts[mp] || 0) + 1;
+    }
+    if (page.length < PAGE) break;
+  }
+
+  const marketplaces = Object.keys(counts);
+  if (marketplaces.length === 0) return null;
+  let best = marketplaces[0];
+  for (const mp of marketplaces) {
+    if (counts[mp] > counts[best]) best = mp;
+  }
+  return best;
 }
 
 async function detectForUser(
@@ -87,7 +128,25 @@ async function detectForUser(
   }
 
   if (totalOrders < MIN_ORDERS_FOR_SIGNAL) {
-    return { user_id: userId, previous, detected: previous, changed: false, totals_usd: totalsUsd, reason: "insufficient_signal" };
+    const fallback = await detectFromListingCount(admin, userId);
+    if (!fallback) {
+      // No sales AND no listings yet — truly nothing to go on. Leave as-is;
+      // code-level `|| 'US'` fallbacks cover display/dispatch until there's
+      // real signal.
+      return { user_id: userId, previous, detected: previous, changed: false, method: "none", totals_usd: totalsUsd, reason: "insufficient_signal" };
+    }
+    const changed = fallback !== previous;
+    if (changed) {
+      await admin
+        .from("repricer_settings")
+        .update({
+          primary_marketplace: fallback,
+          primary_marketplace_detected_at: new Date().toISOString(),
+          primary_marketplace_detection_method: "listing_count",
+        } as any)
+        .eq("user_id", userId);
+    }
+    return { user_id: userId, previous, detected: fallback, changed, method: "listing_count", totals_usd: totalsUsd, reason: "insufficient_sales_signal" };
   }
 
   const marketplaces = Object.keys(totalsUsd);
@@ -103,11 +162,15 @@ async function detectForUser(
   if (changed) {
     await admin
       .from("repricer_settings")
-      .update({ primary_marketplace: best, primary_marketplace_detected_at: new Date().toISOString() } as any)
+      .update({
+        primary_marketplace: best,
+        primary_marketplace_detected_at: new Date().toISOString(),
+        primary_marketplace_detection_method: "sales_volume",
+      } as any)
       .eq("user_id", userId);
   }
 
-  return { user_id: userId, previous, detected: best, changed, totals_usd: totalsUsd };
+  return { user_id: userId, previous, detected: best, changed, method: "sales_volume", totals_usd: totalsUsd };
 }
 
 Deno.serve(async (req) => {
