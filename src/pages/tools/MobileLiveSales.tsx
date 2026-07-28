@@ -2348,7 +2348,7 @@ const MobileLiveSales = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-sm uppercase tracking-wider font-bold text-white">Net Profit</div>
-                  {sideloadsReady ? (
+                  {sideloadsReady && !revalidating ? (
                     <>
                       <div className={`text-3xl font-extrabold tabular-nums tracking-tight leading-tight ${disp.profit >= 0 ? "text-white" : "text-rose-300"}`}>
                         {disp.profit < 0 ? "−" : ""}{homeCurrencySymbol}{Math.abs(disp.profit).toFixed(2)}
@@ -2359,6 +2359,11 @@ const MobileLiveSales = () => {
                       >
                         ROI {disp.roi.toFixed(1)}%
                       </div>
+                    </>
+                  ) : sideloadsReady ? (
+                    <>
+                      <Skeleton className="h-9 w-28 bg-white/10" />
+                      <Skeleton className="mt-1.5 h-5 w-16 bg-white/10" />
                     </>
                   ) : (
                     <>
@@ -2373,12 +2378,16 @@ const MobileLiveSales = () => {
                 </div>
                 <div>
                   <div className="text-xs uppercase tracking-wider font-bold text-white">{periodInfo.label} Sales</div>
-                  <div
-                    className="text-2xl font-extrabold tabular-nums tracking-tight text-white leading-tight"
-                    title="Total Sales = item price + buyer-paid shipping (already included)."
-                  >
-                    {homeCurrencySymbol}{disp.revenue.toFixed(2)}
-                  </div>
+                  {revalidating ? (
+                    <Skeleton className="h-7 w-24 bg-white/10" />
+                  ) : (
+                    <div
+                      className="text-2xl font-extrabold tabular-nums tracking-tight text-white leading-tight"
+                      title="Total Sales = item price + buyer-paid shipping (already included)."
+                    >
+                      {homeCurrencySymbol}{disp.revenue.toFixed(2)}
+                    </div>
+                  )}
                   {displayAdjustments.shippingCollected > 0 && (
                     <button
                       type="button"
@@ -2612,26 +2621,38 @@ const MobileLiveSales = () => {
                         <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-200/90">Est. Amazon Payout</div>
                         <div className="text-[10px] text-emerald-200/60 font-medium">Sales − Fees − Refunds</div>
                       </div>
-                      <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${payout >= 0 ? "text-emerald-200" : "text-rose-300"}`}>
-                        {payout < 0 ? "−" : ""}{homeCurrencySymbol}{Math.abs(payout).toFixed(2)}
-                      </div>
+                      {revalidating ? (
+                        <Skeleton className="h-7 w-20 bg-white/10" />
+                      ) : (
+                        <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${payout >= 0 ? "text-emerald-200" : "text-rose-300"}`}>
+                          {payout < 0 ? "−" : ""}{homeCurrencySymbol}{Math.abs(payout).toFixed(2)}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-2 rounded-lg border border-rose-400/25 bg-rose-500/10 px-3 py-2 flex items-center justify-between">
                       <div>
                         <div className="text-[11px] uppercase tracking-wider font-bold text-rose-200/90">Refund %</div>
                         <div className="text-[10px] text-rose-200/60 font-medium">Refunds ÷ Revenue (gross sales incl. shipping)</div>
                       </div>
-                      <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${refundPct >= 5 ? "text-rose-300" : refundPct >= 2 ? "text-amber-200" : "text-rose-200"}`}>
-                        {refundPct.toFixed(2)}%
-                      </div>
+                      {revalidating ? (
+                        <Skeleton className="h-7 w-16 bg-white/10" />
+                      ) : (
+                        <div className={`text-2xl font-extrabold tabular-nums tracking-tight ${refundPct >= 5 ? "text-rose-300" : refundPct >= 2 ? "text-amber-200" : "text-rose-200"}`}>
+                          {refundPct.toFixed(2)}%
+                        </div>
+                      )}
                     </div>
                   </>
                 );
               })()}
 
-              <div className="mt-2 text-sm font-semibold text-white tabular-nums">
-                {disp.units} unit{disp.units === 1 ? "" : "s"} · {disp.orders} order{disp.orders === 1 ? "" : "s"} · PT
-              </div>
+              {revalidating ? (
+                <Skeleton className="mt-2 h-5 w-40 bg-white/10" />
+              ) : (
+                <div className="mt-2 text-sm font-semibold text-white tabular-nums">
+                  {disp.units} unit{disp.units === 1 ? "" : "s"} · {disp.orders} order{disp.orders === 1 ? "" : "s"} · PT
+                </div>
+              )}
               {isForecast && (
                 <div className="mt-3 text-[11px] font-semibold text-emerald-200/80 leading-snug">
                   Projected from day {fc.dayOfMonth} of {fc.daysInMonth} · run-rate ×{fc.factor.toFixed(2)}.
