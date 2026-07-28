@@ -49,13 +49,13 @@ const ROLE_CONFIG: Record<MarketplaceRole, { label: string; color: string; icon:
     label: "Secondary",
     color: "bg-yellow-500/10 text-yellow-700 border-yellow-500/30",
     icon: <Clock className="h-3.5 w-3.5" />,
-    description: "Moderate cadence, reacts to signals (sales, BB loss)",
+    description: "Evaluated continuously all day, no fixed window — lower priority than Primary, so it only uses capacity Primary isn't using",
   },
   maintenance: {
     label: "Maintenance",
     color: "bg-blue-500/10 text-blue-700 border-blue-500/30",
     icon: <Moon className="h-3.5 w-3.5" />,
-    description: "Scheduled window only + urgent exceptions",
+    description: "Only evaluated in its scheduled window (at the configured cadence) + urgent exceptions",
   },
 };
 
@@ -72,24 +72,24 @@ const MARKETPLACE_FLAGS: Record<string, string> = {
 const PRESETS: { label: string; description: string; config: (marketplaces: string[]) => MarketplaceScheduleMap }[] = [
   {
     label: "US-First",
-    description: "US gets 85% budget continuous, others maintenance at 2 AM",
+    description: "US gets 85% budget continuous, others evaluated continuously at lower priority",
     config: (mps) => {
       const result: MarketplaceScheduleMap = {};
       const intlShare = mps.length > 1 ? Math.floor(15 / (mps.length - 1)) : 0;
       mps.forEach(mp => {
-        result[mp] = mp === "US" ? defaultPrimary(85) : defaultMaintenance(intlShare);
+        result[mp] = mp === "US" ? defaultPrimary(85) : defaultSecondary(intlShare);
       });
       return result;
     },
   },
   {
     label: "CA-First",
-    description: "Canada gets 85% budget continuous, others maintenance",
+    description: "Canada gets 85% budget continuous, others evaluated continuously at lower priority",
     config: (mps) => {
       const result: MarketplaceScheduleMap = {};
       const intlShare = mps.length > 1 ? Math.floor(15 / (mps.length - 1)) : 0;
       mps.forEach(mp => {
-        result[mp] = mp === "CA" ? defaultPrimary(85) : defaultMaintenance(intlShare);
+        result[mp] = mp === "CA" ? defaultPrimary(85) : defaultSecondary(intlShare);
       });
       return result;
     },
@@ -108,7 +108,7 @@ const PRESETS: { label: string; description: string; config: (marketplaces: stri
   },
   {
     label: "All Scheduled",
-    description: "Every market gets its own scheduled window — no continuous",
+    description: "Every market gets its own scheduled window — no continuous coverage outside it",
     config: (mps) => {
       const result: MarketplaceScheduleMap = {};
       const share = Math.floor(100 / mps.length);
@@ -116,7 +116,7 @@ const PRESETS: { label: string; description: string; config: (marketplaces: stri
         const startHour = 6 + i * 3; // US=06:00-09:00, CA=09:00-12:00, MX=12:00-15:00, etc.
         const endHour = startHour + 3;
         result[mp] = {
-          role: "secondary",
+          role: "maintenance",
           budget_share_pct: share,
           schedule_window_start: `${String(startHour % 24).padStart(2, "0")}:00`,
           schedule_window_end: `${String(endHour % 24).padStart(2, "0")}:00`,
@@ -129,12 +129,12 @@ const PRESETS: { label: string; description: string; config: (marketplaces: stri
   },
   {
     label: "Overnight International",
-    description: "First marketplace primary, rest overnight only",
+    description: "First marketplace primary, rest evaluated continuously at lower priority",
     config: (mps) => {
       const result: MarketplaceScheduleMap = {};
       const intlShare = mps.length > 1 ? Math.floor(10 / (mps.length - 1)) : 0;
       mps.forEach((mp, i) => {
-        result[mp] = i === 0 ? defaultPrimary(90) : defaultMaintenance(intlShare);
+        result[mp] = i === 0 ? defaultPrimary(90) : defaultSecondary(intlShare);
       });
       return result;
     },
@@ -230,7 +230,7 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
   const ensuredSchedule: MarketplaceScheduleMap = { ...schedule };
   marketplaces.forEach((mp, i) => {
     if (!ensuredSchedule[mp]) {
-      ensuredSchedule[mp] = i === 0 ? defaultPrimary(80) : defaultMaintenance(Math.floor(20 / Math.max(marketplaces.length - 1, 1)));
+      ensuredSchedule[mp] = i === 0 ? defaultPrimary(80) : defaultSecondary(Math.floor(20 / Math.max(marketplaces.length - 1, 1)));
     }
   });
 
@@ -310,7 +310,11 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">
-                        {config.budget_share_pct}% budget • {config.cadence_minutes}min
+                        {config.role === "primary"
+                          ? "Continuous"
+                          : config.role === "secondary"
+                          ? `${config.budget_share_pct}% budget • continuous`
+                          : `${config.budget_share_pct}% budget • ${config.cadence_minutes}min`}
                       </span>
                       <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                     </div>
@@ -354,41 +358,55 @@ export default function MarketplaceScheduleEditor({ marketplaces, schedule, onCh
                       </div>
                     </div>
 
-                    {/* Schedule Window & Cadence */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <Label className="text-xs">Window Start</Label>
-                        <Input
-                          type="time"
-                          value={config.schedule_window_start}
-                          onChange={(e) => updateMp(mp, { schedule_window_start: e.target.value })}
-                          className="h-8 text-xs"
-                        />
+                    {/* Schedule Window & Cadence — only meaningful for Maintenance.
+                        Primary is always eligible (never window/cadence-gated) and
+                        Secondary is eligible all day by design, so these fields do
+                        nothing for either — showing them as editable was misleading. */}
+                    {config.role === "maintenance" ? (
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs">Window Start</Label>
+                          <Input
+                            type="time"
+                            value={config.schedule_window_start}
+                            onChange={(e) => updateMp(mp, { schedule_window_start: e.target.value })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Window End</Label>
+                          <Input
+                            type="time"
+                            value={config.schedule_window_end}
+                            onChange={(e) => updateMp(mp, { schedule_window_end: e.target.value })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Cadence (min)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={1440}
+                            value={config.cadence_minutes}
+                            onChange={(e) => updateMp(mp, { cadence_minutes: parseInt(e.target.value) || 5 })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <Label className="text-xs">Window End</Label>
-                        <Input
-                          type="time"
-                          value={config.schedule_window_end}
-                          onChange={(e) => updateMp(mp, { schedule_window_end: e.target.value })}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Cadence (min)</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={1440}
-                          value={config.cadence_minutes}
-                          onChange={(e) => updateMp(mp, { cadence_minutes: parseInt(e.target.value) || 5 })}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                    </div>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground bg-muted/50 rounded px-2 py-1.5">
+                        {config.role === "primary"
+                          ? "Primary is always evaluated continuously — no window or cadence to configure."
+                          : "Secondary is evaluated continuously all day — no fixed window or cadence to configure."}
+                      </p>
+                    )}
 
-                    {/* Exception Triggers (for secondary/maintenance) */}
-                    {config.role !== "primary" && (
+                    {/* Exception Triggers — only read for Maintenance (the signals
+                        that can wake it early, outside its window). Primary is
+                        never window-gated and Secondary is never window-gated
+                        either, so these switches have no effect for either role. */}
+                    {config.role === "maintenance" && (
                       <div>
                         <Label className="text-xs font-medium mb-1.5 block">Exception Triggers (wake outside window)</Label>
                         <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
