@@ -386,6 +386,25 @@ export default function AmazonConnect() {
         }
       }
 
+      // Step 3b: Detect primary_marketplace/home_currency immediately rather
+      // than waiting for the weekly cron — otherwise a brand-new CA/MX/BR
+      // seller would see USD-labeled currency for up to a week. Runs AFTER
+      // auto-assign-bulk so the listing-count fallback (used before any
+      // sales exist) has real repricer_assignments rows to detect from.
+      try {
+        const { data: detectData, error: detectError } = await supabase.functions.invoke('repricer-detect-primary-marketplace', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: {},
+        });
+        if (detectError) {
+          console.warn('Primary marketplace detection failed (continuing):', detectError);
+        } else {
+          console.log('Primary marketplace detection result:', detectData);
+        }
+      } catch (detectErr) {
+        console.warn('Primary marketplace detection error (continuing):', detectErr);
+      }
+
       // ===== PHASE 2: BACKGROUND HISTORICAL SYNC =====
       await supabase.from('user_sync_status').upsert({
         user_id: user!.id,

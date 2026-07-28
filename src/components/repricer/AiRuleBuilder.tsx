@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Sparkles, Zap, TrendingUp, Shield, Info, Star, DollarSign, ArrowUp, Eye, EyeOff, AlertTriangle, Play, Loader2 } from "lucide-react";
+import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { toast } from "sonner";
 
 // Behavior-by-scenario (when_only_seller, when_buybox_suppressed, etc.) used to
@@ -337,6 +338,7 @@ export const defaultAiRuleSettings: AiRuleSettings = {
 };
 
 export default function AiRuleBuilder({ settings, onChange, hideProfileSelector, ruleId, isCustomRule }: AiRuleBuilderProps) {
+  const { homeCurrencySymbol } = useHomeMarketplace();
   // Custom rules start fully expanded — "full control over every setting"
   // is the whole point, so there's no reason to make an admin click
   // "Show Advanced Settings" first. The 3 Smart Profiles still default
@@ -839,7 +841,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               ) : (
                 <div className="space-y-3 mt-2">
                   <div className="space-y-2">
-                    <Label htmlFor="undercut">Undercut Amount ($)</Label>
+                    <Label htmlFor="undercut">Undercut Amount ({homeCurrencySymbol})</Label>
                     <p className="text-xs text-muted-foreground">
                       Used for FBA listings, and for FBM listings too unless you set a different amount below.
                     </p>
@@ -895,7 +897,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
 
                       {showFbmOverride && (
                         <div className="space-y-2">
-                          <Label htmlFor="fbm-undercut">FBM Undercut Amount ($)</Label>
+                          <Label htmlFor="fbm-undercut">FBM Undercut Amount ({homeCurrencySymbol})</Label>
                           <p className="text-xs text-muted-foreground">
                             Applied only when your listing is <strong>FBM</strong> and competing against the lowest FBM seller. Enter <code>0.00</code> to match exactly.
                           </p>
@@ -926,7 +928,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               {/* Suppressed Buy Box Undercut — ALWAYS visible (managed or custom) */}
               <div className="space-y-2 mt-4 p-4 rounded-lg border-2 border-blue-500/40 bg-blue-950/30">
                 <Label htmlFor="suppressed-bb-undercut-main" className="text-sm font-bold flex items-center gap-2">
-                  🚫 Suppressed Buy Box Undercut ($) <span className="text-xs font-normal text-amber-400">— required</span>
+                  🚫 Suppressed Buy Box Undercut ({homeCurrencySymbol}) <span className="text-xs font-normal text-amber-400">— required</span>
                 </Label>
                 <p className="text-xs text-muted-foreground">
                   When the Amazon Buy Box is <strong>suppressed</strong> (no Featured Offer), undercut the lowest valid competitor by this amount. <strong>You decide</strong> — there is no default. Enter <code>0.00</code> to match exactly.
@@ -1266,7 +1268,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="max-step-amount">Max Change Per Step ($)</Label>
+              <Label htmlFor="max-step-amount">Max Change Per Step ({homeCurrencySymbol})</Label>
               <Input
                 id="max-step-amount"
                 type="number"
@@ -1389,7 +1391,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="max-raise-dollars">Max Raise Per Step ($)</Label>
+                  <Label htmlFor="max-raise-dollars">Max Raise Per Step ({homeCurrencySymbol})</Label>
                   <Input
                     id="max-raise-dollars"
                     type="number"
@@ -1515,7 +1517,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="monopoly-raise-dollars" className="flex items-center gap-1">
-                    Raise Step ($)
+                    Raise Step ({homeCurrencySymbol})
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger>

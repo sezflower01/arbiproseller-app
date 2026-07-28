@@ -3,6 +3,7 @@ import MarketplaceScheduleEditor, { type MarketplaceScheduleMap } from "./Market
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { MARKETPLACE_LIST } from "@/lib/marketplaceCurrency";
+import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -254,6 +255,7 @@ const defaultAiRule: Partial<RepricerRule> = {
 
 export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps) {
   const { user } = useAuth();
+  const { homeCurrencySymbol } = useHomeMarketplace();
   const [rules, setRules] = useState<RepricerRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1238,7 +1240,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
 
                 {/* Undercut Amount (FBA) */}
                 <div className="grid gap-2">
-                  <Label htmlFor="undercut">FBA Undercut Amount ($)</Label>
+                  <Label htmlFor="undercut">FBA Undercut Amount ({homeCurrencySymbol})</Label>
                   <p className="text-xs text-muted-foreground">
                     Applied when your listing is <strong>FBA</strong>. Used to undercut FBA competitors / Buy Box.
                   </p>
@@ -1259,7 +1261,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
 
                 {/* FBM Undercut Amount */}
                 <div className="grid gap-2">
-                  <Label htmlFor="fbm-undercut">FBM Undercut Amount ($)</Label>
+                  <Label htmlFor="fbm-undercut">FBM Undercut Amount ({homeCurrencySymbol})</Label>
                   <p className="text-xs text-muted-foreground">
                     Applied only when your listing is <strong>FBM</strong> and competing against the lowest FBM seller. Leave blank to reuse the FBA undercut. Enter <code>0.00</code> to match the lowest FBM exactly.
                   </p>
@@ -1313,7 +1315,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                 {/* Suppressed Buy Box Undercut — REQUIRED, no default */}
                 <div className="grid gap-2 p-3 rounded-lg border-2 border-blue-500/40 bg-blue-950/30">
                   <Label htmlFor="suppressed-bb-undercut" className="font-bold flex items-center gap-2">
-                    🚫 Suppressed Buy Box Undercut ($) <span className="text-xs font-normal text-amber-400">— required</span>
+                    🚫 Suppressed Buy Box Undercut ({homeCurrencySymbol}) <span className="text-xs font-normal text-amber-400">— required</span>
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     When the Amazon Buy Box is <strong>suppressed</strong>, undercut the lowest valid competitor by this amount. <strong>You decide</strong> — there is no default. Enter <code>0.00</code> to match exactly.
@@ -1456,7 +1458,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                 {/* Price Limits */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="minPrice">Min Price ($)</Label>
+                    <Label htmlFor="minPrice">Min Price ({homeCurrencySymbol})</Label>
                     <Input
                       id="minPrice"
                       type="number"
@@ -1475,7 +1477,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="maxPrice">Max Price ($)</Label>
+                    <Label htmlFor="maxPrice">Max Price ({homeCurrencySymbol})</Label>
                     <Input
                       id="maxPrice"
                       type="number"
@@ -1520,7 +1522,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                 {/* Min Profit (if cost_plus) */}
                 {formData.floor_source === "cost_plus" && (
                   <div className="grid gap-2">
-                    <Label htmlFor="minProfit">Min Profit ($)</Label>
+                    <Label htmlFor="minProfit">Min Profit ({homeCurrencySymbol})</Label>
                     <Input
                       id="minProfit"
                       type="number"
@@ -1586,7 +1588,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="minThreshold">Min Change Threshold ($)</Label>
+                    <Label htmlFor="minThreshold">Min Change Threshold ({homeCurrencySymbol})</Label>
                     <Input
                       id="minThreshold"
                       type="number"

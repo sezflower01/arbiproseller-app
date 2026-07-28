@@ -18,6 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { getListingUnitCost, getInventoryUnitCost } from "@/lib/cost-contract";
+import { getMarketplaceConfig } from "@/lib/marketplaceCurrency";
+import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 
 interface OrderRecord {
   id: string;
@@ -41,11 +43,12 @@ interface OrdersCostEditorProps {
   onCostUpdated?: () => void;
 }
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
+// order.sold_price/order.total_fees are stored in THAT order's own marketplace
+// currency (Amazon never converts), so each row must show its own marketplace's
+// symbol rather than a single hardcoded USD label.
+const formatNativeCurrency = (amount: number, marketplace: string | null | undefined) => {
+  const symbol = getMarketplaceConfig(String(marketplace || "US").toUpperCase()).currencySymbol;
+  return `${symbol}${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
 };
 
 // Page through every row of a Supabase query — bypasses the default 1000-row
@@ -72,6 +75,7 @@ export default function OrdersCostEditor({
   endDate,
   onCostUpdated,
 }: OrdersCostEditorProps) {
+  const { homeCurrencySymbol } = useHomeMarketplace();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -988,7 +992,7 @@ export default function OrdersCostEditor({
                   <TableHead>Title</TableHead>
                   <TableHead className="text-center">Orders</TableHead>
                   <TableHead className="text-center">Units</TableHead>
-                  <TableHead className="w-[140px]">Unit Cost</TableHead>
+                  <TableHead className="w-[140px]">Unit Cost ({homeCurrencySymbol})</TableHead>
                   <TableHead className="w-[80px]">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1071,7 +1075,7 @@ export default function OrdersCostEditor({
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Fees</TableHead>
-                  <TableHead className="w-[140px]">Unit Cost</TableHead>
+                  <TableHead className="w-[140px]">Unit Cost ({homeCurrencySymbol})</TableHead>
                   <TableHead className="w-[80px]">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1120,10 +1124,10 @@ export default function OrdersCostEditor({
                       </TableCell>
                       <TableCell className="text-center">{order.quantity}</TableCell>
                       <TableCell className="text-right">
-                        {formatCurrency(order.sold_price)}
+                        {formatNativeCurrency(order.sold_price, order.marketplace)}
                       </TableCell>
                       <TableCell className="text-right text-red-600">
-                        {formatCurrency(order.total_fees)}
+                        {formatNativeCurrency(order.total_fees, order.marketplace)}
                       </TableCell>
                       <TableCell>
                         <Input

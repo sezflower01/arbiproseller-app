@@ -55,13 +55,16 @@ async function applyMarketplaceAndCurrency(
 
   if (!marketplaceChanged && !currencyChanged) return false;
 
-  const update: Record<string, unknown> = { home_currency: expectedCurrency };
+  const update: Record<string, unknown> = { user_id: userId, home_currency: expectedCurrency };
   if (marketplaceChanged) {
     update.primary_marketplace = finalMarketplace;
     update.primary_marketplace_detected_at = new Date().toISOString();
     update.primary_marketplace_detection_method = method;
   }
-  await admin.from("repricer_settings").update(update as any).eq("user_id", userId);
+  // Upsert, not update — a brand-new signup has no repricer_settings row yet
+  // (nothing creates one automatically), so a plain UPDATE would silently
+  // affect zero rows and leave home_currency/primary_marketplace unset.
+  await admin.from("repricer_settings").upsert(update as any, { onConflict: "user_id" });
   return true;
 }
 
@@ -195,8 +198,31 @@ Deno.serve(async (req) => {
     try { body = await req.json(); } catch { body = {}; }
 
     if (body?.all_users !== true) {
-      return new Response(JSON.stringify({ error: "all_users required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Self-service path: run detection immediately for the calling user —
+      // e.g. right after they connect a new marketplace — instead of waiting
+      // for the weekly all_users cron fan-out below. Always operates on the
+      // JWT's own user, never a client-supplied id.
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Missing auth" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const token = authHeader.replace("Bearer ", "");
+      const { data: { user }, error: authErr } = await admin.auth.getUser(token);
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: fxRows } = await admin.from("fx_rates").select("quote, rate");
+      const fxRates: Record<string, number> = {};
+      for (const row of (fxRows as any[]) || []) fxRates[String(row.quote || "")] = Number(row.rate) || 1;
+
+      const result = await detectForUser(admin, user.id, fxRates);
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
