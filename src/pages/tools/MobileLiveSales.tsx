@@ -2021,6 +2021,21 @@ const MobileLiveSales = () => {
   // Switching back to the tab no longer triggers a heavy sales sync; user
   // taps Refresh when they want fresh data.
 
+  // Fast local-only ticker: re-reads already-synced Supabase tables every
+  // 5s so numbers visibly update as soon as new data lands from the
+  // existing ~55s Amazon sync cadence (unchanged, still throttled below) --
+  // gives a "live" feel without adding any extra Amazon API calls. Paused
+  // while the tab/app is backgrounded to respect the CPU-pressure intent
+  // that removed the old periodic sync above.
+  useEffect(() => {
+    if (!user?.id) return;
+    const tick = () => {
+      if (document.visibilityState === "visible") void fetchToday();
+    };
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [user?.id, fetchToday]);
+
   const activeMarketplaces = useMemo(() => {
     const set = new Set<string>(["US", "CA", "BR", "MX"]);
     for (const r of rows) {
