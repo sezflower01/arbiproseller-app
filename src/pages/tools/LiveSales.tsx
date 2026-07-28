@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllPages } from "@/lib/sales/paginatedFetch";
@@ -707,6 +707,13 @@ const LiveSales = ({
   // USD -> seller's home currency multiplier, applied only at display
   // boundaries below (internal state stays USD). No-op (1) for USD sellers.
   const homeRate = fxRates[homeCurrency] ?? 1;
+  // Chart display data — dailySales.revenue is USD internally; homeRate
+  // converts only at this display boundary (no-op for USD sellers). Keeps
+  // dailySales itself untouched for day/source lookups used elsewhere.
+  const chartData = useMemo(
+    () => dailySales.map((d) => ({ ...d, revenue: d.revenue * homeRate })),
+    [dailySales, homeRate],
+  );
 
   // True once fetchSales has successfully painted data at least once --
   // gates whether a subsequent non-silent call shows the SWR "revalidating"
@@ -2051,7 +2058,7 @@ const LiveSales = ({
                     ) : showRevalidatingSkeleton ? (
                       <Skeleton className="h-6 w-24" />
                     ) : (
-                      <span className={`text-lg font-bold tabular-nums leading-tight ${loading ? 'text-emerald-600/50' : 'text-emerald-600'}`}>{homeCurrencySymbol}{todaySummary.revenue.toFixed(2)}</span>
+                      <span className={`text-lg font-bold tabular-nums leading-tight ${loading ? 'text-emerald-600/50' : 'text-emerald-600'}`}>{homeCurrencySymbol}{(todaySummary.revenue * homeRate).toFixed(2)}</span>
                     )}
                   </div>
                   <div className="w-px h-8 bg-border" />
@@ -2066,7 +2073,7 @@ const LiveSales = ({
                       <Skeleton className="h-6 w-20" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${pendingEstimateRevenue.usd > 0 ? 'text-muted-foreground italic' : 'text-muted-foreground'}`}>
-                        ~{homeCurrencySymbol}{pendingEstimateRevenue.usd.toFixed(2)}
+                        ~{homeCurrencySymbol}{(pendingEstimateRevenue.usd * homeRate).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -2079,7 +2086,7 @@ const LiveSales = ({
                       <Skeleton className="h-6 w-16" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${todayRefunds.amount > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                        {todayRefunds.amount > 0 ? '−' : ''}{homeCurrencySymbol}{todayRefunds.amount.toFixed(2)}
+                        {todayRefunds.amount > 0 ? '−' : ''}{homeCurrencySymbol}{(todayRefunds.amount * homeRate).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -2090,7 +2097,7 @@ const LiveSales = ({
                       <Skeleton className="h-6 w-16" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.fees > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                        {periodFeesCost.fees > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.fees.toFixed(2)}
+                        {periodFeesCost.fees > 0 ? '−' : ''}{homeCurrencySymbol}{(periodFeesCost.fees * homeRate).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -2101,7 +2108,7 @@ const LiveSales = ({
                       <Skeleton className="h-6 w-16" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${periodFeesCost.cost > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
-                        {periodFeesCost.cost > 0 ? '−' : ''}{homeCurrencySymbol}{periodFeesCost.cost.toFixed(2)}
+                        {periodFeesCost.cost > 0 ? '−' : ''}{homeCurrencySymbol}{(periodFeesCost.cost * homeRate).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -2123,7 +2130,7 @@ const LiveSales = ({
                       const sign = v > 0 ? '+' : v < 0 ? '−' : '';
                       return (
                         <span className={`text-lg font-bold tabular-nums leading-tight underline decoration-dotted underline-offset-2 ${cls}`}>
-                          {sign}{homeCurrencySymbol}{Math.abs(v).toFixed(2)}
+                          {sign}{homeCurrencySymbol}{Math.abs(v * homeRate).toFixed(2)}
                         </span>
                       );
                     })()}
@@ -2151,7 +2158,7 @@ const LiveSales = ({
                       <Skeleton className="h-6 w-16" />
                     ) : (
                       <span className={`text-lg font-bold tabular-nums leading-tight ${periodPromotions.total > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                        {periodPromotions.total > 0 ? '−' : ''}{homeCurrencySymbol}{periodPromotions.total.toFixed(2)}
+                        {periodPromotions.total > 0 ? '−' : ''}{homeCurrencySymbol}{(periodPromotions.total * homeRate).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -2164,7 +2171,7 @@ const LiveSales = ({
                       const net = todaySummary.revenue - todayRefunds.amount - periodFeesCost.fees - periodFeesCost.cost + periodAdjustments.net - periodPromotions.total;
                       return (
                         <span className={`text-lg font-bold tabular-nums leading-tight ${net >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>
-                          {net < 0 ? '−' : ''}{homeCurrencySymbol}{Math.abs(net).toFixed(2)}
+                          {net < 0 ? '−' : ''}{homeCurrencySymbol}{Math.abs(net * homeRate).toFixed(2)}
                         </span>
                       );
                     })()}
@@ -2209,16 +2216,16 @@ const LiveSales = ({
                 </div>
                 <div className="flex justify-between text-emerald-600">
                   <span>Credits (reimbursements, reversals, liquidation, lost/damaged, other income)</span>
-                  <span>+{homeCurrencySymbol}{periodAdjustments.credits.toFixed(2)}</span>
+                  <span>+{homeCurrencySymbol}{(periodAdjustments.credits * homeRate).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-destructive">
                   <span>Extra adjustment fees (storage, removal, inbound, disposal, other)</span>
-                  <span>−{homeCurrencySymbol}{periodAdjustments.extraFees.toFixed(2)}</span>
+                  <span>−{homeCurrencySymbol}{(periodAdjustments.extraFees * homeRate).toFixed(2)}</span>
                 </div>
                 <div className="mt-1 flex justify-between border-t border-border pt-1 font-semibold">
                   <span>Net Adjustments</span>
                   <span className={periodAdjustments.net >= 0 ? "text-emerald-600" : "text-destructive"}>
-                    {periodAdjustments.net >= 0 ? "+" : "−"}{homeCurrencySymbol}{Math.abs(periodAdjustments.net).toFixed(2)}
+                    {periodAdjustments.net >= 0 ? "+" : "−"}{homeCurrencySymbol}{Math.abs(periodAdjustments.net * homeRate).toFixed(2)}
                   </span>
                 </div>
                 <div className="mt-2 text-[11px] leading-snug text-muted-foreground">
@@ -2310,7 +2317,7 @@ const LiveSales = ({
                     ) : showRevalidatingSkeleton ? (
                       <Skeleton className="h-5 w-20" />
                     ) : (
-                      <span className="text-base font-bold text-emerald-600 tabular-nums">{homeCurrencySymbol}{monthSummary.revenue.toFixed(2)}</span>
+                      <span className="text-base font-bold text-emerald-600 tabular-nums">{homeCurrencySymbol}{(monthSummary.revenue * homeRate).toFixed(2)}</span>
                     )}
                   </div>
                 </div>
@@ -2392,7 +2399,7 @@ const LiveSales = ({
               ) : hasChartData ? (
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={dailySales} margin={{ left: 4, right: 4, top: 4, bottom: 4 }} onClick={(e: any) => {
+                    <ComposedChart data={chartData} margin={{ left: 4, right: 4, top: 4, bottom: 4 }} onClick={(e: any) => {
                         if (e?.activePayload?.[0]?.payload?.day) {
                           const day = e.activePayload[0].payload.day;
                           setDebugDay(day);
@@ -2462,7 +2469,7 @@ const LiveSales = ({
                           }
                         }}
                       >
-                        {dailySales.map((d, idx) => (
+                        {chartData.map((d, idx) => (
                           <Cell
                             key={`cell-${idx}`}
                             fill={
@@ -2836,7 +2843,7 @@ const LiveSales = ({
                             return (
                               <>
                                 <p className="text-sm font-bold tabular-nums text-amber-500">
-                                  ~{homeCurrencySymbol}{estUsd.toFixed(2)}
+                                  ~{homeCurrencySymbol}{(estUsd * homeRate).toFixed(2)}
                                 </p>
                                 <p className="text-[10px] uppercase text-muted-foreground">pending est.</p>
                               </>
@@ -2853,7 +2860,7 @@ const LiveSales = ({
                           return (
                             <>
                               <p className="text-sm font-bold tabular-nums text-emerald-600">
-                                {homeCurrencySymbol}{row.revenue.toFixed(2)}
+                                {homeCurrencySymbol}{(row.revenue * homeRate).toFixed(2)}
                               </p>
                               <p className="text-[10px] uppercase text-muted-foreground">revenue</p>
                             </>
@@ -2876,14 +2883,14 @@ const LiveSales = ({
                                 </p>
                               ) : (
                                 <p className={`text-sm font-bold tabular-nums ${fc.fees > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                                  {fc.fees > 0 ? '−' : ''}{homeCurrencySymbol}{fc.fees.toFixed(2)}
+                                  {fc.fees > 0 ? '−' : ''}{homeCurrencySymbol}{(fc.fees * homeRate).toFixed(2)}
                                 </p>
                               )}
                               <p className="text-[10px] uppercase text-muted-foreground">{feesMissing ? 'fee cache' : 'fees'}</p>
                             </div>
                             <div className="text-right flex-shrink-0 w-24">
                               <p className={`text-sm font-bold tabular-nums ${fc.cost > 0 ? 'text-blue-400' : 'text-muted-foreground'}`}>
-                                {fc.cost > 0 ? '−' : ''}{homeCurrencySymbol}{fc.cost.toFixed(2)}
+                                {fc.cost > 0 ? '−' : ''}{homeCurrencySymbol}{(fc.cost * homeRate).toFixed(2)}
                               </p>
                               <p className="text-[10px] uppercase text-muted-foreground">cogs</p>
                             </div>
@@ -2892,7 +2899,7 @@ const LiveSales = ({
                                 <p className="text-sm font-bold tabular-nums text-muted-foreground" title="Hidden: missing non-US fee cache">—</p>
                               ) : (
                                 <p className={`text-sm font-bold tabular-nums ${profit >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>
-                                  {profit < 0 ? '−' : ''}{homeCurrencySymbol}{Math.abs(profit).toFixed(2)}
+                                  {profit < 0 ? '−' : ''}{homeCurrencySymbol}{Math.abs(profit * homeRate).toFixed(2)}
                                 </p>
                               )}
                               <p className="text-[10px] uppercase text-muted-foreground">profit</p>
