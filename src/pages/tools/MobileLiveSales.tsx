@@ -1113,16 +1113,21 @@ const MobileLiveSales = () => {
 
 
 
-  const fetchToday = useCallback(async () => {
+  const fetchToday = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!user?.id || isAmazonConnected === null) return;
     const myFetchId = ++fetchIdRef.current;
     const isStale = () => fetchIdRef.current !== myFetchId;
     fetchInFlightRef.current = true;
     // SWR: if we already have data on screen (cache hydrated or prior fetch),
     // revalidate silently instead of blanking the UI with a full-screen loader.
-    if (hasDataRef.current) setRevalidating(true);
-    else {
-      setLoading(true);
+    // Fully silent (background poll) calls skip this entirely -- no skeleton,
+    // no loading indicator, just a quiet data update. The skeleton is
+    // reserved for deliberate actions: first load, manual Refresh, and
+    // switching periods (Today/Yesterday/MTD/YTD).
+    if (!silent) {
+      if (hasDataRef.current) setRevalidating(true);
+      else setLoading(true);
     }
     setError(null);
 
@@ -2055,7 +2060,7 @@ const MobileLiveSales = () => {
   useEffect(() => {
     if (!user?.id) return;
     const tick = () => {
-      if (document.visibilityState === "visible" && !fetchInFlightRef.current) void fetchToday();
+      if (document.visibilityState === "visible" && !fetchInFlightRef.current) void fetchToday({ silent: true });
     };
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
