@@ -78,6 +78,7 @@ interface ScoredCandidate {
   hot_age_min: number;
   last_check_ms: number;
   last_dispatch_ms: number;
+  budget_share_pct: number;
 }
 
 interface DispatchMetrics {
@@ -276,6 +277,33 @@ async function processUser(
   const INTL_BONUS_SLOTS = Math.max(setting.intl_dispatch_slots ?? 5, Math.min(Math.floor(maxDispatch * intlRatio), Math.floor(maxDispatch * 0.5)));
   const intlSlots = Math.min(nonPrimaryCandidates.length, INTL_BONUS_SLOTS);
 
+  // ── BUDGET-SHARE WEIGHTED INTL ALLOCATION ──
+  // budget_share_pct was stored on each rule's marketplace schedule but never
+  // read anywhere — intl marketplaces competed for intlSlots purely by score,
+  // so a user setting e.g. "BR: 15%, CA: 5%, MX: 5%" saw no actual difference.
+  // Split intlSlots proportionally by each marketplace's configured share
+  // (averaged across its candidates, since different rules can set different
+  // shares for the same marketplace), then fill each marketplace's allotment
+  // with its own top-scored candidates.
+  const intlByMarketplace = new Map<string, ScoredCandidate[]>();
+  for (const c of nonPrimaryCandidates) {
+    if (!intlByMarketplace.has(c.marketplace)) intlByMarketplace.set(c.marketplace, []);
+    intlByMarketplace.get(c.marketplace)!.push(c);
+  }
+  const mktAvgShare = new Map<string, number>();
+  for (const [mkt, mktCandidates] of intlByMarketplace.entries()) {
+    const avg = mktCandidates.reduce((sum, c) => sum + (c.budget_share_pct || 5), 0) / mktCandidates.length;
+    mktAvgShare.set(mkt, avg);
+  }
+  const totalIntlShare = [...mktAvgShare.values()].reduce((s, v) => s + v, 0) || 1;
+  const weightedIntlCandidates: ScoredCandidate[] = [];
+  for (const [mkt, mktCandidates] of intlByMarketplace.entries()) {
+    const allotment = Math.min(mktCandidates.length, Math.max(1, Math.round(intlSlots * (mktAvgShare.get(mkt)! / totalIntlShare))));
+    weightedIntlCandidates.push(...mktCandidates.slice(0, allotment));
+  }
+  weightedIntlCandidates.sort((a, b) => b.score - a.score);
+  const intlSelection = weightedIntlCandidates.slice(0, intlSlots);
+
   // ── HOT POOL CAP: Only top 150 HOT items by score ──
   const HOT_POOL_CAP = 150;
   // ── WARM/DIVERSITY GUARANTEE: At least 50% of primary slots go to non-HOT ──
@@ -329,7 +357,7 @@ async function processUser(
 
   // ── ADAPTIVE WARM GUARANTEE ──
   // During recovery, aggressively reduce WARM slots to drain HOT backlog
-  const effectiveWarmPct = isCriticalRecovery
+  const rawEffectiveWarmPct = isCriticalRecovery
     ? 0           // CRITICAL: All budget to HOT
     : criticallyStarvedHot.length >= 1
     ? 0           // EMERGENCY: ANY HOT item >1h stale → 0% WARM
@@ -346,6 +374,19 @@ async function processUser(
     : isOverCapacity && cappedHot.length > 0
     ? 0.15
     : WARM_GUARANTEE_PCT;
+  // ── ABSOLUTE WARM FLOOR ──
+  // On any account whose real HOT backlog structurally exceeds the 150-slot
+  // cap (e.g. losing-BB items alone > 150 — trivially true at scale, since
+  // ALL losing-BB items count as HOT), the tripwires above are satisfied
+  // almost permanently, so "recovery mode" — designed as a temporary
+  // emergency response — becomes the permanent steady state and WARM gets
+  // 0% forever. Confirmed live: ~1,300 HOT items vs a 150-slot cap left
+  // only ~33% of assignments checked at all in a 2-hour window, with just
+  // 14 new ones rotating in between hour 1 and hour 2. A small guaranteed
+  // floor keeps genuine emergencies prioritized (92% of budget still goes
+  // to HOT) while ensuring the rest of the catalog is never fully starved.
+  const ABSOLUTE_MIN_WARM_PCT = 0.08;
+  const effectiveWarmPct = Math.max(ABSOLUTE_MIN_WARM_PCT, rawEffectiveWarmPct);
   const warmMinSlots = Math.ceil(primarySlots * effectiveWarmPct);
   const hotMaxSlots = primarySlots - warmMinSlots;
 
@@ -432,7 +473,10 @@ async function processUser(
     alreadySelectedAsins.add(`${c.asin}:${c.marketplace}`);
   }
   const staleWarmItems = primaryWarm
-    .filter(c => !alreadySelectedAsins.has(`${c.asin}:${c.marketplace}`) && c.last_check_ms > 0 && (Date.now() - c.last_check_ms) / 60000 >= 60)
+    // last_check_ms === 0 means NEVER checked — that's more deserving of a
+    // guaranteed slot than "checked once, now 60m+ stale," not less, but the
+    // old check (`> 0`) excluded it entirely.
+    .filter(c => !alreadySelectedAsins.has(`${c.asin}:${c.marketplace}`) && (c.last_check_ms === 0 || (Date.now() - c.last_check_ms) / 60000 >= 60))
     .slice(0, staleGuaranteeSlots);
   if (staleWarmItems.length > 0) {
     console.log(`[unified-dispatch] ${userId}: STALE GUARANTEE — reserving ${staleWarmItems.length}/${staleGuaranteeSlots} slots for items stale 60m+`);
@@ -443,7 +487,7 @@ async function processUser(
     ...selectedHotFiltered, // remaining HOT by score/age
     ...selectedWarm,
     ...staleWarmItems,      // anti-starvation guarantee
-    ...nonPrimaryCandidates.slice(0, intlSlots),
+    ...intlSelection,       // budget-share-weighted across intl marketplaces
   ];
 
   // Deduplicate: ensure no ASIN appears twice
@@ -1100,6 +1144,8 @@ async function scoreAllCandidates(
 
     const mktRole = getMarketplaceRole(a.marketplace, a.rule_id);
     const mktConfig = getScheduleConfig(a.marketplace, a.rule_id);
+    const lastCheckMs = a.last_sp_api_check_at ? new Date(a.last_sp_api_check_at).getTime() : 0;
+    const checkAgeMinutes = lastCheckMs > 0 ? (nowMs - lastCheckMs) / 60000 : Infinity;
 
     if (mktRole === 'maintenance') {
       if (!mktConfig) {
@@ -1139,13 +1185,23 @@ async function scoreAllCandidates(
           mktScheduleSkipped++;
           continue;
         }
+      } else {
+        // CADENCE GATE: cadence_minutes was stored on the rule's marketplace
+        // schedule but never enforced anywhere — in-window maintenance items
+        // were re-evaluated every dispatch cycle (bounded only by the generic
+        // hourly caps below), ignoring whatever recheck interval the user
+        // actually configured. Never-checked items (checkAgeMinutes=Infinity)
+        // always pass straight through.
+        const cadenceMinutes = Number(mktConfig?.cadence_minutes) || 60;
+        if (checkAgeMinutes < cadenceMinutes) {
+          mktScheduleSkipped++;
+          continue;
+        }
       }
     }
 
     let score = 0;
     const reasons: string[] = [];
-    const lastCheckMs = a.last_sp_api_check_at ? new Date(a.last_sp_api_check_at).getTime() : 0;
-    const checkAgeMinutes = lastCheckMs > 0 ? (nowMs - lastCheckMs) / 60000 : Infinity;
     const cooldownUntilMs = a.oscillation_cooldown_until ? new Date(a.oscillation_cooldown_until).getTime() : 0;
     const timedCooldownState = typeof a.oscillation_state === 'string'
       && (a.oscillation_state.includes('cooldown') || a.oscillation_state === 'blocked');
@@ -1560,6 +1616,7 @@ async function scoreAllCandidates(
       hot_age_min: isHot ? checkAgeMinutes : 0,
       last_check_ms: lastCheckMs,
       last_dispatch_ms: a.last_dispatch_at ? new Date(a.last_dispatch_at).getTime() : 0,
+      budget_share_pct: Number(mktConfig?.budget_share_pct) || (mktRole === 'primary' ? 100 : 5),
     });
   }
 
