@@ -823,7 +823,11 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       // Snapshot data
       buybox_price: snapshot?.buybox_price || null,
       buybox_seller_id: snapshot?.buybox_seller_id || null,
-      buybox_is_fba: snapshot?.buybox_is_fba || null,
+      // ?? not || -- buybox_is_fba is a boolean, and a legitimate `false`
+      // (FBM buy box winner) must not be treated as "missing" and coerced
+      // to null (which would make useRepricerCache's merge logic fall back
+      // to a stale cached `true` from before the buy box flipped to FBM).
+      buybox_is_fba: snapshot?.buybox_is_fba ?? null,
       lowest_fba_price: snapshot?.lowest_fba_price || null,
       lowest_overall_price: snapshot?.lowest_overall_price || null,
       offers_count: snapshot?.offers_count ?? null,
@@ -1030,7 +1034,9 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
           amazon_bounds_synced_at: a.amazon_bounds_synced_at || null,
           buybox_price: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.buybox_price || null,
           buybox_seller_id: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.buybox_seller_id || null,
-          buybox_is_fba: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.buybox_is_fba || null,
+          // ?? not || -- a legitimate `false` (FBM buy box winner) must not
+          // be coerced to null, see the matching comment above.
+          buybox_is_fba: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.buybox_is_fba ?? null,
           lowest_fba_price: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.lowest_fba_price || null,
           lowest_overall_price: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.lowest_overall_price || null,
           offers_count: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.offers_count ?? null,
