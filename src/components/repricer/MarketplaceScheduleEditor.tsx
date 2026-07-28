@@ -69,51 +69,28 @@ const MARKETPLACE_FLAGS: Record<string, string> = {
   ES: "🇪🇸",
 };
 
+// The other five presets that used to live here (US-First, CA-First,
+// Balanced, Overnight International, Sequenced Intl) all hardcoded an
+// assumption about *which marketplace is primary* — either by name or by
+// array position. That assumption no longer holds: primary marketplace is
+// now auto-detected from real sales volume at the account level, can be
+// any marketplace, and a rule's role field can't actually grant the
+// dedicated always-on pool to a marketplace that isn't the real detected
+// primary anyway (getMarketplaceRole checks the account setting first).
+// Clicking one of those presets could set a rule's role to "primary" for
+// a marketplace that isn't actually primary — a confusing mismatch with no
+// real effect. Only "All Scheduled" survives: it doesn't assume who's
+// primary, since the true primary is exempt from windowing regardless of
+// what the rule says.
 const PRESETS: { label: string; description: string; config: (marketplaces: string[]) => MarketplaceScheduleMap }[] = [
   {
-    label: "US-First",
-    description: "US gets 85% budget continuous, others evaluated continuously at lower priority",
-    config: (mps) => {
-      const result: MarketplaceScheduleMap = {};
-      const intlShare = mps.length > 1 ? Math.floor(15 / (mps.length - 1)) : 0;
-      mps.forEach(mp => {
-        result[mp] = mp === "US" ? defaultPrimary(85) : defaultSecondary(intlShare);
-      });
-      return result;
-    },
-  },
-  {
-    label: "CA-First",
-    description: "Canada gets 85% budget continuous, others evaluated continuously at lower priority",
-    config: (mps) => {
-      const result: MarketplaceScheduleMap = {};
-      const intlShare = mps.length > 1 ? Math.floor(15 / (mps.length - 1)) : 0;
-      mps.forEach(mp => {
-        result[mp] = mp === "CA" ? defaultPrimary(85) : defaultSecondary(intlShare);
-      });
-      return result;
-    },
-  },
-  {
-    label: "Balanced",
-    description: "Equal priority across all markets",
-    config: (mps) => {
-      const result: MarketplaceScheduleMap = {};
-      const share = Math.floor(100 / mps.length);
-      mps.forEach(mp => {
-        result[mp] = { ...defaultPrimary(share), cadence_minutes: 10 };
-      });
-      return result;
-    },
-  },
-  {
     label: "All Scheduled",
-    description: "Every market gets its own scheduled window — no continuous coverage outside it",
+    description: "Non-primary markets each get their own scheduled window — your primary marketplace always stays continuous",
     config: (mps) => {
       const result: MarketplaceScheduleMap = {};
       const share = Math.floor(100 / mps.length);
       mps.forEach((mp, i) => {
-        const startHour = 6 + i * 3; // US=06:00-09:00, CA=09:00-12:00, MX=12:00-15:00, etc.
+        const startHour = 6 + i * 3; // 1st=06:00-09:00, 2nd=09:00-12:00, 3rd=12:00-15:00, etc.
         const endHour = startHour + 3;
         result[mp] = {
           role: "maintenance",
@@ -124,54 +101,6 @@ const PRESETS: { label: string; description: string; config: (marketplaces: stri
           exception_triggers: { lost_buybox: true, recent_sale: true, large_competitor_move: true, starred: true, significant_gap: true },
         };
       });
-      return result;
-    },
-  },
-  {
-    label: "Overnight International",
-    description: "First marketplace primary, rest evaluated continuously at lower priority",
-    config: (mps) => {
-      const result: MarketplaceScheduleMap = {};
-      const intlShare = mps.length > 1 ? Math.floor(10 / (mps.length - 1)) : 0;
-      mps.forEach((mp, i) => {
-        result[mp] = i === 0 ? defaultPrimary(90) : defaultSecondary(intlShare);
-      });
-      return result;
-    },
-  },
-  {
-    label: "Sequenced Intl",
-    description: "Stagger CA → MX → BR in separate 1-hour windows to reduce quota pressure",
-    config: (mps) => {
-      const result: MarketplaceScheduleMap = {};
-      // Stagger order for known intl markets
-      const intlOrder = ["CA", "MX", "BR", "UK", "DE", "ES"];
-      const intlMps = mps.filter(mp => mp !== mps[0]); // everything except primary
-      const primaryMp = mps[0];
-      const intlShare = intlMps.length > 0 ? Math.floor(15 / intlMps.length) : 0;
-
-      result[primaryMp] = defaultPrimary(100 - intlShare * intlMps.length);
-
-      // Sort intl markets by their known order, then assign staggered windows
-      const sorted = [...intlMps].sort((a, b) => {
-        const ai = intlOrder.indexOf(a);
-        const bi = intlOrder.indexOf(b);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      });
-
-      sorted.forEach((mp, i) => {
-        const startHour = 2 + i; // CA=02:00, MX=03:00, BR=04:00, etc.
-        const endHour = startHour + 1;
-        result[mp] = {
-          role: "maintenance",
-          budget_share_pct: intlShare,
-          schedule_window_start: `${String(startHour).padStart(2, "0")}:00`,
-          schedule_window_end: `${String(endHour).padStart(2, "0")}:00`,
-          cadence_minutes: 15,
-          exception_triggers: { lost_buybox: true, recent_sale: true, large_competitor_move: true, starred: true, significant_gap: false },
-        };
-      });
-
       return result;
     },
   },
