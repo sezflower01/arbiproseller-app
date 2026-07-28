@@ -30,9 +30,39 @@ interface DetectResult {
   previous: string | null;
   detected: string | null;
   changed: boolean;
+  currency_changed: boolean;
   method: "sales_volume" | "listing_count" | "none";
   totals_usd: Record<string, number>;
   reason?: string;
+}
+
+// Applies whatever marketplace was decided (new detection, fallback, or
+// simply the existing value) and keeps home_currency in lockstep with it.
+// This is also how existing rows get backfilled — home_currency has never
+// been written anywhere else in the app (was NULL/defaulting to 'USD' for
+// everyone), so the first run after this ships corrects it for every
+// account, not just ones whose primary_marketplace happens to change.
+async function applyMarketplaceAndCurrency(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  finalMarketplace: string,
+  marketplaceChanged: boolean,
+  method: "sales_volume" | "listing_count",
+  currentHomeCurrency: string | null,
+): Promise<boolean> {
+  const expectedCurrency = marketplaceCurrency(finalMarketplace);
+  const currencyChanged = currentHomeCurrency !== expectedCurrency;
+
+  if (!marketplaceChanged && !currencyChanged) return false;
+
+  const update: Record<string, unknown> = { home_currency: expectedCurrency };
+  if (marketplaceChanged) {
+    update.primary_marketplace = finalMarketplace;
+    update.primary_marketplace_detected_at = new Date().toISOString();
+    update.primary_marketplace_detection_method = method;
+  }
+  await admin.from("repricer_settings").update(update as any).eq("user_id", userId);
+  return true;
 }
 
 // Cold-start fallback: brand-new accounts have zero sales history, so the
@@ -84,10 +114,11 @@ async function detectForUser(
 
   const { data: settings } = await admin
     .from("repricer_settings")
-    .select("primary_marketplace")
+    .select("primary_marketplace, home_currency")
     .eq("user_id", userId)
     .maybeSingle();
   const previous = (settings as any)?.primary_marketplace || null;
+  const currentHomeCurrency = (settings as any)?.home_currency ?? null;
 
   const orders: { marketplace: string | null; total_sale_amount: number | null }[] = [];
   const PAGE = 1000;
@@ -127,23 +158,16 @@ async function detectForUser(
   if (totalOrders < MIN_ORDERS_FOR_SIGNAL) {
     const fallback = await detectFromListingCount(admin, userId);
     if (!fallback) {
-      // No sales AND no listings yet — truly nothing to go on. Leave as-is;
-      // code-level `|| 'US'` fallbacks cover display/dispatch until there's
-      // real signal.
-      return { user_id: userId, previous, detected: previous, changed: false, method: "none", totals_usd: totalsUsd, reason: "insufficient_signal" };
+      // No sales AND no listings yet. Nothing to detect, but home_currency
+      // should still track whatever marketplace is already effectively
+      // active (or the code-level 'US' default) rather than sitting NULL.
+      const effective = previous || "US";
+      const currencyChanged = await applyMarketplaceAndCurrency(admin, userId, effective, false, "listing_count", currentHomeCurrency);
+      return { user_id: userId, previous, detected: previous, changed: false, currency_changed: currencyChanged, method: "none", totals_usd: totalsUsd, reason: "insufficient_signal" };
     }
     const changed = fallback !== previous;
-    if (changed) {
-      await admin
-        .from("repricer_settings")
-        .update({
-          primary_marketplace: fallback,
-          primary_marketplace_detected_at: new Date().toISOString(),
-          primary_marketplace_detection_method: "listing_count",
-        } as any)
-        .eq("user_id", userId);
-    }
-    return { user_id: userId, previous, detected: fallback, changed, method: "listing_count", totals_usd: totalsUsd, reason: "insufficient_sales_signal" };
+    const currencyChanged = await applyMarketplaceAndCurrency(admin, userId, fallback, changed, "listing_count", currentHomeCurrency);
+    return { user_id: userId, previous, detected: fallback, changed, currency_changed: currencyChanged, method: "listing_count", totals_usd: totalsUsd, reason: "insufficient_sales_signal" };
   }
 
   const marketplaces = Object.keys(totalsUsd);
@@ -156,18 +180,9 @@ async function detectForUser(
   }
 
   const changed = best !== previous;
-  if (changed) {
-    await admin
-      .from("repricer_settings")
-      .update({
-        primary_marketplace: best,
-        primary_marketplace_detected_at: new Date().toISOString(),
-        primary_marketplace_detection_method: "sales_volume",
-      } as any)
-      .eq("user_id", userId);
-  }
+  const currencyChanged = await applyMarketplaceAndCurrency(admin, userId, best, changed, "sales_volume", currentHomeCurrency);
 
-  return { user_id: userId, previous, detected: best, changed, method: "sales_volume", totals_usd: totalsUsd };
+  return { user_id: userId, previous, detected: best, changed, currency_changed: currencyChanged, method: "sales_volume", totals_usd: totalsUsd };
 }
 
 Deno.serve(async (req) => {
@@ -199,11 +214,13 @@ Deno.serve(async (req) => {
 
       const results: DetectResult[] = [];
       let changedCount = 0;
+      let currencyChangedCount = 0;
       for (const uid of userIds) {
         try {
           const r = await detectForUser(admin, uid, fxRates);
           results.push(r);
           if (r.changed) changedCount++;
+          if (r.currency_changed) currencyChangedCount++;
         } catch (e) {
           console.error("[detect-primary-marketplace] user failed", uid, e);
         }
@@ -211,7 +228,7 @@ Deno.serve(async (req) => {
 
       return {
         items_processed: userIds.length,
-        detail: { changed: changedCount, unchanged: userIds.length - changedCount },
+        detail: { changed: changedCount, currency_changed: currencyChangedCount, unchanged: userIds.length - changedCount },
       };
     });
 
