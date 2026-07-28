@@ -658,7 +658,7 @@ const LiveSales = ({
 } = {}) => {
   const navigate = useNavigate();
   const { user, session } = useAuth();
-  const { homeCurrencySymbol } = useHomeMarketplace();
+  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const { startBackgroundSync, syncState, isSyncing } = useSalesSync();
   const [selectedMarketplace, setSelectedMarketplace] = useState<string>("ALL");
   const [availableMarketplaces, setAvailableMarketplaces] = useState<string[]>([]);
@@ -704,6 +704,9 @@ const LiveSales = ({
   // "Settlement data incomplete" banner on past periods.
   const [fecCoverage, setFecCoverage] = useState<{ rows: number; rangeEnd: string; loaded: boolean }>({ rows: 0, rangeEnd: "", loaded: false });
   const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
+  // USD -> seller's home currency multiplier, applied only at display
+  // boundaries below (internal state stays USD). No-op (1) for USD sellers.
+  const homeRate = fxRates[homeCurrency] ?? 1;
 
   // True once fetchSales has successfully painted data at least once --
   // gates whether a subsequent non-silent call shows the SWR "revalidating"
@@ -2134,6 +2137,8 @@ const LiveSales = ({
                       rangeStart={currentPeriod.rangeStart}
                       rangeEnd={currentPeriod.rangeEnd}
                       marketplace={selectedMarketplace || "ALL"}
+                      currencySymbol={homeCurrencySymbol}
+                      homeRate={homeRate}
                     />
                   )}
                   <div className="w-px h-8 bg-border" />
@@ -2960,12 +2965,16 @@ const LiveSales = ({
             rangeEnd={currentPeriod.rangeEnd}
             label={currentPeriod.label}
             marketplace={selectedMarketplace}
+            currencySymbol={homeCurrencySymbol}
+            homeRate={homeRate}
           />
           <ReplacementCogsSection
             rangeStart={currentPeriod.rangeStart}
             rangeEnd={currentPeriod.rangeEnd}
             label={currentPeriod.label}
             marketplace={selectedMarketplace}
+            currencySymbol={homeCurrencySymbol}
+            homeRate={homeRate}
           />
           <FeeBreakdownSections
             rangeStart={currentPeriod.rangeStart}
@@ -2981,7 +2990,6 @@ const LiveSales = ({
           asin={fbmLabelAsin}
           rangeStart={currentPeriod.rangeStart}
           rangeEnd={currentPeriod.rangeEnd}
-          currencySymbol={homeCurrencySymbol}
         />
       )}
       {bbHistoryTarget && user && (

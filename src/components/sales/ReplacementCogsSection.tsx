@@ -59,6 +59,10 @@ type Props = {
   label: string;
   marketplace?: string;
   dark?: boolean;
+  currencySymbol?: string;
+  /** USD -> seller's home currency multiplier (1 for USD sellers, the
+   * default — fetchReplacementCogs returns USD-denominated totals). */
+  homeRate?: number;
 };
 
 export function ReplacementCogsSection({
@@ -67,6 +71,8 @@ export function ReplacementCogsSection({
   label,
   marketplace = "ALL",
   dark = false,
+  currencySymbol = "$",
+  homeRate = 1,
 }: Props) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -101,7 +107,7 @@ export function ReplacementCogsSection({
       .sort((a, b) => b[1].cogs - a[1].cogs);
   }, [data]);
 
-  const total = data?.totalProfitImpactUsd ?? 0;
+  const total = (data?.totalProfitImpactUsd ?? 0) * homeRate;
   const allRows: ReplacementRow[] = data?.rows ?? [];
   const rows = reasonFilter
     ? allRows.filter((r) => (r.replacement_reason || "unknown") === reasonFilter)
@@ -138,7 +144,7 @@ export function ReplacementCogsSection({
         <div className="flex items-center gap-2">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />}
           <span className={`text-sm font-semibold ${total > 0 ? "text-red-500" : subText}`}>
-            {total > 0 ? `−$${total.toFixed(2)}` : "$0.00"}
+            {total > 0 ? `−${currencySymbol}${total.toFixed(2)}` : `${currencySymbol}0.00`}
           </span>
         </div>
       </button>
@@ -164,7 +170,7 @@ export function ReplacementCogsSection({
               <div className="flex flex-wrap gap-2 mb-3">
                 {marketplaceEntries.map(([mp, v]) => (
                   <span key={mp} className={`text-xs px-2 py-1 rounded ${chipBg}`}>
-                    {mp}: <span className="font-semibold text-red-500">−${v.cogs.toFixed(2)}</span>
+                    {mp}: <span className="font-semibold text-red-500">−{currencySymbol}{(v.cogs * homeRate).toFixed(2)}</span>
                     <span className={subText}> · {v.orders} ord · {v.units} u</span>
                   </span>
                 ))}
@@ -182,7 +188,7 @@ export function ReplacementCogsSection({
                         title={active ? "Click to clear filter" : "Click to filter orders by this reason"}
                       >
                         <span className={subText}>{REASON_LABEL[reason] || reason}:</span>{" "}
-                        <span className="font-semibold text-red-500">−${v.cogs.toFixed(2)}</span>
+                        <span className="font-semibold text-red-500">−{currencySymbol}{(v.cogs * homeRate).toFixed(2)}</span>
                         <span className={subText}> · {v.orders} {v.orders === 1 ? "order" : "orders"}</span>
                       </button>
                     );
@@ -246,10 +252,10 @@ export function ReplacementCogsSection({
                           {r.quantity}
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap text-right tabular-nums">
-                          ${r.unit_cost.toFixed(2)}
+                          {currencySymbol}{(r.unit_cost * homeRate).toFixed(2)}
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap text-right font-semibold text-red-500 tabular-nums">
-                          −${r.cogs_usd.toFixed(2)}
+                          −{currencySymbol}{(r.cogs_usd * homeRate).toFixed(2)}
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <ReplacementBadge row={r} />
@@ -267,11 +273,11 @@ export function ReplacementCogsSection({
                         Total COGS impact (revenue is $0)
                       </td>
                       <td className="px-2 py-2 text-right font-bold text-red-500 tabular-nums">
-                        −${data.totalCogsUsd.toFixed(2)}
+                        −{currencySymbol}{(data.totalCogsUsd * homeRate).toFixed(2)}
                       </td>
                       <td colSpan={2} className={`px-2 py-2 text-[11px] ${subText}`}>
                         {data.totalFeesUsd > 0
-                          ? `+ $${data.totalFeesUsd.toFixed(2)} FEC fees`
+                          ? `+ ${currencySymbol}${(data.totalFeesUsd * homeRate).toFixed(2)} FEC fees`
                           : "no FEC fees"}
                       </td>
                     </tr>

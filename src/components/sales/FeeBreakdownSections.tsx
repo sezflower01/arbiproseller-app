@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { addDaysISO } from "@/lib/sales/dateRange";
 import { formatMarketplaceDate } from "@/lib/sales/dateLocale";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
+import { getCurrencyForMarketplace } from "@/lib/marketplaceCurrency";
 
 const AMAZON_SC_DOMAIN: Record<string, string> = {
   US: "sellercentral.amazon.com", ATVPDKIKX0DER: "sellercentral.amazon.com",
@@ -173,7 +174,7 @@ interface Props {
 
 export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark }: Props) {
   const { user } = useAuth();
-  const { homeMarketplace } = useHomeMarketplace();
+  const { homeMarketplace, homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const [rows, setRows] = useState<FecRow[]>([]);
   const [orderInfo, setOrderInfo] = useState<Record<string, SalesOrderInfo>>({});
   const [pendingFbm, setPendingFbm] = useState<PendingFbmOrder[]>([]);
@@ -181,6 +182,27 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
   const [orderSearch, setOrderSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
+
+  useEffect(() => {
+    supabase.from("fx_rates").select("quote, rate").then(({ data }) => {
+      const next: Record<string, number> = { USD: 1 };
+      for (const row of (data as any[]) || []) next[String(row.quote || "")] = Number(row.rate) || 1;
+      setFxRates(next);
+    });
+  }, []);
+
+  // Every FEC row can come from a different marketplace (US/CA/MX/BR/...),
+  // each in its own native currency, with no conversion applied anywhere
+  // upstream. Summing raw native values across marketplaces would silently
+  // add e.g. USD + CAD together as if they were the same currency — convert
+  // each row to the seller's home currency individually, via USD cross-rate
+  // (fx_rates is USD-anchored: 1 USD = rate units of quote currency).
+  const toHomeCurrency = useCallback((amount: number, mkt: string | null | undefined): number => {
+    const nativeCurrency = getCurrencyForMarketplace(String(mkt || homeMarketplace || "US").toUpperCase());
+    const usd = nativeCurrency === "USD" ? amount : amount / (fxRates[nativeCurrency] || 1);
+    return homeCurrency === "USD" ? usd : usd * (fxRates[homeCurrency] || 1);
+  }, [fxRates, homeCurrency, homeMarketplace]);
 
   const fetchRows = useCallback(async () => {
     if (!user?.id || !rangeStart || !rangeEnd) return;
@@ -286,7 +308,10 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
             fba_fees: null,
             fba_inbound_fees: fee.fee_amount,
           } as FecRow,
-          val: Number(fee.fee_amount || 0),
+          // fba_inbound_fees has no real per-row marketplace column (tagged
+          // homeMarketplace above as a placeholder), so this conversion is a
+          // no-op today — kept for consistency if that ever changes.
+          val: toHomeCurrency(Number(fee.fee_amount || 0), homeMarketplace),
         })).filter((x) => x.val !== 0);
         const total = items.reduce((s, x) => s + x.val, 0);
         return { cat, items, total };
@@ -309,7 +334,10 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
           } else if (cat.sourceKey) {
             val = Number(r[cat.sourceKey] || 0);
           }
-          return { row: r, val };
+          // Each row can be from a different marketplace/currency — convert
+          // individually before summing, rather than adding raw native
+          // values across currencies as if they were all the same.
+          return { row: r, val: toHomeCurrency(val, r.marketplace) };
         })
         .filter((x) => x.val !== 0);
       const total = items.reduce((s, x) => s + x.val, 0);
@@ -372,8 +400,8 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
           const isNegativeDisplay = cat.kind === "fee" ? total !== 0 : cat.kind === "credit" ? total < 0 : false;
           const display =
             cat.kind === "fee"
-              ? `−$${Math.abs(total).toFixed(2)}`
-              : `${total >= 0 ? "+" : "−"}$${Math.abs(total).toFixed(2)}`;
+              ? `−${homeCurrencySymbol}${Math.abs(total).toFixed(2)}`
+              : `${total >= 0 ? "+" : "−"}${homeCurrencySymbol}${Math.abs(total).toFixed(2)}`;
           const headerAmountColor =
             isNegativeDisplay ? negColor : posColor;
           return (
@@ -425,7 +453,7 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
                     const q = orderSearch.trim().toLowerCase();
                     const filtered = pendingFbm.filter((o) => !q || [o.order_id, o.asin, o.seller_sku].some((value) => (value || "").toLowerCase().includes(q)));
                     if (filtered.length === 0) return null;
-                    const pendingTotal = filtered.reduce((s, o) => s + Number(o.shipping_label_fee || 0), 0);
+                    const pendingTotal = filtered.reduce((s, o) => s + toHomeCurrency(Number(o.shipping_label_fee || 0), o.marketplace), 0);
                     return (
                       <div className={`px-4 py-3 ${dark ? "border-b border-white/10 bg-amber-400/[0.06]" : "border-b bg-amber-50"}`}>
                         <div className="flex items-center justify-between mb-2">
@@ -433,7 +461,7 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
                             Pending FBM orders · awaiting Amazon settlement · {filtered.length} order{filtered.length === 1 ? "" : "s"}
                           </p>
                           <span className={`text-xs font-mono ${dark ? "text-amber-200/80" : "text-amber-800/80"}`}>
-                            {pendingTotal > 0 ? `expected −$${pendingTotal.toFixed(2)}` : "label fee not yet known"}
+                            {pendingTotal > 0 ? `expected −${homeCurrencySymbol}${pendingTotal.toFixed(2)}` : "label fee not yet known"}
                           </span>
                         </div>
                         <div className="overflow-x-auto">
@@ -453,7 +481,7 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
                                   </td>
                                   <td className={`px-2 py-1 text-right font-mono ${dark ? "text-white/70" : "text-muted-foreground"}`}>
                                     {Number(o.shipping_label_fee || 0) > 0
-                                      ? `−$${Number(o.shipping_label_fee).toFixed(2)} (est)`
+                                      ? `−${homeCurrencySymbol}${toHomeCurrency(Number(o.shipping_label_fee), o.marketplace).toFixed(2)} (est)`
                                       : "—"}
                                   </td>
                                 </tr>
@@ -484,8 +512,8 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
                         const isNeg = cat.kind === "fee" ? val !== 0 : cat.kind === "credit" ? val < 0 : false;
                         const amt =
                           cat.kind === "fee"
-                            ? `−$${Math.abs(val).toFixed(2)}`
-                            : `${val >= 0 ? "+" : "−"}$${Math.abs(val).toFixed(2)}`;
+                            ? `−${homeCurrencySymbol}${Math.abs(val).toFixed(2)}`
+                            : `${val >= 0 ? "+" : "−"}${homeCurrencySymbol}${Math.abs(val).toFixed(2)}`;
                         const cellColor = isNeg ? negColor : posColor;
                         const fulfillment = fulfillmentLabel(row, cat.key);
 

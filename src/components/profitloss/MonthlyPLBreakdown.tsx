@@ -302,7 +302,28 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
     return q.eq(col, mpParam);
   };
   const { user } = useAuth();
-  const { homeMarketplace } = useHomeMarketplace();
+  const { homeMarketplace, homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from("fx_rates").select("quote, rate").then(({ data }) => {
+      if (cancelled || !data) return;
+      const m: Record<string, number> = { USD: 1 };
+      for (const r of data as { quote: string; rate: number }[]) m[r.quote] = Number(r.rate);
+      setFxRates(m);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  // USD -> seller's home currency multiplier, applied only at display
+  // boundaries (the RPCs return USD-normalized totals). No-op (1) for USD sellers.
+  const homeRate = fxRates[homeCurrency] ?? 1;
+  const fmt = (n: number, negative = false) => {
+    const abs = Math.abs(Number.isFinite(n) ? n : 0) * homeRate;
+    const formatted = homeCurrencySymbol + new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(abs);
+    return negative && abs > 0 ? `(${formatted})` : formatted;
+  };
   const [rows, setRows] = useState<MonthRow[] | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[] | null>(null);
   const [cogsRows, setCogsRows] = useState<CogsRow[] | null>(null);

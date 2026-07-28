@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Truck, RefreshCw, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getMarketplaceConfig } from "@/lib/marketplaceCurrency";
 
 interface FbmOrderRow {
   id: string;
@@ -30,6 +31,7 @@ interface FbmOrderRow {
   order_date: string | null;
   order_status: string | null;
   fulfillment_channel: string | null;
+  marketplace: string | null;
   quantity: number | null;
   sold_price: number | null;
   estimated_price: number | null;
@@ -44,13 +46,20 @@ interface Props {
   asin: string;
   rangeStart: string; // YYYY-MM-DD
   rangeEnd: string;   // YYYY-MM-DD
-  currencySymbol?: string;
   onUpdated?: () => void;
 }
 
+// Each row's shipping_label_fee/sold_price is stored in THAT order's own
+// marketplace currency (Amazon's Buy Shipping / Finances APIs never
+// convert), and manual entries are written back verbatim into the same
+// column. So the symbol shown/typed must match the row's own marketplace,
+// never a single seller-wide home-currency symbol.
+function symbolFor(marketplace: string | null | undefined): string {
+  return getMarketplaceConfig(String(marketplace || "US").toUpperCase()).currencySymbol;
+}
+
 export default function FbmLabelCostDialog({
-  open, onOpenChange, asin, rangeStart, rangeEnd,
-  currencySymbol = "$", onUpdated,
+  open, onOpenChange, asin, rangeStart, rangeEnd, onUpdated,
 }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = useState<FbmOrderRow[]>([]);
@@ -64,7 +73,7 @@ export default function FbmLabelCostDialog({
     try {
       const { data, error } = await supabase
         .from("sales_orders")
-        .select("id, order_id, order_date, order_status, fulfillment_channel, quantity, sold_price, estimated_price, shipping_label_fee, shipping_label_fee_source, shipping_label_fee_synced_at")
+        .select("id, order_id, order_date, order_status, fulfillment_channel, marketplace, quantity, sold_price, estimated_price, shipping_label_fee, shipping_label_fee_source, shipping_label_fee_synced_at")
         .eq("asin", asin)
         .gte("order_date", rangeStart)
         .lte("order_date", rangeEnd)
@@ -101,7 +110,7 @@ export default function FbmLabelCostDialog({
           : "Amazon";
         toast({
           title: `Saved (${sourceLabel})`,
-          description: `${currencySymbol}${(r.amount ?? 0).toFixed(2)} applied to order ${row.order_id}`,
+          description: `${symbolFor(row.marketplace)}${(r.amount ?? 0).toFixed(2)} applied to order ${row.order_id}`,
         });
         setManualValues((m) => ({ ...m, [row.id]: "" }));
         await load();
@@ -145,6 +154,7 @@ export default function FbmLabelCostDialog({
               {rows.map((row) => {
                 const price = row.sold_price ?? row.estimated_price ?? 0;
                 const hasFee = (row.shipping_label_fee ?? 0) > 0;
+                const rowSymbol = symbolFor(row.marketplace);
                 const sourceTag = row.shipping_label_fee_source;
                 const sourceLabel = (() => {
                   switch (sourceTag) {
@@ -172,14 +182,14 @@ export default function FbmLabelCostDialog({
                       <div className="text-xs">
                         <p className="font-mono font-semibold">{row.order_id}</p>
                         <p className="text-muted-foreground">
-                          {row.order_date} · {row.order_status || "order"} · qty {row.quantity ?? 1} · {currencySymbol}{price.toFixed(2)}
+                          {row.order_date} · {row.order_status || "order"} · qty {row.quantity ?? 1} · {rowSymbol}{price.toFixed(2)}
                         </p>
                       </div>
                       <div className="text-right text-xs">
                         {hasFee ? (
                           <>
                             <p className="font-bold text-emerald-600 tabular-nums">
-                              −{currencySymbol}{(row.shipping_label_fee ?? 0).toFixed(2)}
+                              −{rowSymbol}{(row.shipping_label_fee ?? 0).toFixed(2)}
                             </p>
                             <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide font-semibold ${sourceClass}`}>
                               {sourceLabel}
@@ -207,7 +217,7 @@ export default function FbmLabelCostDialog({
                         Check Amazon now
                       </Button>
                       <div className="flex items-center gap-1">
-                        <span className="text-[11px] text-muted-foreground">{currencySymbol}</span>
+                        <span className="text-[11px] text-muted-foreground">{rowSymbol}</span>
                         <Input
                           type="number"
                           inputMode="decimal"

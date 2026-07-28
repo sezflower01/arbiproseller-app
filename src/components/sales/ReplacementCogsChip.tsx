@@ -27,6 +27,9 @@ type Props = {
   colorClass?: string;
   className?: string;
   currencySymbol?: string;
+  /** USD -> seller's home currency multiplier (1 for USD, the default —
+   * fetchReplacementCogs returns USD-denominated totals). */
+  homeRate?: number;
 } & Variant;
 
 const cache = new Map<string, { cogs: number; fees: number; orders: number; units: number }>();
@@ -39,6 +42,7 @@ export function ReplacementCogsChip(props: Props) {
     colorClass = "text-rose-500",
     className = "",
     currencySymbol = "$",
+    homeRate = 1,
   } = props;
   const { user } = useAuth();
   const key = `${user?.id || ""}|${rangeStart}|${rangeEnd}|${marketplace}`;
@@ -63,14 +67,19 @@ export function ReplacementCogsChip(props: Props) {
 
   if (!data || (data.cogs <= 0 && data.fees <= 0)) return null;
 
-  const total = data.cogs + data.fees;
-  const breakdown = data.fees > 0
-    ? `COGS ${currencySymbol}${data.cogs.toFixed(2)} + fees ${currencySymbol}${data.fees.toFixed(2)}`
+  // fetchReplacementCogs returns USD-denominated totals; convert to the
+  // seller's home currency at this display boundary only (homeRate=1 for
+  // USD sellers — no-op, byte-identical to prior behavior).
+  const cogs = data.cogs * homeRate;
+  const fees = data.fees * homeRate;
+  const total = cogs + fees;
+  const breakdown = fees > 0
+    ? `COGS ${currencySymbol}${cogs.toFixed(2)} + fees ${currencySymbol}${fees.toFixed(2)}`
     : `COGS only`;
-  const tooltip = `Amazon shipped ${data.units} unit${data.units === 1 ? "" : "s"} across ${data.orders} order${data.orders === 1 ? "" : "s"} at $0 revenue (replacements / free shipments). Revenue stays $0, but unit cost ${data.fees > 0 ? "and Amazon FBA fees are" : "is"} deducted from profit. Breakdown: ${breakdown}. See the Replacement / Free Shipments section below for the full audit.`;
+  const tooltip = `Amazon shipped ${data.units} unit${data.units === 1 ? "" : "s"} across ${data.orders} order${data.orders === 1 ? "" : "s"} at $0 revenue (replacements / free shipments). Revenue stays $0, but unit cost ${fees > 0 ? "and Amazon FBA fees are" : "is"} deducted from profit. Breakdown: ${breakdown}. See the Replacement / Free Shipments section below for the full audit.`;
   const valueText = `−${currencySymbol}${total.toFixed(2)}`;
-  const subText = data.fees > 0
-    ? `${currencySymbol}${data.cogs.toFixed(2)} cogs + ${currencySymbol}${data.fees.toFixed(2)} fees`
+  const subText = fees > 0
+    ? `${currencySymbol}${cogs.toFixed(2)} cogs + ${currencySymbol}${fees.toFixed(2)} fees`
     : null;
 
   if (props.variant === "chip") {

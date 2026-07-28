@@ -422,12 +422,16 @@ interface AsinRow {
 const RecordDetail = ({
   row,
   currencySymbol,
+  homeRate = 1,
   onBack,
   rangeStart,
   rangeEnd,
 }: {
   row: AsinRow;
   currencySymbol: string;
+  /** USD -> seller's home currency multiplier (1 for USD sellers, the
+   * default — row fields below are USD-denominated). */
+  homeRate?: number;
   onBack: () => void;
   rangeStart: string;
   rangeEnd: string;
@@ -435,22 +439,22 @@ const RecordDetail = ({
   const [labelDialogOpen, setLabelDialogOpen] = useState(false);
   const cur = currencySymbol;
   const fmt = (n: number) => `${n < 0 ? "-" : ""}${cur}${Math.abs(n).toFixed(2)}`;
-  const revenue = row.revenue;
-  const fees = row.fees;
-  const rawFees = Math.max(0, row.rawFees ?? fees);
+  const revenue = row.revenue * homeRate;
+  const fees = row.fees * homeRate;
+  const rawFees = Math.max(0, (row.rawFees ?? row.fees) * homeRate);
   const learnedFeeTitle = row.learnedFeesApplied
     ? `Learned pending estimate based on settled history. Raw SP-API estimate: ${fmt(rawFees)}. Final fees update after settlement.`
     : undefined;
-  const cost = row.cost;
-  const grossProfit = row.profit;
+  const cost = row.cost * homeRate;
+  const grossProfit = row.profit * homeRate;
   const netProfit = grossProfit;
   const payout = revenue - fees;
   // Prefer actual stored per-row breakdown when present (real referral_fee/
   // fba_fee from Fees API or settlement). Falls back to a 15% approximation
   // only when neither component was captured — historically this approximation
   // mis-attributed fees on BR/MX (e.g. true FBA $2.13 → "1.62" displayed).
-  const storedReferral = Math.max(0, row.referralFees || 0);
-  const storedFba = Math.max(0, row.fbaFees || 0);
+  const storedReferral = Math.max(0, (row.referralFees || 0) * homeRate);
+  const storedFba = Math.max(0, (row.fbaFees || 0) * homeRate);
   const haveStoredSplit = storedReferral > 0 || storedFba > 0;
   const referralFee = haveStoredSplit ? storedReferral : Math.min(fees, revenue * 0.15);
   const fbaFee = haveStoredSplit ? storedFba : Math.max(0, fees - referralFee);
@@ -564,7 +568,6 @@ const RecordDetail = ({
         asin={row.asin}
         rangeStart={rangeStart}
         rangeEnd={rangeEnd}
-        currencySymbol={currencySymbol}
       />
 
 
@@ -660,7 +663,7 @@ const MobileLiveSales = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { startBackgroundSync, syncState, isSyncing } = useSalesSync();
-  const { homeCurrencySymbol } = useHomeMarketplace();
+  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const [rows, setRows] = useState<AsinRow[]>([]);
   const [todaySummary, setTodaySummary] = useState({ units: 0, orders: 0, revenue: 0, fees: 0, cost: 0, profit: 0, roi: 0 });
   const [todayRefunds, setTodayRefunds] = useState({ amount: 0, count: 0 });
@@ -714,6 +717,12 @@ const MobileLiveSales = () => {
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
+  // All revenue/fee/cost/profit figures throughout this page are computed in
+  // USD internally (cross-marketplace accounting stays USD, unchanged) —
+  // homeRate converts to the seller's home currency only at display time.
+  // For a USD home currency (fxRates.USD is always 1), this is a no-op:
+  // byte-identical to current behavior for every existing US-primary account.
+  const homeRate = fxRates[homeCurrency] ?? 1;
   const [isAmazonConnected, setIsAmazonConnected] = useState<boolean | null>(null);
   const [nowLabel, setNowLabel] = useState<string>("");
   const [sortKey, setSortKey] = useState<"units" | "revenue" | "profit" | "none">("none");
@@ -2231,6 +2240,7 @@ const MobileLiveSales = () => {
         <RecordDetail
           row={selected}
           currencySymbol={homeCurrencySymbol}
+          homeRate={homeRate}
           onBack={() => setSelected(null)}
           rangeStart={periodInfo.start}
           rangeEnd={periodInfo.end}
@@ -2371,13 +2381,13 @@ const MobileLiveSales = () => {
               ? ((activeSummary.profit - refundsDeduct + adjNet - promoDeduct) / activeSummary.cost) * 100
               : 0;
             const disp = {
-              profit: profitNet,
-              revenue: activeSummary.revenue * fc.factor,
-              fees: activeSummary.fees * fc.factor,
-              cost: activeSummary.cost * fc.factor,
-              refunds: refundsDeduct * fc.factor,
-              promotions: promoDeduct * fc.factor,
-              adjustments: adjNet * fc.factor,
+              profit: profitNet * homeRate,
+              revenue: activeSummary.revenue * fc.factor * homeRate,
+              fees: activeSummary.fees * fc.factor * homeRate,
+              cost: activeSummary.cost * fc.factor * homeRate,
+              refunds: refundsDeduct * fc.factor * homeRate,
+              promotions: promoDeduct * fc.factor * homeRate,
+              adjustments: adjNet * fc.factor * homeRate,
               units: Math.round(activeSummary.units * fc.factor),
               orders: Math.round(activeSummary.orders * fc.factor),
               roi: roiNet,
@@ -2542,7 +2552,7 @@ const MobileLiveSales = () => {
                     className="text-muted-foreground italic"
                     title={`Pending order estimates (${displayPendingEst.orders} orders, ${displayPendingEst.units} units) — not yet settled in FEC. Already added into Revenue and Net Profit so this period matches Sales Report.`}
                   >
-                    Pending Est. ~{homeCurrencySymbol}{displayPendingEst.revenueUsd.toFixed(2)}
+                    Pending Est. ~{homeCurrencySymbol}{(displayPendingEst.revenueUsd * homeRate).toFixed(2)}
                   </span>
                 )}
                 {disp.promotions > 0 && (
@@ -2571,6 +2581,7 @@ const MobileLiveSales = () => {
                   marketplace={marketplaceFilter || "ALL"}
                   colorClass="text-rose-300"
                   currencySymbol={homeCurrencySymbol}
+                  homeRate={homeRate}
                 />
               </div>
 
@@ -2695,7 +2706,7 @@ const MobileLiveSales = () => {
               {isForecast && (
                 <div className="mt-3 text-[11px] font-semibold text-emerald-200/80 leading-snug">
                   Projected from day {fc.dayOfMonth} of {fc.daysInMonth} · run-rate ×{fc.factor.toFixed(2)}.
-                  Actual MTD: {homeCurrencySymbol}{activeSummary.revenue.toFixed(2)} sales · {homeCurrencySymbol}{activeSummary.profit.toFixed(2)} profit.
+                  Actual MTD: {homeCurrencySymbol}{(activeSummary.revenue * homeRate).toFixed(2)} sales · {homeCurrencySymbol}{(activeSummary.profit * homeRate).toFixed(2)} profit.
                 </div>
               )}
             </>
@@ -2746,7 +2757,7 @@ const MobileLiveSales = () => {
               <div className="text-right shrink-0 flex items-center gap-2">
                 <div>
                   <div className="text-base font-extrabold tabular-nums text-rose-200">
-                    −{homeCurrencySymbol}{todayRefunds.amount.toFixed(2)}
+                    −{homeCurrencySymbol}{(todayRefunds.amount * homeRate).toFixed(2)}
                   </div>
                 </div>
                 {refundsOpen ? <ChevronUp className="h-4 w-4 text-rose-200" /> : <ChevronDown className="h-4 w-4 text-rose-200" />}
@@ -2786,7 +2797,7 @@ const MobileLiveSales = () => {
                           })()}
                         </div>
                         <div className="text-sm font-bold tabular-nums text-rose-300 shrink-0">
-                          −{homeCurrencySymbol}{r.amount.toFixed(2)}
+                          −{homeCurrencySymbol}{(r.amount * homeRate).toFixed(2)}
                         </div>
                       </li>
                     ))}
@@ -3031,7 +3042,7 @@ const MobileLiveSales = () => {
                   </div>
                   <div className="text-right shrink-0 min-w-[96px]">
                     <div className={`text-lg font-extrabold tabular-nums leading-tight ${r.profit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {r.profit >= 0 ? "" : "-"}{homeCurrencySymbol}{Math.abs(r.profit).toFixed(2)}
+                      {r.profit >= 0 ? "" : "-"}{homeCurrencySymbol}{Math.abs(r.profit * homeRate).toFixed(2)}
                     </div>
                     {(() => {
                       const mkts = (r.marketplaces || []) as string[];
@@ -3052,22 +3063,22 @@ const MobileLiveSales = () => {
                       );
                     })()}
                     <div className="mt-1 text-sm font-semibold tabular-nums text-white leading-tight">
-                      {(r.pendingUnits ?? 0) > 0 && r.revenue <= 0 ? "Sales pending" : `Sales ${homeCurrencySymbol}${r.revenue.toFixed(2)}`}
+                      {(r.pendingUnits ?? 0) > 0 && r.revenue <= 0 ? "Sales pending" : `Sales ${homeCurrencySymbol}${(r.revenue * homeRate).toFixed(2)}`}
                     </div>
                     <div
                       className="text-sm font-bold tabular-nums text-amber-300 leading-tight"
                       title={r.feesMissing
                         ? `Missing ${(r.feesMissingMarketplaces || []).join("/")} fee cache — fees not estimated. Profit/ROI hidden.`
                         : r.learnedFeesApplied
-                          ? `Learned pending estimate based on settled history. Raw SP-API estimate: ${homeCurrencySymbol}${(r.rawFees || 0).toFixed(2)}. Final fees update after settlement.`
+                          ? `Learned pending estimate based on settled history. Raw SP-API estimate: ${homeCurrencySymbol}${((r.rawFees || 0) * homeRate).toFixed(2)}. Final fees update after settlement.`
                           : undefined}
                     >
                       {r.feesMissing
                         ? `Fees ⚠ Missing ${(r.feesMissingMarketplaces || []).join("/")} cache`
-                        : `Fees −${homeCurrencySymbol}${(r.fees || 0).toFixed(2)}`}
+                        : `Fees −${homeCurrencySymbol}${((r.fees || 0) * homeRate).toFixed(2)}`}
                     </div>
                     <div className="text-sm font-bold tabular-nums text-blue-300 leading-tight">
-                      COGS {homeCurrencySymbol}{r.cost.toFixed(2)}
+                      COGS {homeCurrencySymbol}{(r.cost * homeRate).toFixed(2)}
                     </div>
                   </div>
                 </li>
@@ -3096,6 +3107,8 @@ const MobileLiveSales = () => {
               label={periodInfo.label}
               marketplace={marketplaceFilter}
               dark
+              currencySymbol={homeCurrencySymbol}
+              homeRate={homeRate}
             />
             <ReplacementCogsSection
               rangeStart={periodInfo.start}
@@ -3103,6 +3116,8 @@ const MobileLiveSales = () => {
               label={periodInfo.label}
               marketplace={marketplaceFilter}
               dark
+              currencySymbol={homeCurrencySymbol}
+              homeRate={homeRate}
             />
             <FeeBreakdownSections
               rangeStart={periodInfo.start}
@@ -3122,7 +3137,6 @@ const MobileLiveSales = () => {
           asin={labelRow.asin}
           rangeStart={periodInfo.start}
           rangeEnd={periodInfo.end}
-          currencySymbol={homeCurrencySymbol}
           onUpdated={() => void refreshLiveSales(true)}
         />
       )}

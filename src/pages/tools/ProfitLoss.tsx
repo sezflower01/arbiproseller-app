@@ -8,6 +8,7 @@ import MonthlyPLBreakdown from "@/components/profitloss/MonthlyPLBreakdown";
 import SoFecParityBanner from "@/components/profitloss/SoFecParityBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useModuleAccess } from "@/hooks/useModuleAccess";
+import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { format } from "date-fns";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -157,17 +158,6 @@ const recomputeReconciledTotals = (s: FinancialSummary): FinancialSummary => {
   return { ...s, totalIncome, totalExpenses };
 };
 
-const formatCurrency = (amount: number, showSign = false) => {
-  const formatted = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(Math.abs(amount));
-  
-  if (showSign && amount < 0) return `(${formatted})`;
-  if (showSign && amount > 0) return formatted;
-  return amount < 0 ? `(${formatted})` : formatted;
-};
-
 const MONTHS = [
   { value: 0, label: 'January' },
   { value: 1, label: 'February' },
@@ -263,6 +253,31 @@ export default function ProfitLoss() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isAdmin } = useModuleAccess();
+  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from("fx_rates").select("quote, rate").then(({ data }) => {
+      if (cancelled || !data) return;
+      const m: Record<string, number> = { USD: 1 };
+      for (const r of data as { quote: string; rate: number }[]) m[r.quote] = Number(r.rate);
+      setFxRates(m);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  // USD -> seller's home currency multiplier, applied only at display
+  // boundaries (get_pl_live_summary returns USD-normalized totals). No-op
+  // (1) for USD sellers.
+  const homeRate = fxRates[homeCurrency] ?? 1;
+  const formatCurrency = (amount: number, showSign = false) => {
+    const formatted = homeCurrencySymbol + new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(Math.abs(amount) * homeRate);
+
+    if (showSign && amount < 0) return `(${formatted})`;
+    if (showSign && amount > 0) return formatted;
+    return amount < 0 ? `(${formatted})` : formatted;
+  };
   const now = new Date();
   const yearOptions = getYearOptions();
 
@@ -2563,6 +2578,8 @@ export default function ProfitLoss() {
               rangeStart={startDate}
               rangeEnd={endDate}
               label={`${startDate} → ${endDate}`}
+              currencySymbol={homeCurrencySymbol}
+              homeRate={homeRate}
             />
             <p className="text-[11px] text-muted-foreground mt-2">
               Replacement / free-shipment COGS shown above is informational. P&amp;L profit
