@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,17 +46,18 @@ export default function Repricer() {
 
   // Deep-link support (e.g. a Buy Box alert's "Fix Price Now" button):
   // ?marketplace=BR&asin=B0... jumps straight to that marketplace tab with
-  // the ASIN pre-filled in search. Applied once, then the params are
-  // cleared so they don't re-trigger on subsequent navigation.
+  // the ASIN pre-filled in search, replacing whatever was there before.
+  // Params are cleared right after applying so they don't re-trigger on an
+  // unrelated re-render -- the `!mp && !asin` guard below (not a "did we
+  // ever apply one" ref) is what prevents reprocessing already-cleared
+  // params, so a second, different deep link (a new alert clicked while
+  // still on this page) is applied too, not silently ignored.
   const [searchParams, setSearchParams] = useSearchParams();
   const [deepLinkSearchTerm, setDeepLinkSearchTerm] = useState<string | undefined>(undefined);
-  const appliedDeepLinkRef = useRef(false);
   useEffect(() => {
-    if (appliedDeepLinkRef.current) return;
     const mp = searchParams.get("marketplace");
     const asin = searchParams.get("asin");
     if (!mp && !asin) return;
-    appliedDeepLinkRef.current = true;
     if (mp) setSelectedMarketplace(mp);
     if (asin) setDeepLinkSearchTerm(asin);
     setActiveTab("assignments");
