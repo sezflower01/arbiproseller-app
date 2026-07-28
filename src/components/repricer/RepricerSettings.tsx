@@ -371,7 +371,11 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           </div>
         )}
 
-        {/* Primary Marketplace Selector */}
+        {/* Primary Marketplace — auto-detected, not manually editable.
+            Which marketplace gets the always-on protected evaluation slot
+            materially changes repricer behavior, so this is computed weekly
+            from real trailing 90-day sales volume (converted to USD) rather
+            than left to a dropdown someone can set once and forget. */}
         <div className="p-4 border rounded-lg bg-muted/30">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -384,31 +388,18 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               </p>
             </div>
           </div>
-          <Select
-            value={(settings as any)?.primary_marketplace || "US"}
-            onValueChange={async (val) => {
-              try {
-                await supabase.from("repricer_settings").update({ primary_marketplace: val } as any).eq("user_id", user?.id);
-                toast.success(`Primary marketplace set to ${val}`);
-                fetchSettings();
-              } catch (e: any) {
-                toast.error("Failed to update: " + e.message);
-              }
-            }}
-          >
-            <SelectTrigger className="w-48 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="US">🇺🇸 United States</SelectItem>
-              <SelectItem value="CA">🇨🇦 Canada</SelectItem>
-              <SelectItem value="MX">🇲🇽 Mexico</SelectItem>
-              <SelectItem value="BR">🇧🇷 Brazil</SelectItem>
-              <SelectItem value="UK">🇬🇧 United Kingdom</SelectItem>
-              <SelectItem value="DE">🇩🇪 Germany</SelectItem>
-              <SelectItem value="ES">🇪🇸 Spain</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-sm font-medium px-2.5 py-1">
+              {{ US: "🇺🇸 United States", CA: "🇨🇦 Canada", MX: "🇲🇽 Mexico", BR: "🇧🇷 Brazil" }[(settings as any)?.primary_marketplace || "US"]
+                || (settings as any)?.primary_marketplace || "US"}
+            </Badge>
+            <span className="text-[11px] text-muted-foreground">
+              Auto-detected from sales volume
+              {(settings as any)?.primary_marketplace_detected_at
+                ? ` — last updated ${new Date((settings as any).primary_marketplace_detected_at).toLocaleDateString()}`
+                : " — updates weekly"}
+            </span>
+          </div>
         </div>
 
         {/* Automation Status is now its own tab next to Assignments/Rules/Settings */}

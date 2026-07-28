@@ -2,11 +2,12 @@
 // Computes per-ASIN learned outcome metrics from price actions + sales + acks history.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { requireInternalCall } from "../_shared/require-internal.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-internal-secret",
 };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -214,13 +215,8 @@ Deno.serve(async (req) => {
       }
     }
     if (body?.all_users === true) {
-      const auth = req.headers.get("authorization") || "";
-      if (!auth.includes(SERVICE_ROLE)) {
-        return new Response(JSON.stringify({ error: "service required" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      const forbidden = requireInternalCall(req);
+      if (forbidden) return forbidden;
       const { withCronLock } = await import("../_shared/cron-lock.ts");
       const outcome = await withCronLock(admin as any, "repricer-strategy-memory-daily", 3000, async () => {
         const { data: users } = await admin

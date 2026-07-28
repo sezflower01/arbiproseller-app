@@ -415,3 +415,6 @@ verify_jwt = false
 
 [functions.admin-workers]
 verify_jwt = true
+
+[functions.repricer-detect-primary-marketplace]
+verify_jwt = false
