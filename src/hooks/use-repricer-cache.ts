@@ -30,6 +30,15 @@ export function useRepricerCache<T>(fetchFn: () => Promise<T>, userId: string | 
   const [data, setDataRaw] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // True once the CURRENT marketplace's data has been confirmed fresh at
+  // least once (its fetchDataInternal call has completed) — as opposed to
+  // `loading`, which only reflects whether there was ANY cache to show
+  // immediately. A cache hit flips `loading` false almost instantly even
+  // though the cached snapshot might be a couple minutes old for THIS
+  // marketplace; `settled` stays false until the confirming background
+  // refresh actually lands, so callers can show a "still settling" overlay
+  // (e.g. a blur) instead of presenting a possibly-stale snapshot as final.
+  const [settled, setSettled] = useState(false);
   const fetchInProgressRef = useRef(false);
   const lastFetchTimestampRef = useRef(0);
   const fetchFnRef = useRef(fetchFn);
@@ -220,6 +229,7 @@ export function useRepricerCache<T>(fetchFn: () => Promise<T>, userId: string | 
       if (effectEpochRef.current === epoch) {
         setLoading(false);
         setIsRefreshing(false);
+        setSettled(true);
         fetchInProgressRef.current = false;
       } else {
         // IMPORTANT: Reset fetchInProgressRef even on stale epoch so the
@@ -233,6 +243,7 @@ export function useRepricerCache<T>(fetchFn: () => Promise<T>, userId: string | 
   useEffect(() => {
     if (!userId) {
       setLoading(false);
+      setSettled(true);
       return;
     }
 
@@ -240,6 +251,12 @@ export function useRepricerCache<T>(fetchFn: () => Promise<T>, userId: string | 
     const epoch = ++effectEpochRef.current;
     fetchInProgressRef.current = false;
     updateGenRef.current = 0;
+
+    // Not settled until THIS marketplace's data has been confirmed fresh at
+    // least once — even if a cache hit below flips `loading` false almost
+    // instantly, callers should still treat the marketplace as "settling"
+    // until the confirming background refresh completes.
+    setSettled(false);
 
     // Show loading spinner immediately — but DON'T clear data yet.
     // Data will be replaced when the correct marketplace's data arrives.
@@ -337,6 +354,7 @@ export function useRepricerCache<T>(fetchFn: () => Promise<T>, userId: string | 
     data,
     loading,
     isRefreshing,
+    settled,
     refresh,
     updateData,
     clearCache,
