@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { calcRoiAtPrice } from "@/lib/roiCalc";
 
 /**
  * Memoized Min/Max price cells for AssignmentsTable rows.
@@ -30,6 +31,13 @@ export type MinMaxPriceCellsProps = {
   currentPrice: number | null;
   roiAtMinPercent: number | null;
   roiAtMaxPercent: number | null;
+  // Inputs for live client-side ROI recompute while actively typing (see
+  // liveRoiAtMin/liveRoiAtMax below) — same formula the server uses, from
+  // @/lib/roiCalc, so typing updates the ROI instantly instead of only on blur.
+  cost: number | null;
+  feesJson: unknown;
+  fxRate: number;
+  marketplace: string;
   editingMin: string | undefined;
   editingMax: string | undefined;
   onMinChange: (id: string, value: string) => void;
@@ -47,6 +55,7 @@ function MinMaxPriceCellsImpl(props: MinMaxPriceCellsProps) {
     itemId, disabled,
     minOverride, invMin, maxOverride, invMax,
     currentPrice, roiAtMinPercent, roiAtMaxPercent,
+    cost, feesJson, fxRate, marketplace,
     editingMin, editingMax,
     onMinChange, onMaxChange,
     onMinFocus, onMaxFocus,
@@ -59,6 +68,17 @@ function MinMaxPriceCellsImpl(props: MinMaxPriceCellsProps) {
 
   const minNumOk = minValNum != null && !isNaN(Number(minValNum));
   const maxNumOk = maxValNum != null && !isNaN(Number(maxValNum));
+
+  // While actively typing, recompute ROI live from the in-progress value
+  // instead of waiting for blur. At rest (not editing), keep using the
+  // server-computed roiAtMin/MaxPercent exactly as before — no behavior
+  // change there.
+  const liveRoiAtMin = editingMin != null && minNumOk
+    ? calcRoiAtPrice(cost, feesJson, Number(minValNum), fxRate, marketplace)
+    : roiAtMinPercent;
+  const liveRoiAtMax = editingMax != null && maxNumOk
+    ? calcRoiAtPrice(cost, feesJson, Number(maxValNum), fxRate, marketplace)
+    : roiAtMaxPercent;
   const showMinGtMax = minNumOk && maxNumOk && Number(minValNum) > Number(maxValNum);
   const showMinGtPrice = minNumOk && currentPrice != null && Number(minValNum) > currentPrice;
   const showMaxLtPrice = maxNumOk && currentPrice != null && Number(maxValNum) < currentPrice;
@@ -105,12 +125,12 @@ function MinMaxPriceCellsImpl(props: MinMaxPriceCellsProps) {
           )}
           <span
             className={`text-[10px] font-mono ${
-              roiAtMinPercent != null && roiAtMinPercent < 0
+              liveRoiAtMin != null && liveRoiAtMin < 0
                 ? "text-red-500"
                 : "text-muted-foreground"
             }`}
           >
-            {roiAtMinPercent != null ? `${roiAtMinPercent.toFixed(1)}%` : "—"}
+            {liveRoiAtMin != null ? `${liveRoiAtMin.toFixed(1)}%` : "—"}
           </span>
         </div>
       </TableCell>
@@ -146,12 +166,12 @@ function MinMaxPriceCellsImpl(props: MinMaxPriceCellsProps) {
           )}
           <span
             className={`text-[10px] font-mono ${
-              roiAtMaxPercent != null && roiAtMaxPercent < 0
+              liveRoiAtMax != null && liveRoiAtMax < 0
                 ? "text-red-500"
                 : "text-muted-foreground"
             }`}
           >
-            {roiAtMaxPercent != null ? `${roiAtMaxPercent.toFixed(1)}%` : "—"}
+            {liveRoiAtMax != null ? `${liveRoiAtMax.toFixed(1)}%` : "—"}
           </span>
         </div>
       </TableCell>

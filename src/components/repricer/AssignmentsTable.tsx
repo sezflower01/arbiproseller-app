@@ -8341,6 +8341,10 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             })()}
                             roiAtMinPercent={item.roi_at_min_percent ?? null}
                             roiAtMaxPercent={item.roi_at_max_percent ?? null}
+                            cost={item.cost ?? null}
+                            feesJson={item.fees_json ?? null}
+                            fxRate={cachedFxRate}
+                            marketplace={marketplace}
                             editingMin={editingMinPrice[item.id]}
                             editingMax={editingMaxPrice[item.id]}
                             onMinChange={handleMinCellChange}
