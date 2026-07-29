@@ -10,6 +10,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { withTimeout } from "@/hooks/use-db-pressure";
 import { deriveAssignmentStatus, isManuallyPaused } from "@/lib/repricer/assignmentStatus";
 import { getListingUnitCost } from "@/lib/cost-contract";
+import { calcRoiAtPrice, getOtherFixedFees } from "@/lib/roiCalc";
 import { useAsinPurchaseRecords } from "@/hooks/use-asin-purchase-records";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -261,86 +262,6 @@ const fetchAllPaged = async (baseQuery: () => any, pageSize = 1000): Promise<any
   }
   return all;
 };
-
-const getOtherFixedFees = (feesJson: any): number =>
-  Number(
-    feesJson?.otherFees ??
-      feesJson?.other_fees ??
-      feesJson?.fixedClosingFee ??
-      feesJson?.fixed_closing_fee ??
-      feesJson?.closingFee ??
-      feesJson?.FixedClosingFee ??
-      0
-  );
-
-// Lightweight ROI calculator for pre-filling at load time (no component state needed)
-// Matches CreateListing ROI formula: ROI = (Price - TotalFees - Cost) / Cost * 100
-// TotalFees = referralFee + fbaFee + variableClosingFee + otherFees
-function calcRoiAtPrice(cost: number | null, feesJson: any, price: number, fxRate: number, marketplace: string): number | null {
-  if (!cost || cost <= 0 || !price || price <= 0) return null;
-
-  let totalFees = 0;
-  let localCost = cost;
-
-  if (feesJson) {
-    // Legacy format: actual dollar amounts (referralFee, fbaFee, variableClosingFee)
-    if (feesJson.referralFee !== undefined || feesJson.fbaFee !== undefined) {
-      const referralFee = Number(feesJson.referralFee || 0);
-      let fbaFee = Number(feesJson.fbaFee || 0);
-      let variableClosingFee = Number(feesJson.variableClosingFee || 0);
-      let otherFees = getOtherFixedFees(feesJson);
-      const feeMarketplace = String(feesJson.marketplace || "US").toUpperCase();
-      if (marketplace !== "US" && fxRate > 1 && feeMarketplace === "US") {
-        localCost = cost * fxRate;
-        fbaFee *= fxRate;
-        variableClosingFee *= fxRate;
-        otherFees *= fxRate;
-      }
-      // Scale fees proportionally if price differs from the price fees were calculated at
-      const feesAtPrice = feesJson.price ? Number(feesJson.price) : 0;
-      if (feesAtPrice > 0 && Math.abs(feesAtPrice - price) > 0.01) {
-        // Referral fee scales with price; fbaFee & closingFee are fixed
-        const referralRate = feesAtPrice > 0 ? referralFee / feesAtPrice : 0.15;
-        totalFees = (price * referralRate) + fbaFee + variableClosingFee + otherFees;
-      } else {
-        totalFees = referralFee + fbaFee + variableClosingFee + otherFees;
-      }
-    }
-    // New format: rate-based (referral_rate + fba_fee_fixed from asin_fee_cache)
-    else if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
-      const referralRate = Number(feesJson.referral_rate ?? 0.15);
-      const fbaFeeFixed = Number(feesJson.fba_fee_fixed ?? 0);
-      let localVariableClosingFee = Number(feesJson.variable_closing_fee ?? feesJson.variableClosingFee ?? 0);
-      let localOtherFees = getOtherFixedFees(feesJson);
-      let localFbaFee = fbaFeeFixed;
-
-      if (marketplace !== "US" && fxRate > 1) {
-        localCost = cost * fxRate;
-        const feeMarketplace = feesJson.marketplace || "US";
-        if (feeMarketplace === "US") {
-          localFbaFee = fbaFeeFixed * fxRate;
-          localVariableClosingFee = localVariableClosingFee * fxRate;
-          localOtherFees = localOtherFees * fxRate;
-        }
-      }
-      totalFees = (price * referralRate) + localFbaFee + localVariableClosingFee + localOtherFees;
-    }
-    // Fallback: no recognizable fee structure
-    else {
-      totalFees = price * 0.15;
-    }
-  } else {
-    // No fees_json at all — conservative default
-    totalFees = price * 0.15;
-  }
-
-  if (marketplace !== "US" && fxRate > 1 && localCost === cost) {
-    localCost = cost * fxRate;
-  }
-
-  const profit = price - totalFees - localCost;
-  return Math.round((profit / localCost) * 1000) / 10;
-}
 
 // Data fetching function — Phase 1: core data only (fast)
 async function fetchRepricerData(userId: string, targetMarketplace: string): Promise<InventoryWithAssignment[]> {
@@ -4691,69 +4612,8 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
    * Calculate ROI% from a given price using cached fees
    * Returns null if calculation is not possible (missing cost or fees)
    */
-  const calculateRoiFromPrice = (item: InventoryWithAssignment, price: number): number | null => {
-    const usdCost = item.cost;
-    if (!usdCost || usdCost <= 0 || price <= 0) return null;
-
-    const feesJson = item.fees_json as any;
-    let localCost = usdCost;
-    let totalFees = 0;
-
-    if (feesJson) {
-      // Legacy format: actual dollar amounts (referralFee, fbaFee, variableClosingFee)
-      if (feesJson.referralFee !== undefined || feesJson.fbaFee !== undefined) {
-        const origReferralFee = Number(feesJson.referralFee || 0);
-        let fbaFee = Number(feesJson.fbaFee || 0);
-        let variableClosingFee = Number(feesJson.variableClosingFee || 0);
-        let otherFees = getOtherFixedFees(feesJson);
-        const feeMarketplace = String(feesJson.marketplace || "US").toUpperCase();
-        if (marketplace !== "US" && cachedFxRate > 1 && feeMarketplace === "US") {
-          localCost = usdCost * cachedFxRate;
-          fbaFee *= cachedFxRate;
-          variableClosingFee *= cachedFxRate;
-          otherFees *= cachedFxRate;
-        }
-        const feesAtPrice = feesJson.price ? Number(feesJson.price) : 0;
-        if (feesAtPrice > 0 && Math.abs(feesAtPrice - price) > 0.01) {
-          const referralRate = origReferralFee / feesAtPrice;
-          totalFees = (price * referralRate) + fbaFee + variableClosingFee + otherFees;
-        } else {
-          totalFees = origReferralFee + fbaFee + variableClosingFee + otherFees;
-        }
-      }
-      // New format: rate-based
-      else if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
-        const referralRate = Number(feesJson.referral_rate ?? 0.15);
-        const fbaFeeFixed = Number(feesJson.fba_fee_fixed ?? 0);
-        let localVariableClosingFee = Number(feesJson.variable_closing_fee ?? feesJson.variableClosingFee ?? 0);
-        let localOtherFees = getOtherFixedFees(feesJson);
-        let localFbaFee = fbaFeeFixed;
-
-        if (marketplace !== "US" && cachedFxRate > 1) {
-          localCost = usdCost * cachedFxRate;
-          const feeMarketplace = feesJson.marketplace || "US";
-          if (feeMarketplace === "US") {
-            localFbaFee = fbaFeeFixed * cachedFxRate;
-            localVariableClosingFee = localVariableClosingFee * cachedFxRate;
-            localOtherFees = localOtherFees * cachedFxRate;
-          }
-        }
-        totalFees = (price * referralRate) + localFbaFee + localVariableClosingFee + localOtherFees;
-      } else {
-        totalFees = price * 0.15;
-      }
-    } else {
-      totalFees = price * 0.15;
-    }
-
-    if (marketplace !== "US" && cachedFxRate > 1 && localCost === usdCost) {
-      localCost = usdCost * cachedFxRate;
-    }
-
-    const profit = price - localCost - totalFees;
-    const roi = (profit / localCost) * 100;
-    return Math.round(roi * 10) / 10;
-  };
+  const calculateRoiFromPrice = (item: InventoryWithAssignment, price: number): number | null =>
+    calcRoiAtPrice(item.cost, item.fees_json, price, cachedFxRate, marketplace);
 
   /**
    * Calculate required price to achieve a target ROI%

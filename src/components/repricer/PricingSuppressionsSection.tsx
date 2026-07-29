@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AlertTriangle, RefreshCw, ChevronDown, ChevronRight, ShieldAlert, Save, ExternalLink } from "lucide-react";
+import { calcRoiAtPrice } from "@/lib/roiCalc";
+import { getMarketplaceConfig } from "@/lib/marketplaceCurrency";
 
 interface SuppressedRow {
   id: string;
@@ -22,6 +24,8 @@ interface SuppressedRow {
   max_price_override: number | null;
   my_price: number | null;
   isGhost: boolean;
+  cost: number | null;
+  fees_json: any;
 }
 
 interface UnknownRow {
@@ -81,6 +85,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
   const [savingId, setSavingId] = useState<string | null>(null);
   const [reactivationStatus, setReactivationStatus] = useState<Record<string, { type: "sending" | "success" | "error"; message: string }>>({});
   const [showGhosts, setShowGhosts] = useState(false);
+  const [fxRateByMarketplace, setFxRateByMarketplace] = useState<Record<string, number>>({});
 
   const load = async () => {
     setLoading(true);
@@ -118,20 +123,59 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
       // for CA/MX/BR rows and made reactivated intl edits look like they reverted.
       const usSkus = [...new Set(rawList.filter(r => r.marketplace === "US").map(r => r.sku).filter(Boolean))];
       const intlRows = rawList.filter(r => r.marketplace !== "US");
+      // cost/fees_json are needed for EVERY row regardless of marketplace (an
+      // ASIN's cost is the same product across marketplaces) so the ROI
+      // preview below can use the exact same inputs the active Repricer
+      // table uses — not just the US-only rows the price lookup above cares about.
+      const allSkus = [...new Set(rawList.map(r => r.sku).filter(Boolean))];
 
       const usPriceBySku: Record<string, number | null> = {};
       const usListingStatusBySku: Record<string, string | null> = {};
-      if (usSkus.length) {
+      const costBySku: Record<string, number | null> = {};
+      const feesJsonBySku: Record<string, any> = {};
+      if (allSkus.length) {
         const { data: invRows } = await supabase
           .from("inventory")
-          .select("sku, my_price, price, listing_status")
+          .select("sku, my_price, price, listing_status, cost, fees_json")
           .eq("user_id", user.user.id)
-          .in("sku", usSkus);
+          .in("sku", allSkus);
         for (const iv of invRows || []) {
           usPriceBySku[iv.sku] = (iv as any).my_price ?? (iv as any).price ?? null;
           usListingStatusBySku[iv.sku] = (iv as any).listing_status ?? null;
+          costBySku[iv.sku] = (iv as any).cost ?? null;
+          feesJsonBySku[iv.sku] = (iv as any).fees_json ?? null;
         }
       }
+
+      // FX rate per non-US marketplace present, for converting USD cost/fees
+      // to local currency in the ROI preview (same source AssignmentsTable uses).
+      const fxRateByMp: Record<string, number> = {};
+      const intlMarketplaces = [...new Set(intlRows.map(r => r.marketplace).filter(Boolean))];
+      if (intlMarketplaces.length) {
+        await Promise.all(intlMarketplaces.map(async (mp) => {
+          const cfg = getMarketplaceConfig(mp);
+          try {
+            const { data: fxRow } = await supabase
+              .from("fx_rates")
+              .select("rate")
+              .eq("base", "USD")
+              .eq("quote", cfg.currency)
+              .order("as_of", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (fxRow?.rate) {
+              fxRateByMp[mp] = Number(fxRow.rate);
+            } else {
+              const fallback: Record<string, number> = { CAD: 1.36, MXN: 17.5, BRL: 5.0, GBP: 0.79, EUR: 0.92 };
+              fxRateByMp[mp] = fallback[cfg.currency] || 1;
+            }
+          } catch {
+            const fallback: Record<string, number> = { CAD: 1.36, MXN: 17.5, BRL: 5.0, GBP: 0.79, EUR: 0.92 };
+            fxRateByMp[mp] = fallback[cfg.currency] || 1;
+          }
+        }));
+      }
+      setFxRateByMarketplace(fxRateByMp);
 
       const MP_ID: Record<string, string> = {
         CA: "A2EUQ1WTGCTBG2",
@@ -166,7 +210,7 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
           px = (mpId && r.asin ? intlPriceMap[intlPriceKey(r.asin, mpId, r.sku)] : null) ?? r.last_applied_price ?? null;
           isGhost = GHOST_INTL.has(String(r.intl_listing_status || "").toUpperCase());
         }
-        return { ...r, my_price: px, isGhost };
+        return { ...r, my_price: px, isGhost, cost: costBySku[r.sku] ?? null, fees_json: feesJsonBySku[r.sku] ?? null };
       });
       setRows(list);
       // Seed edit buffer with current overrides + price
@@ -527,6 +571,22 @@ export default function PricingSuppressionsSection({ marketplace, isAdmin }: Pro
                                 onChange={(e) => setEdits((prev) => ({ ...prev, [r.id]: { min: buf.min, max: buf.max, price: e.target.value } }))}
                                 className="h-8 w-24 text-sm font-semibold text-slate-900 bg-white border-2 border-emerald-500 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-500/30 shadow-sm"
                               />
+                              {(() => {
+                                const priceNum = parseFloat(buf.price);
+                                if (!Number.isFinite(priceNum) || priceNum <= 0) return null;
+                                if (!r.cost) {
+                                  return <div className="text-[10px] text-muted-foreground mt-0.5">No cost on file</div>;
+                                }
+                                const fxRate = r.marketplace === "US" ? 1 : (fxRateByMarketplace[r.marketplace] ?? 1);
+                                const roi = calcRoiAtPrice(r.cost, r.fees_json, priceNum, fxRate, r.marketplace);
+                                if (roi == null) return null;
+                                const roiColor = roi < 0 ? "text-red-600" : roi < 15 ? "text-amber-600" : "text-emerald-700";
+                                return (
+                                  <div className={`text-[10px] font-semibold mt-0.5 ${roiColor}`}>
+                                    ROI {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-2 py-1.5">
                               <Badge variant="destructive" className="text-[10px]">Suppressed</Badge>
