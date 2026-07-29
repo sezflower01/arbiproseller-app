@@ -217,6 +217,13 @@ export default function HijackerAlerts() {
                 const delta = alert.new_seller_count != null && alert.previous_seller_count != null
                   ? alert.new_seller_count - alert.previous_seller_count
                   : null;
+                // delta is the NET total-seller-count change, not "how many new
+                // sellers this alert is about" — every row already represents
+                // exactly one confirmed new seller_id, so delta can be zero (or
+                // negative) if another seller left at the same time. Showing
+                // "+0 sellers" right next to "New seller detected" reads as a
+                // contradiction, so only show the count badge when it's a real,
+                // non-misleading net increase; otherwise show neutral turnover text.
                 const severity = (delta ?? 0) >= 3 ? "red" : (delta ?? 0) >= 2 ? "orange" : "yellow";
                 const severityColor = severity === "red" ? "text-red-600 bg-red-50" : severity === "orange" ? "text-orange-600 bg-orange-50" : "text-yellow-600 bg-yellow-50";
                 const timeAgo = getTimeAgo(alert.created_at);
@@ -236,9 +243,13 @@ export default function HijackerAlerts() {
                             {alert.asin}
                           </button>
                           <MarketplaceBadge marketplace={alert.marketplace} />
-                          {delta != null && (
+                          {delta != null && delta > 0 ? (
                             <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${severityColor}`}>
                               +{delta} seller{delta === 1 ? "" : "s"}
+                            </span>
+                          ) : (
+                            <span className="text-xs px-1.5 py-0.5 rounded font-medium text-muted-foreground bg-muted">
+                              Seller turnover
                             </span>
                           )}
                         </div>
