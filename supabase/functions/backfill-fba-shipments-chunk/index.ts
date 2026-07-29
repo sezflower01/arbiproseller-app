@@ -28,6 +28,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -345,6 +346,7 @@ serve(async (req) => {
         `[chunk] user=${userId} status=${shipmentStatus} window=${windowStart}..${windowEnd} page=${nextPage}`,
       );
 
+      await waitForApiToken(adminClient, 'inbound_api');
       const response = await callSpApi("GET", url, accessToken);
       const shipments = Array.isArray(response.payload?.ShipmentData)
         ? response.payload.ShipmentData
@@ -380,6 +382,7 @@ serve(async (req) => {
         try {
           const itemsUrl =
             `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments/${shipment.ShipmentId}/items?MarketplaceId=${marketplaceId}`;
+          await waitForApiToken(adminClient, 'inbound_api');
           const itemsResp = await callSpApi("GET", itemsUrl, accessToken);
           const items = Array.isArray(itemsResp.payload?.ItemData)
             ? itemsResp.payload.ItemData

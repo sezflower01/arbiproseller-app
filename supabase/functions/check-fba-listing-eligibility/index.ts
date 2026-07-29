@@ -7,6 +7,7 @@
 // caches the result in `fba_eligibility_cache` for 10 minutes per
 // (user, seller, marketplace, asin).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -613,7 +614,7 @@ Deno.serve(async (req) => {
         if (!userAuth?.refresh_token) {
           return { stage: "fba_eligibility", status: "unknown", reason: "No SP-API authorization for this marketplace." };
         }
-        return await fetchFbaInboundEligibility({ asin, marketplaceId, marketplace, refreshToken: userAuth.refresh_token });
+        return await fetchFbaInboundEligibility(supabase, { asin, marketplaceId, marketplace, refreshToken: userAuth.refresh_token });
       });
     stageResults.push(stage3);
 
@@ -624,7 +625,7 @@ Deno.serve(async (req) => {
     let stage5: StageResult | null = stage5Cached;
     if ((!stage4 || !stage5) && userAuth?.refresh_token) {
       try {
-        const cat = await fetchCatalogAttributes({ asin, marketplaceId, marketplace, refreshToken: userAuth.refresh_token });
+        const cat = await fetchCatalogAttributes(supabase, { asin, marketplaceId, marketplace, refreshToken: userAuth.refresh_token });
         if (!stage4) {
           stage4 = classifyHazmat(cat);
           await writeStageCache(supabase, user.id, asin, marketplace, stage4);
@@ -776,7 +777,7 @@ async function resolveStage(
 
 // ── Phase B: Stage 3 — FBA inbound eligibility (itemPreview) ─────────
 
-async function fetchFbaInboundEligibility(p: {
+async function fetchFbaInboundEligibility(supabase: any, p: {
   asin: string; marketplaceId: string; marketplace: string; refreshToken: string;
 }): Promise<StageResult> {
   const accessToken = await getAccessToken(p.refreshToken);
@@ -789,6 +790,7 @@ async function fetchFbaInboundEligibility(p: {
   };
   const qs = Object.keys(qsObj).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(qsObj[k])}`).join('&');
   const url = `https://${host}${path}?${qs}`;
+  await waitForApiToken(supabase, 'inbound_api');
   const res = await spApiSignedFetch({ method: 'GET', url, path, queryParams: qs, accessToken, host });
   if (!res.ok) {
     const txt = await res.text();
@@ -814,7 +816,7 @@ async function fetchFbaInboundEligibility(p: {
 
 // ── Phase B: Stages 4 + 5 — Catalog attributes (hazmat + prep) ───────
 
-async function fetchCatalogAttributes(p: {
+async function fetchCatalogAttributes(supabase: any, p: {
   asin: string; marketplaceId: string; marketplace: string; refreshToken: string;
 }): Promise<any> {
   const accessToken = await getAccessToken(p.refreshToken);
@@ -826,6 +828,7 @@ async function fetchCatalogAttributes(p: {
   };
   const qs = Object.keys(qsObj).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(qsObj[k])}`).join('&');
   const url = `https://${host}${path}?${qs}`;
+  await waitForApiToken(supabase, 'catalog_api');
   const res = await spApiSignedFetch({ method: 'GET', url, path, queryParams: qs, accessToken, host });
   if (!res.ok) {
     const txt = await res.text();

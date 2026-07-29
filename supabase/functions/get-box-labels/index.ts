@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -171,6 +172,7 @@ serve(async (req) => {
     const labelsPath = `/inbound/fba/2024-03-20/inboundPlans/${inboundPlanId}/shipments/${shipmentId}/labels`;
     const queryParams = `pageType=${pageType || "PackageLabel_Letter_6"}&labelType=${labelType || "BARCODE_2D"}&numberOfPackages=${numberOfPackages || 1}`;
     
+    await waitForApiToken(supabase, 'inbound_api');
     const labelsResponse = await spApiSignedFetch({
       method: "GET",
       path: labelsPath,
@@ -186,6 +188,7 @@ serve(async (req) => {
       const altPath = `/fba/inbound/v0/shipments/${shipmentId}/labels`;
       const altQueryParams = `PageType=${pageType || "PackageLabel_Letter_6"}&LabelType=${labelType || "BARCODE_2D"}&NumberOfPackages=${numberOfPackages || 1}`;
       
+      await waitForApiToken(supabase, 'inbound_api');
       const altResponse = await spApiSignedFetch({
         method: "GET",
         path: altPath,

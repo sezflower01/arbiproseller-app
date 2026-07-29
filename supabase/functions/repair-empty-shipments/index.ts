@@ -11,6 +11,7 @@
 //   • logs every shipment_id and result to the function logs
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -156,6 +157,7 @@ async function callSpApi(
 // shipments would still come back partial.
 // ============================================================
 async function fetchAllItems(
+  supabase: any,
   shipmentId: string,
   marketplaceId: string,
   accessToken: string,
@@ -170,6 +172,7 @@ async function fetchAllItems(
       `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments/${encodeURIComponent(shipmentId)}/items` +
       `?MarketplaceId=${marketplaceId}` +
       (nextToken ? `&NextToken=${encodeURIComponent(nextToken)}` : "");
+    await waitForApiToken(supabase, 'inbound_api');
     const { status, payload } = await callSpApi("GET", baseUrl, accessToken);
     lastStatus = status;
     pages++;
@@ -333,6 +336,7 @@ serve(async (req) => {
       const shipmentId = t.shipment_id;
       try {
         const { items, pages } = await fetchAllItems(
+          adminClient,
           shipmentId,
           marketplaceId,
           accessToken,

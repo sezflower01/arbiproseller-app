@@ -26,6 +26,7 @@
 // shipment, returns ok / warn / blocked / unknown, and persists per-stage.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,6 +113,7 @@ Deno.serve(async (req) => {
       const path = '/fba/inbound/v1/eligibility/itemPreview';
       const qs = `asin=${encodeURIComponent(asin)}&marketplaceIds=${marketplaceId}&program=INBOUND`;
       const url = `https://${host}${path}?${qs}`;
+      await waitForApiToken(supabase, 'inbound_api');
       const res = await spApiSignedFetch({ method: 'GET', url, path, queryParams: qs, accessToken, host });
       if (!res.ok) {
         const txt = await res.text();

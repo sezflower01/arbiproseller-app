@@ -14,6 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -213,6 +214,7 @@ serve(async (req) => {
         // It returns ConfirmedNeedByDate among other things; ShipDate is NOT returned.
         // We use it primarily to know the shipment_status (CLOSED/RECEIVING/etc.)
         const v0Url = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments?MarketplaceId=${marketplaceId}&QueryType=SHIPMENT&ShipmentIdList=${encodeURIComponent(shipmentId)}`;
+        await waitForApiToken(supabase, 'inbound_api');
         const v0Resp = await callSpApi('GET', v0Url, accessToken);
         let v0Status: string | null = null;
         let v0NeedBy: string | null = null;
@@ -230,6 +232,7 @@ serve(async (req) => {
         let anyReceived = false;
         try {
           const itemsUrl = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments/${shipmentId}/items?MarketplaceId=${marketplaceId}`;
+          await waitForApiToken(supabase, 'inbound_api');
           const itemsResp = await callSpApi('GET', itemsUrl, accessToken);
           if (itemsResp.ok) {
             const items = Array.isArray(itemsResp.data?.payload?.ItemData) ? itemsResp.data.payload.ItemData : [];
@@ -243,6 +246,7 @@ serve(async (req) => {
         // 3) Try the 2024-03-20 inbound API for lastUpdatedAt
         try {
           const newUrl = `https://sellingpartnerapi-na.amazon.com/inbound/fba/2024-03-20/inboundPlans?shipmentId=${encodeURIComponent(shipmentId)}`;
+          await waitForApiToken(supabase, 'inbound_api');
           const newResp = await callSpApi('GET', newUrl, accessToken);
           if (newResp.ok) {
             // Best-effort: pull any ISO dates we can find in the response
