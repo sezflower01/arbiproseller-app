@@ -6747,7 +6747,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                     className="text-xs h-9 gap-1.5"
                   >
                     <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
-                    Manual
+                    Priority
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px]">
