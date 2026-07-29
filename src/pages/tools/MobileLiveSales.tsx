@@ -6,6 +6,7 @@ import { fetchAllPages } from "@/lib/sales/paginatedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalesSync } from "@/contexts/SalesSyncContext";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
+import { getMarketplaceFromId } from "@/lib/marketplaceCurrency";
 import { getBusinessDateISO, SALES_BUSINESS_TZ } from "@/lib/sales/dateRange";
 import { getInventoryUnitCost, getListingUnitCost } from "@/lib/cost-contract";
 import { buildCogsResolver } from "@/lib/cogs/resolveUnitCost";
@@ -724,6 +725,7 @@ const MobileLiveSales = () => {
   // byte-identical to current behavior for every existing US-primary account.
   const homeRate = fxRates[homeCurrency] ?? 1;
   const [isAmazonConnected, setIsAmazonConnected] = useState<boolean | null>(null);
+  const [connectedMarketplaces, setConnectedMarketplaces] = useState<string[]>([]);
   const [nowLabel, setNowLabel] = useState<string>("");
   const [sortKey, setSortKey] = useState<"units" | "revenue" | "profit" | "none">("none");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -1037,6 +1039,7 @@ const MobileLiveSales = () => {
         .select("marketplace_id")
         .eq("user_id", user.id);
       setIsAmazonConnected(!!(data && data.length > 0));
+      setConnectedMarketplaces([...new Set((data || []).map((d) => getMarketplaceFromId(d.marketplace_id)))]);
     })();
   }, [user?.id]);
 
@@ -2085,10 +2088,10 @@ const MobileLiveSales = () => {
   }, [user?.id, fetchToday, period]);
 
   const activeMarketplaces = useMemo(() => {
-    const set = new Set<string>(["US", "CA", "BR", "MX"]);
-    for (const r of rows) {
-      for (const m of (r.marketplaces || [])) set.add(m);
-    }
+    // Only marketplaces this account has actually connected — not a
+    // hardcoded NA seed, so an unconnected marketplace never shows a button
+    // that just filters to permanently-empty data.
+    const set = new Set<string>(connectedMarketplaces);
     const order = ["US", "CA", "BR", "MX"];
     const arr = Array.from(set);
     arr.sort((a, b) => {
@@ -2100,7 +2103,7 @@ const MobileLiveSales = () => {
       return a.localeCompare(b);
     });
     return arr;
-  }, [rows]);
+  }, [connectedMarketplaces]);
 
   const activeRows = useMemo(() => {
     if (marketplaceFilter === "ALL") return rows;

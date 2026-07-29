@@ -312,10 +312,10 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
     detectMarketplaces();
   }, [user]);
 
-  // Admins see all; regular users see only their authorized marketplaces
-  const visibleMarketplaces = isAdmin
-    ? MARKETPLACES
-    : MARKETPLACES.filter((mp) => authorizedMarketplaces.includes(mp.value));
+  // Only marketplaces this account has actually connected — admin or not.
+  // A rule assigned to an unconnected marketplace can never have real
+  // assignments there, so showing it just invites confusion.
+  const visibleMarketplaces = MARKETPLACES.filter((mp) => authorizedMarketplaces.includes(mp.value));
 
   useEffect(() => {
     if (user) {

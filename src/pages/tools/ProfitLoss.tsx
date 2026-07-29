@@ -9,6 +9,7 @@ import SoFecParityBanner from "@/components/profitloss/SoFecParityBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useModuleAccess } from "@/hooks/useModuleAccess";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
+import { getMarketplaceFromId } from "@/lib/marketplaceCurrency";
 import { format } from "date-fns";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -395,7 +396,20 @@ export default function ProfitLoss() {
     if (mpParam === "US") return q.or(`${col}.is.null,${col}.eq.US,${col}.eq.UNKNOWN`);
     return q.eq(col, mpParam);
   }, [mpParam]);
-  const PL_ACTIVE_MARKETPLACES = ["US", "CA", "BR", "MX"];
+  // Only marketplaces this account has actually connected — not a hardcoded
+  // NA list, so an unconnected marketplace never shows a filter button that
+  // just filters to permanently-empty data.
+  const [PL_ACTIVE_MARKETPLACES, setPlActiveMarketplaces] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      const { data } = await supabase
+        .from("seller_authorizations")
+        .select("marketplace_id")
+        .eq("user_id", user.id);
+      setPlActiveMarketplaces([...new Set((data || []).map((d) => getMarketplaceFromId(d.marketplace_id)))]);
+    })();
+  }, [user?.id]);
 
   // ── LIVE SUMMARY OVERLAY ────────────────────────────────────────────
   // The top KPI Net Profit must always reflect the SAME live DB aggregation
