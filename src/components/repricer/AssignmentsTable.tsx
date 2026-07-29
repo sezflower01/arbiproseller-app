@@ -8674,15 +8674,17 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             </div>
         )}
 
-        {/* Marketplace-switch settling overlay — blurs the (possibly still-converting)
+        {/* Marketplace settling overlay — blurs the (possibly still-converting)
             numbers underneath instead of letting min/max/price settle into place
             individually and visibly mismatch each other for a moment. Clears the
-            instant this marketplace's data is confirmed fresh. */}
+            instant this marketplace's data is confirmed fresh. Always names the
+            marketplace being loaded (not "switching") since this shows on a
+            same-marketplace refresh too, not just an actual tab switch. */}
         {!marketplaceSettled && !loading && items.length > 0 && (
           <div className="absolute inset-0 z-30 flex items-start justify-center pt-10 backdrop-blur-sm bg-shipment-surface/40 rounded-lg pointer-events-none">
             <div className="flex items-center gap-2 rounded-full bg-shipment-elevated/90 border border-white/10 px-4 py-2 text-xs text-white shadow-lg">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              Switching marketplace…
+              Loading {marketplace || "US"} Marketplace…
             </div>
           </div>
         )}
