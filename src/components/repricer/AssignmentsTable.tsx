@@ -371,16 +371,22 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
   const marketplacePricesMap: Record<string, number | null> = {};
   
   if (targetMarketplace !== "US" && asins.length > 0) {
+    // Keyed by asin|sku, NOT asin alone — an ASIN can have more than one SKU
+    // mapped to it in the same marketplace (e.g. an old/replaced listing kept
+    // disabled alongside the active one). Keying by asin only meant whichever
+    // row loaded last silently overwrote the other's price in this map, so a
+    // disabled SKU's stale price could display under the active SKU's row
+    // (and vice versa) even though their min/max bounds were correct.
     const priceData = await batchInQuery(
       "asin_my_price_cache",
-      "asin, my_price",
+      "asin, seller_sku, my_price",
       "asin",
       asins,
       (q: any) => q.eq("user_id", userId).eq("marketplace_id", marketplaceConfig.marketplaceId)
     );
-    
+
     for (const p of priceData || []) {
-      marketplacePricesMap[p.asin] = p.my_price;
+      marketplacePricesMap[`${p.asin}|${p.seller_sku}`] = p.my_price;
     }
   }
 
@@ -661,7 +667,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       const assignmentPrice = (assignment?.last_applied_price != null && Number(assignment.last_applied_price) > 0)
         ? Number(assignment.last_applied_price)
         : null;
-      const cachedPrice = marketplacePricesMap[inv.asin];
+      const cachedPrice = marketplacePricesMap[`${inv.asin}|${inv.sku}`];
       displayPrice = cachedPrice ?? assignmentPrice ?? null;
       displayMyPrice = cachedPrice ?? assignmentPrice ?? null;
     }
@@ -1039,7 +1045,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
   if (targetMarketplace !== "US") {
     let withPrice = 0, withAssignment = 0, withConfig = 0;
     const filtered = available.filter(item => {
-      if (marketplacePricesMap[item.asin] != null) { withPrice++; return true; }
+      if (marketplacePricesMap[`${item.asin}|${item.sku}`] != null) { withPrice++; return true; }
       if (item.assignment_id) { withAssignment++; return true; }
       if (item.rule_id || item.min_price_override || item.max_price_override) { withConfig++; return true; }
       return false;
@@ -2020,18 +2026,23 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
 
       if (targetMp !== "US") {
         // For non-US, price still comes from marketplace cache.
+        // Matched by (asin, sku) together — an ASIN can have more than one
+        // SKU in the same marketplace (e.g. an old/disabled listing kept
+        // alongside the active one). Matching by asin alone let a disabled
+        // SKU's stale cached price silently overwrite the active SKU's
+        // priceMap entry (and vice versa), even though min/max stayed correct.
         const asins = [...new Set(currentItems.map(i => i.asin))];
         for (let i = 0; i < asins.length; i += BATCH) {
           const batch = asins.slice(i, i + BATCH);
           const { data } = await supabase
             .from("asin_my_price_cache")
-            .select("asin, my_price")
+            .select("asin, seller_sku, my_price")
             .eq("user_id", user.id)
             .eq("marketplace_id", mpConfig.marketplaceId)
             .in("asin", batch);
           for (const row of data || []) {
             for (const item of currentItems) {
-              if (item.asin === row.asin) {
+              if (item.asin === row.asin && item.sku === (row as any).seller_sku) {
                 priceMap[item.sku] = row.my_price;
               }
             }

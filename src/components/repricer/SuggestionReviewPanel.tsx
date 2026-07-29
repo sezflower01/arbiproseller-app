@@ -360,8 +360,11 @@ export default function SuggestionReviewPanel({
 
           for (const pc of priceChunk || []) {
             if (pc.my_price != null && pc.my_price > 0) {
+              // SKU-keyed only. An asin-keyed fallback would let a DIFFERENT
+              // SKU sharing this ASIN in the same marketplace (e.g. an old
+              // disabled listing) silently supply this row's price when this
+              // row's own SKU has no cache entry yet.
               if (pc.seller_sku) localPriceMap[pc.seller_sku] = pc.my_price;
-              localPriceMap[pc.asin] = pc.my_price;
             }
           }
         }
@@ -403,7 +406,7 @@ export default function SuggestionReviewPanel({
         const unitCost = toMarketplaceCost(rawUnitCost);
 
         const currentPrice = isNonUs
-          ? (localPriceMap[a.sku] || localPriceMap[a.asin] || null)
+          ? (localPriceMap[a.sku] || null)
           : (inv.price || null);
 
         const currentMin = isNonUs
