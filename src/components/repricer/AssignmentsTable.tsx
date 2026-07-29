@@ -1893,6 +1893,13 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   // Stable refs for polling callbacks — prevents dependency cascade
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  // Tracks the CURRENT marketplace synchronously, so an in-flight background
+  // refresh started for the marketplace the user just left can detect it's
+  // now stale and discard its result instead of overwriting the new
+  // marketplace's price with the old marketplace's value (see
+  // refreshPricesAndAssignments / fetchPriceForItem below).
+  const marketplaceRef = useRef(marketplace);
+  marketplaceRef.current = marketplace;
   const editingMinPriceRef = useRef(editingMinPrice);
   editingMinPriceRef.current = editingMinPrice;
   const editingMaxPriceRef = useRef(editingMaxPrice);
@@ -2124,6 +2131,16 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           assignmentMap[row.id] = row;
         }
       }
+
+      // Marketplace guard: if the user switched tabs while these awaits were
+      // in flight, this whole result is for the marketplace they just left.
+      // Discard it entirely rather than let its (marketplace-agnostic,
+      // sku-keyed) price map land on top of the new marketplace's rows —
+      // that's what produced the "min > price" flash: min/max are keyed by
+      // assignment_id (marketplace-specific, so a stale batch is a no-op),
+      // but price was keyed by sku (shared across marketplaces), so a stale
+      // batch could silently overwrite the new marketplace's price.
+      if (marketplaceRef.current !== targetMp) return;
 
       const currentEditingMin = editingMinPriceRef.current;
       const currentEditingMax = editingMaxPriceRef.current;
@@ -3960,7 +3977,12 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   // Fetch price AND competitive data for a single item from Amazon via SP-API
   const fetchPriceForItem = async (item: InventoryWithAssignment) => {
     if (!user?.id) return;
-    
+    // Same-marketplace guard as refreshPricesAndAssignments: item.id is the
+    // shared inventory row id across marketplaces, so if the user switches
+    // tabs while this fetch is in flight, its result belongs to the
+    // marketplace they just left and must not overwrite the new tab's price.
+    const targetMp = marketplace;
+
     try {
       setFetchingPrice(prev => new Set(prev).add(item.id));
       
@@ -4035,11 +4057,14 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
         }
       }
       
+      // Discard if the user switched marketplace tabs while this was in flight.
+      if (marketplaceRef.current !== targetMp) return;
+
       // Update local state with all fetched data
       setItems(prev =>
         prev.map(i => {
           if (i.id !== item.id) return i;
-          
+
           const updates: Partial<InventoryWithAssignment> = {};
           
           if (fetchedPrice !== null) {
