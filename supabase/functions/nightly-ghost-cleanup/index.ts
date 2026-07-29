@@ -13,6 +13,7 @@
 // Mirrors the helper public.is_ghost_inventory_row().
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,6 +111,7 @@ Deno.serve(async (req) => {
             if (nextToken) qsObj.nextToken = nextToken;
             const qs = Object.keys(qsObj).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(qsObj[k])}`).join('&');
             const url = `https://${host}${path}?${qs}`;
+            await waitForApiToken(supabase, 'inventory_api');
             const res = await spApiSignedFetch({ method: 'GET', url, path, queryParams: qs, accessToken, host });
             if (!res.ok) { await res.text(); throw new Error(`summaries ${res.status}`); }
             const data = await res.json();

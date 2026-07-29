@@ -21,6 +21,7 @@
 // C4 (not yet implemented) will add `inbound_dry_run` after item_preview ok.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,6 +100,7 @@ async function getAccessToken(userId: string): Promise<string | null> {
 }
 
 async function fetchFnsku(
+  supabase: SbClient,
   accessToken: string,
   sku: string,
   marketplaceId: string,
@@ -109,6 +111,9 @@ async function fetchFnsku(
   url.searchParams.set('marketplaceIds', marketplaceId);
   url.searchParams.set('sellerSkus', sku);
 
+  // FBA Inventory API getInventorySummaries: shared budget, since this
+  // worker polls every minute and other tools hit the same endpoint.
+  await waitForApiToken(supabase, 'inventory_api');
   const res = await fetch(url.toString(), {
     headers: { 'x-amz-access-token': accessToken, 'Content-Type': 'application/json' },
   });
@@ -213,7 +218,7 @@ async function processFnskuStage(supabase: SbClient, row: QueueRow): Promise<voi
 
   let result: Awaited<ReturnType<typeof fetchFnsku>>;
   try {
-    result = await fetchFnsku(accessToken, row.sku, marketplaceId);
+    result = await fetchFnsku(supabase, accessToken, row.sku, marketplaceId);
   } catch (e) {
     result = { fnsku: null, raw: { error: (e as Error).message }, transient: true };
   }

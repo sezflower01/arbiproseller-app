@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { gunzip } from "https://deno.land/x/compress@v0.4.5/gzip/mod.ts";
 import { getListingUnitCost } from "../_shared/cost-contract.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -334,7 +335,7 @@ function resolveStoredAvailableFromPhysical(snapshot: PhysicalInventorySnapshot)
   return Math.max(snapshot.sellable, 0);
 }
 
-async function fetchLiveFbaQuantities(accessToken: string, marketplaceId: string): Promise<{
+async function fetchLiveFbaQuantities(supabase: any, accessToken: string, marketplaceId: string): Promise<{
   bySku: Map<string, InventoryQuantitySnapshot>;
 }> {
   const bySku = new Map<string, InventoryQuantitySnapshot>();
@@ -351,6 +352,7 @@ async function fetchLiveFbaQuantities(accessToken: string, marketplaceId: string
 
     if (nextToken) queryParams.nextToken = nextToken;
 
+    await waitForApiToken(supabase, 'inventory_api');
     const response = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, queryParams);
     const summaries = response?.payload?.inventorySummaries || [];
 
@@ -662,7 +664,7 @@ async function runFullInventorySync(
 
     try {
       console.log('[FULL_SYNC] Fetching live FBA inventory summaries to verify report quantities...');
-      liveQuantities = await fetchLiveFbaQuantities(accessToken, marketplaceId);
+      liveQuantities = await fetchLiveFbaQuantities(supabase, accessToken, marketplaceId);
       const verifiedLiveQuantities = liveQuantities;
 
       let reconciledCount = 0;
@@ -723,6 +725,7 @@ async function runFullInventorySync(
           const skuList = batch.map((item) => item.sku).join(',');
 
           try {
+            await waitForApiToken(supabase, 'inventory_api');
             const response = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, {
               marketplaceIds: marketplaceId,
               details: 'true',
@@ -935,6 +938,7 @@ async function runFullInventorySync(
           const skuList = batch.map(b => b.sku).join(',');
 
           try {
+            await waitForApiToken(supabase, 'inventory_api');
             const response = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, {
               marketplaceIds: marketplaceId,
               details: 'true',
@@ -1449,6 +1453,7 @@ async function runFullInventorySync(
             const skuList = batch.map((record) => record.sku).join(',');
 
             try {
+              await waitForApiToken(supabase, 'inventory_api');
               const response = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, {
                 marketplaceIds: marketplaceId,
                 details: 'true',
@@ -1510,6 +1515,7 @@ async function runFullInventorySync(
             if (isPositiveToZero) {
               try {
                 await new Promise((r) => setTimeout(r, 1500));
+                await waitForApiToken(supabase, 'inventory_api');
                 const confirmResp = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, {
                   marketplaceIds: marketplaceId,
                   details: 'true',

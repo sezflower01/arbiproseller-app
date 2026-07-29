@@ -342,6 +342,7 @@ function estimateFees(
 // scale the fees proportionally to match `actualSalePrice`.
 // For non-US marketplaces, we must send the price in LOCAL CURRENCY, then convert returned fees to USD.
 async function getProductFees(
+  supabase: ReturnType<typeof createClient>,
   asin: string,
   referencePriceUsd: number, // This is always in USD
   accessToken: string,
@@ -388,6 +389,8 @@ async function getProductFees(
   });
   
   console.log(`[FEES_API] ${asin} Requesting fees with IsAmazonFulfilled=${isAmazonFulfilled}`);
+  // Fees API: shared budget with sync-sales-orders so both don't collide.
+  await waitForApiToken(supabase, 'fees_api');
 
   const parseMoney = (m: any): number => {
     const raw = m?.Amount ?? m?.CurrencyAmount ?? m?.amount ?? m?.value;
@@ -1586,6 +1589,8 @@ Deno.serve(async (req) => {
       }
       
       try {
+        // Order Items API: shared budget with sync-sales-orders so both don't collide.
+        await waitForApiToken(supabase, 'order_items_api');
         const itemsUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
         const headers = await signRequest('GET', itemsUrl, '', accessToken);
         const response = await fetch(itemsUrl, { method: 'GET', headers });
@@ -2635,7 +2640,7 @@ Deno.serve(async (req) => {
             
             // Pass fxRates for non-US marketplaces to convert fees to USD
             // For FBM orders: IsAmazonFulfilled=false to get correct FBM fee structure
-            const apiFees = await getProductFees(asin, referencePrice, accessToken, orderMarketplaceId, soldPrice, fxRates, !isFbmOrder);
+            const apiFees = await getProductFees(supabase, asin, referencePrice, accessToken, orderMarketplaceId, soldPrice, fxRates, !isFbmOrder);
             if (apiFees) {
               // QUANTITY FIX: Fees API returns PER-UNIT fees (priced for a single
               // unit). Multiply by order quantity so multi-unit orders don't
@@ -3064,7 +3069,7 @@ Deno.serve(async (req) => {
         const enrichFulfillmentChannel = amazonOrder?.FulfillmentChannel || 'AFN';
         const isEnrichFbm = enrichFulfillmentChannel === 'MFN';
         
-        const apiFees = await getProductFees(asin, referencePrice, accessToken, primaryMarketplaceId, soldPrice, fxRates, !isEnrichFbm);
+        const apiFees = await getProductFees(supabase, asin, referencePrice, accessToken, primaryMarketplaceId, soldPrice, fxRates, !isEnrichFbm);
         if (apiFees) {
           if (isEnrichFbm) {
             // FBM: Bundle ALL fees into fba_fee column (FBA/FBM), zero out referral/closing
