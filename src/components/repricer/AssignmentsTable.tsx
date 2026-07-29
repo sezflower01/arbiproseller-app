@@ -6746,16 +6746,29 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             All Active Repricer Assignments
           </Button>
           {isAdmin && (
-            <Button
-              variant={stockFilter === "MANUAL_STAR" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStockFilter(prev => prev === "MANUAL_STAR" ? "ALL" : "MANUAL_STAR")}
-              className="text-xs h-9 gap-1.5"
-              title={stockFilter === "MANUAL_STAR" ? "Show all assignments again" : "Show only manually-starred priority items"}
-            >
-              <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
-              Manual
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={stockFilter === "MANUAL_STAR" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setStockFilter(prev => prev === "MANUAL_STAR" ? "ALL" : "MANUAL_STAR")}
+                    className="text-xs h-9 gap-1.5"
+                  >
+                    <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
+                    Manual
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px]">
+                  <p className="font-medium mb-1">
+                    {stockFilter === "MANUAL_STAR" ? "Showing only starred ASINs" : "Filter to your starred ASINs"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Starring (⭐) an ASIN manually pins it to the Priority Queue — up to {MAX_PRIORITY} at a time. Starred ASINs get re-checked and repriced every ~1 minute instead of waiting for their normal turn, and stay protected from the repricer's automatic rotation.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
           {false && (<>
