@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { convertCurrency, getSellerHomeCurrency } from '../_shared/fx-utils.ts';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -96,7 +97,7 @@ interface LiveFees {
 }
 
 async function fetchLiveFees(
-  asin: string, price: number, accessToken: string, marketplace: string, maxRetries = 2,
+  supabase: any, asin: string, price: number, accessToken: string, marketplace: string, maxRetries = 2,
 ): Promise<LiveFees | null> {
   const cfg = MKT[marketplace] || MKT.US;
   const url = `https://${cfg.endpoint}/products/fees/v0/items/${asin}/feesEstimate`;
@@ -111,6 +112,7 @@ async function fetchLiveFees(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const headers = await signRequest('POST', url, body, accessToken);
+    await waitForApiToken(supabase, 'fees_api');
     const resp = await fetch(url, { method: 'POST', headers, body });
 
     if (resp.ok) {
@@ -144,6 +146,7 @@ async function fetchLiveFees(
 // ── Core: find the minimum price that achieves target ROI using live fees ──
 // Iterates: estimate price → get live fees at that price → check ROI → adjust
 async function findRoiFloor(
+  supabase: any,
   asin: string,
   marketplace: string,
   localCost: number,
@@ -179,7 +182,7 @@ async function findRoiFloor(
   let lastPrice = candidatePrice;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const fees = await fetchLiveFees(asin, candidatePrice, accessToken, marketplace);
+    const fees = await fetchLiveFees(supabase, asin, candidatePrice, accessToken, marketplace);
     if (!fees) return null; // API failure — caller must surface
 
     const roi = localCost > 0
@@ -300,7 +303,7 @@ Deno.serve(async (req) => {
     console.log(`[calculate-roi-floor] asin=${asin} mkt=${marketplace} cost_home=${sellerCost} (${homeCurrency}) localCost=${localCost.toFixed(2)} (${targetCurrency}) fxRate=${fxRate.toFixed(4)} targetROI=${target_roi_percent}%`);
 
     const accessToken = await getLWAAccessToken();
-    const result = await findRoiFloor(asin, marketplace, localCost, target_roi_percent, accessToken);
+    const result = await findRoiFloor(supabase, asin, marketplace, localCost, target_roi_percent, accessToken);
 
     if (!result) {
       return new Response(

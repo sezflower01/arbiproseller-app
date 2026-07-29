@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -247,6 +248,7 @@ async function loadFxRates(supabase: any): Promise<Record<string, number>> {
 // Mirrors sync-sales-orders/fetchProductFees: sends NATIVE currency, converts
 // response back to USD before returning. Returns USD values.
 async function fetchFeesForAsin(
+  supabase: any,
   asin: string,
   referencePriceNative: number,
   currencyCode: string,
@@ -279,6 +281,7 @@ async function fetchFeesForAsin(
     const headers = await signRequest('POST', url, requestBody, accessToken);
     headers['Content-Type'] = 'application/json';
 
+    await waitForApiToken(supabase, 'fees_api');
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -603,6 +606,7 @@ serve(async (req) => {
       const referencePriceUsd = isNonUs ? referencePriceNative / fxRate : referencePriceNative;
 
       const fees = await fetchFeesForAsin(
+        supabase,
         asin,
         referencePriceNative,
         currencyCode,

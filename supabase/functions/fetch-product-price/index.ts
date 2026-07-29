@@ -335,7 +335,8 @@ Deno.serve(async (req) => {
         const authorizationHeader = `${algorithm} Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
         
         const feesUrl = `https://${host}${feesPath}`;
-        
+
+        await waitForApiToken(rlClient, 'fees_api');
         const feesResponse = await fetchWithRetry(feesUrl, {
           method: 'POST',
           headers: {

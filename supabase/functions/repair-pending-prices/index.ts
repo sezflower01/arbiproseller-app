@@ -136,6 +136,7 @@ async function getLWAAccessToken(refreshToken: string): Promise<string> {
 // NEW: Fetch fees from Amazon Fees API using LOCAL CURRENCY price
 // This is the SAME approach as fetch-listing-prices tool (which works!)
 async function fetchMarketplaceFeesForRepair(
+  supabase: any,
   asin: string,
   marketplaceId: string,
   currency: string,
@@ -192,6 +193,7 @@ async function fetchMarketplaceFeesForRepair(
 
   let response: Response;
   try {
+    await waitForApiToken(supabase, 'fees_api');
     response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -276,6 +278,7 @@ async function fetchMarketplaceFeesForRepair(
 
 // WRAPPER: Keeps the old function signature for compatibility, but uses the new approach
 async function getProductFees(
+  supabase: any,
   asin: string,
   referencePriceUsd: number,
   accessToken: string,
@@ -310,7 +313,7 @@ async function getProductFees(
   // Use the same FX rates object
   const rates = fxRates || { USD: 1 };
   
-  return await fetchMarketplaceFeesForRepair(asin, marketplaceId, currency, priceLocal, accessToken, rates);
+  return await fetchMarketplaceFeesForRepair(supabase, asin, marketplaceId, currency, priceLocal, accessToken, rates);
 }
 
 // Marketplace ID mapping
@@ -1290,10 +1293,11 @@ async function processUserOrders(
           // since we already have the actual marketplace price from Pricing API
           console.log(`[REPAIR] 📊 Calling Fees API for ${order.asin} with local price: ${pricingResult.currency} ${pricingResult.localPrice} (USD ref: $${pricingApiPrice.toFixed(2)})`);
           const apiFees = await getProductFees(
-            order.asin, 
-            pricingApiPrice, 
-            accessToken, 
-            marketplaceId, 
+            supabase,
+            order.asin,
+            pricingApiPrice,
+            accessToken,
+            marketplaceId,
             pricingApiPrice, 
             fxRates,
             pricingResult.localPrice || undefined, // Pass local price directly
@@ -1457,10 +1461,11 @@ async function processUserOrders(
         // Call Fees API with local price (best accuracy)
         console.log(`[REPAIR] 📊 Calling Fees API for ${order.asin} (fees-only path)`);
         const apiFees = await getProductFees(
-          order.asin, 
-          soldPrice, 
-          accessToken, 
-          marketplaceId, 
+          supabase,
+          order.asin,
+          soldPrice,
+          accessToken,
+          marketplaceId,
           soldPrice, 
           fxRates,
           localPrice,
@@ -1734,7 +1739,7 @@ async function processUserOrders(
           
           // getProductFees returns PER-UNIT fees - must multiply by qty for line totals
           // Use the order's marketplace for fees (MX fees are different from US)
-          const apiFees = await getProductFees(order.asin, referencePrice, accessToken, marketplaceId, soldPrice, fxRates);
+          const apiFees = await getProductFees(supabase, order.asin, referencePrice, accessToken, marketplaceId, soldPrice, fxRates);
           if (apiFees) {
             // CRITICAL: API returns per-unit fees, multiply by qty for line totals
             referralFee = apiFees.referralFee * qty;
@@ -1894,7 +1899,7 @@ async function processUserOrders(
           const referencePrice = buyBoxCache?.price || invAmazonPrice || unitPrice;
           
           // getProductFees returns PER-UNIT fees
-          const apiFees = await getProductFees(order.asin, referencePrice, accessToken, 'ATVPDKIKX0DER', unitPrice);
+          const apiFees = await getProductFees(supabase, order.asin, referencePrice, accessToken, 'ATVPDKIKX0DER', unitPrice);
           if (apiFees) {
             unitReferralFee = apiFees.referralFee;
             unitFbaFee = apiFees.fbaFee;
@@ -2256,7 +2261,7 @@ async function processUserOrders(
         
         // getProductFees returns PER-UNIT fees - must multiply by qty for line totals
         // Pass fxRates for non-US marketplaces to convert fees to USD
-        const apiFees = await getProductFees(orderAsin, referencePrice, accessToken, orderMarketplaceId, soldPrice, fxRates);
+        const apiFees = await getProductFees(supabase, orderAsin, referencePrice, accessToken, orderMarketplaceId, soldPrice, fxRates);
         if (apiFees) {
           // CRITICAL: API returns per-unit fees, multiply by quantity for line totals
           referralFee = apiFees.referralFee * quantity;

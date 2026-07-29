@@ -259,7 +259,7 @@ async function getCachedFeeFallback(
   return null;
 }
 
-async function getProductFees(asin: string, price: number, accessToken: string, marketplace: string = "US", maxRetries = 3) {
+async function getProductFees(supabase: any, asin: string, price: number, accessToken: string, marketplace: string = "US", maxRetries = 3) {
   const config = getMarketplaceConfig(marketplace);
   const marketplaceId = config.id;
   const currency = config.currency;
@@ -279,6 +279,7 @@ async function getProductFees(asin: string, price: number, accessToken: string, 
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const feesHeaders = await signRequest("POST", feesUrl, feesBody, accessToken);
+    if (supabase) await waitForApiToken(supabase, 'fees_api');
     const feesResp = await fetch(feesUrl, {
       method: "POST",
       headers: feesHeaders,
@@ -597,7 +598,7 @@ async function enrichAsinWithSPAPI(
   let fees = null;
   if (price > 0) {
     try {
-      fees = await getProductFees(asin, price, accessToken, marketplace);
+      fees = await getProductFees(supabase, asin, price, accessToken, marketplace);
     } catch (error) {
       const message = error instanceof Error ? (error as Error).message : String(error);
       if (!isQuotaExceededError(message)) throw error;
@@ -655,7 +656,7 @@ Deno.serve(async (req) => {
       // Recalculate fees based on the override price using correct marketplace
       const accessToken = await getLWAAccessToken();
         try {
-          const newFees = await getProductFees(asin, overridePrice, accessToken, marketplace);
+          const newFees = await getProductFees(supabase, asin, overridePrice, accessToken, marketplace);
           if (newFees) {
             productData.fees = newFees;
           }
