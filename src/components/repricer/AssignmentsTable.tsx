@@ -6732,19 +6732,10 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               The Available / Reserved+Inbound / Out of Stock sub-filters and the
               old in-dropdown Manual option were confusing tucked into a dropdown
               most users never touched; Manual now has its own dedicated toggle
-              button below instead. Doubles as a refresh button since it's the
-              most natural thing to click when you want the freshest data. */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchData}
-            disabled={isRefreshing}
-            className="w-[230px] h-9 justify-start gap-2 text-sm font-normal text-muted-foreground"
-            title="Refresh the assignment list"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? "animate-spin" : ""}`} />
+              button below instead. */}
+          <div className="w-[230px] h-9 flex items-center px-3 rounded-md border border-input bg-background text-sm text-muted-foreground">
             All Active Repricer Assignments
-          </Button>
+          </div>
           {isAdmin && (
             <TooltipProvider>
               <Tooltip>
