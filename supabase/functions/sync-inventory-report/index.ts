@@ -407,6 +407,7 @@ async function runFullInventorySync(
 
     // Try to find a recent DONE report from the last 30 minutes to reuse
     try {
+      await waitForApiToken(supabase, 'reports_poll_api');
       const recentReportsResponse = await callSpApi(
         'GET',
         '/reports/2021-06-30/reports',
@@ -458,6 +459,7 @@ async function runFullInventorySync(
       // Only 1 attempt now - no retry loop that creates multiple reports
       console.log(`[FULL_SYNC] Creating new report request`);
       
+      await waitForApiToken(supabase, 'reports_create_api');
       const createReportResponse = await callSpApi(
         'POST',
         '/reports/2021-06-30/reports',
@@ -482,7 +484,8 @@ async function runFullInventorySync(
       while (reportStatus !== 'DONE' && reportStatus !== 'FATAL' && reportStatus !== 'CANCELLED' && pollCount < maxPolls) {
         await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
         await throwIfCancelled(supabase, progressId);
-        
+        await waitForApiToken(supabase, 'reports_poll_api');
+
         const statusResponse = await callSpApi(
           'GET',
           `/reports/2021-06-30/reports/${reportId}`,
@@ -526,7 +529,8 @@ async function runFullInventorySync(
     });
 
     console.log(`[FULL_SYNC] Getting document: ${reportDocumentId}`);
-    
+
+    await waitForApiToken(supabase, 'reports_poll_api');
     const documentResponse = await callSpApi(
       'GET',
       `/reports/2021-06-30/documents/${reportDocumentId}`,
