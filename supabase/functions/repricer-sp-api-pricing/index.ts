@@ -493,6 +493,22 @@ interface SpApiPricingResult {
   offerIdentity?: OfferIdentityDiagnostics;
 }
 
+// Amazon's Offers array is NOT guaranteed sorted by price, so truncating it
+// (offers_json is capped for storage size) can arbitrarily drop the cheapest,
+// most pricing-relevant competitors while keeping pricier, less relevant
+// ones — sort ascending first so a cap always keeps the most relevant window.
+// Unpriced offers (total_price null) sort last since they carry no pricing signal.
+function sortOffersByPrice(offers: OfferBreakdownItem[]): OfferBreakdownItem[] {
+  return [...offers].sort((a, b) => {
+    const ap = a.total_price;
+    const bp = b.total_price;
+    if (ap == null && bp == null) return 0;
+    if (ap == null) return 1;
+    if (bp == null) return -1;
+    return ap - bp;
+  });
+}
+
 function summarizeOfferBreakdown(offerBreakdown: OfferBreakdownItem[]) {
   const pricedOffers = offerBreakdown.filter(
     (offer) => typeof offer.total_price === 'number' && offer.total_price !== null && offer.total_price > 0,
@@ -749,7 +765,7 @@ Deno.serve(async (req) => {
             qualifies_competitor: !isSelf,
           };
         });
-        const offerBreakdown = rawOfferBreakdown.slice(0, 30);
+        const offerBreakdown = sortOffersByPrice(rawOfferBreakdown).slice(0, 30);
         const offerSummary = summarizeOfferBreakdown(rawOfferBreakdown);
 
         let buyboxPrice: number | null = offerSummary.buyboxPrice;
@@ -804,8 +820,12 @@ Deno.serve(async (req) => {
         else if (lowestFbmPrice) lowestOverallPrice = lowestFbmPrice;
 
         const isBuyboxOwner = buyboxSellerId ? selfSellerIdsBatch.has(buyboxSellerId) : false;
-        const qualifyingFbaCompetitorCount = offerBreakdown.filter(o => o.qualifies_competitor && o.is_fba).length;
-        const qualifyingCompetitorCount = offerBreakdown.filter(o => o.qualifies_competitor).length;
+        // Counted from the FULL rawOfferBreakdown, not the (possibly
+        // truncated-to-30) offerBreakdown — a real competitor beyond the
+        // storage cap must still count, or high-competition ASINs can look
+        // like they have fewer qualifying rivals than they actually do.
+        const qualifyingFbaCompetitorCount = rawOfferBreakdown.filter(o => o.qualifies_competitor && o.is_fba).length;
+        const qualifyingCompetitorCount = rawOfferBreakdown.filter(o => o.qualifies_competitor).length;
 
         const myPriceData = item.sku ? myPriceMap.get(item.sku) : undefined;
 
@@ -997,11 +1017,18 @@ Deno.serve(async (req) => {
     );
     const fallbackQualifyingTotal = Math.max(0, competitivePricing.totalOfferCount - (isBuyboxOwner ? 1 : 0));
 
-    const qualifyingFbaCompetitorCount = offerBreakdown.length > 0
+    // offerBreakdown can be truncated (storage cap) below the real
+    // totalOfferCount — only trust an exact per-offer filter over it when it
+    // still represents every offer; otherwise fall back to counts derived
+    // from the untruncated totalOfferCount/fbaOfferCount so a competitor
+    // beyond the cap doesn't silently vanish from these counts.
+    const offerBreakdownIsComplete = offerBreakdown.length > 0 && offerBreakdown.length >= competitivePricing.totalOfferCount;
+
+    const qualifyingFbaCompetitorCount = offerBreakdownIsComplete
       ? offerBreakdown.filter((offer) => offer.qualifies_competitor && offer.is_fba).length
       : fallbackQualifyingFba;
 
-    const qualifyingCompetitorCount = offerBreakdown.length > 0
+    const qualifyingCompetitorCount = offerBreakdownIsComplete
       ? offerBreakdown.filter((offer) => offer.qualifies_competitor).length
       : fallbackQualifyingTotal;
 
@@ -1307,7 +1334,7 @@ async function fetchCompetitivePricing(params: {
       total_price: totalPrice,
     };
   });
-  const offerBreakdown = rawOfferBreakdown.slice(0, 30);
+  const offerBreakdown = sortOffersByPrice(rawOfferBreakdown).slice(0, 30);
   const offerSummary = summarizeOfferBreakdown(rawOfferBreakdown);
 
   let buyboxPrice: number | null = offerSummary.buyboxPrice;
