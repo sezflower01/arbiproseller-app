@@ -6,6 +6,7 @@
 // limit the way the original all-in-one bulk loop did).
 
 import { createHmac } from 'https://deno.land/std@0.177.0/node/crypto.ts';
+import { waitForApiToken } from './rate-limiter.ts';
 
 export const MARKETPLACES: Array<{ code: string; id: string }> = [
   { code: 'US', id: 'ATVPDKIKX0DER' },
@@ -65,6 +66,7 @@ export async function getLwaAccessToken(refreshToken: string): Promise<string> {
 }
 
 export async function callGetListingsItem(
+  supabase: any,
   accessToken: string,
   sellerId: string,
   sku: string,
@@ -107,6 +109,7 @@ export async function callGetListingsItem(
   const signingKey = getSigningKey(awsSecret, dateStamp, region, service);
   const signature = sig(stringToSign, signingKey);
 
+  await waitForApiToken(supabase, 'listings_api');
   const resp = await fetch(`https://${host}${path}?${query}`, {
     method: 'GET',
     headers: {
@@ -197,7 +200,7 @@ export async function checkAndUpdateSuppressionForItem(params: {
   let unknownFlaggedResult = false;
 
   try {
-    const { http_status: hs, body } = await callGetListingsItem(accessToken, sellerId, a.sku, marketplaceId);
+    const { http_status: hs, body } = await callGetListingsItem(supabase, accessToken, sellerId, a.sku, marketplaceId);
     http_status = hs;
     const summaries = Array.isArray(body?.summaries) ? body.summaries : [];
     summaries_non_empty = summaries.length > 0;
