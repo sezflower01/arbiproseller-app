@@ -7709,9 +7709,9 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 onClick={() => togglePriority(item)}
                                 className="hover:scale-110 transition-transform"
                                 title={item.is_manual_priority
-                                  ? "Manual star — click to remove"
-                                  : item.is_priority 
-                                    ? "Auto-turbo star" 
+                                  ? "Priority star — click to remove"
+                                  : item.is_priority
+                                    ? "Auto-turbo star"
                                     : `Add to priority queue (${priorityCount}/${MAX_PRIORITY})`}
                               >
                                 <Star
@@ -7725,7 +7725,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 />
                               </button>
                               {item.is_manual_priority && (
-                                <span className="text-[9px] font-semibold text-orange-500 leading-none">Manual</span>
+                                <span className="text-[9px] font-semibold text-orange-500 leading-none">Priority</span>
                               )}
                               {item.manual_override_active && item.buybox_price && item.price > item.buybox_price * 1.005 && (
                                 <Badge variant="destructive" className="text-[8px] px-1 py-0 h-3.5 leading-none animate-pulse">
