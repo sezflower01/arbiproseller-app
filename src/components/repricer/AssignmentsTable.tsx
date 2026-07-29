@@ -6728,44 +6728,26 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             </SelectContent>
           </Select>
 
-          {/* Stock Status Filter */}
-          <Select
-            value={stockFilter}
-            onValueChange={(v: "ALL" | "AVAILABLE" | "RESERVED_INBOUND" | "IN_STOCK" | "OUT_OF_STOCK" | "MANUAL_STAR") => setStockFilter(v)}
-          >
-            <SelectTrigger className="w-[230px] h-9">
-              <SelectValue placeholder="All Active Repricer Assignments" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              <SelectItem value="ALL">All Active Repricer Assignments</SelectItem>
-              <SelectItem value="AVAILABLE">
-                <span className="flex items-center gap-2">
-                  <Package className="h-3 w-3 text-green-600" />
-                  Available
-                </span>
-              </SelectItem>
-              <SelectItem value="RESERVED_INBOUND">
-                <span className="flex items-center gap-2">
-                  <Truck className="h-3 w-3 text-amber-600" />
-                  Reserved + Inbound
-                </span>
-              </SelectItem>
-              <SelectItem value="OUT_OF_STOCK">
-                <span className="flex items-center gap-2">
-                  <AlertTriangle className="h-3 w-3 text-red-600" />
-                  Out of Stock
-                </span>
-              </SelectItem>
-              {isAdmin && (
-              <SelectItem value="MANUAL_STAR">
-                <span className="flex items-center gap-2">
-                  <Star className="h-3 w-3 fill-orange-400 text-orange-400" />
-                  Manual ⭐
-                </span>
-              </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+          {/* Stock Status Filter — locked to "All Active Repricer Assignments".
+              The Available / Reserved+Inbound / Out of Stock sub-filters and the
+              old in-dropdown Manual option were confusing tucked into a dropdown
+              most users never touched; Manual now has its own dedicated toggle
+              button below instead. */}
+          <div className="w-[230px] h-9 flex items-center px-3 rounded-md border border-input bg-background text-sm text-muted-foreground">
+            All Active Repricer Assignments
+          </div>
+          {isAdmin && (
+            <Button
+              variant={stockFilter === "MANUAL_STAR" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStockFilter(prev => prev === "MANUAL_STAR" ? "ALL" : "MANUAL_STAR")}
+              className="text-xs h-9 gap-1.5"
+              title={stockFilter === "MANUAL_STAR" ? "Show all assignments again" : "Show only manually-starred priority items"}
+            >
+              <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
+              Manual
+            </Button>
+          )}
 
           {false && (<>
           {/* Price filter */}
