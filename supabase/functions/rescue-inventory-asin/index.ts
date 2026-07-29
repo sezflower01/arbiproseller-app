@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { listingToInventoryCost } from "../_shared/cost-contract.ts";
 import { logHealthSignal, HealthSignals } from "../_shared/health-signal.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -283,12 +284,18 @@ async function resolveListingMarketplace(
 }
 
 async function fetchMarketplaceAttempt(
+  supabase: ReturnType<typeof createClient>,
   sku: string,
   marketplace: MarketplaceCode,
   authData: SellerAuthorization,
 ): Promise<MarketplaceAttempt> {
   const marketplaceId = MARKETPLACE_ID_BY_CODE[marketplace];
   const accessToken = await getLwaAccessToken(authData.refresh_token);
+  // FBA Inventory API's getInventorySummaries: Amazon default ~2 req/sec,
+  // burst 2. Shared across every caller of this endpoint (this function is
+  // invoked continuously by the 1-minute inventory-refresh cron) so it
+  // doesn't collide with other tools hitting the same operation.
+  await waitForApiToken(supabase, 'inventory_api');
   const response = await callSpApi('GET', '/fba/inventory/v1/summaries', accessToken, {
     marketplaceIds: marketplaceId,
     details: 'true',
@@ -505,7 +512,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const attempt = await fetchMarketplaceAttempt(sku, candidate, authData);
+        const attempt = await fetchMarketplaceAttempt(supabase, sku, candidate, authData);
         attemptDetails.push(attempt);
         console.log(`[RESCUE] Attempt ${candidate}: summaries=${attempt.raw_summaries_count}, exact_matches=${attempt.matched_summaries_count}`);
 

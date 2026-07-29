@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { getListingUnitCost, getInventoryUnitCost } from "../_shared/cost-contract.ts";
 import { logHealthSignal, HealthSignals } from "../_shared/health-signal.ts";
 import { computeBbOwnEstimateFields, makeSellerIdCache } from "../_shared/bbOwnEstimate.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 let _currentUserId: string | null = null;
 
 type CostResolution = { unitCost: number | null; source: string | null };
@@ -1338,9 +1339,14 @@ Deno.serve(async (req) => {
         ordersUrl.searchParams.set('NextToken', nextToken);
       }
       
+      // Orders API's getOrders: Amazon default ~0.0167 req/sec (1/min), burst
+      // 20 — the tightest limit of any operation this app calls. Shared
+      // across every caller so this cron doesn't collide with anything else
+      // hitting the same endpoint.
+      await waitForApiToken(supabase, 'orders_api');
       const headers = await signRequest('GET', ordersUrl.toString(), '', accessToken);
       const response = await fetch(ordersUrl.toString(), { method: 'GET', headers });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[LIVE_ORDERS] Orders API error: ${response.status} - ${errorText}`);
