@@ -1,4 +1,6 @@
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -157,6 +159,12 @@ Deno.serve(async (req) => {
     // and avoid calling supabase.auth.getUser() here to prevent intermittent network/auth failures
     // from crashing the UI with 500 errors.
 
+    // Service-role client used ONLY for the shared SP-API rate-limiter token bucket.
+    const rlClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+
     const { asin, marketplaceId = 'ATVPDKIKX0DER' } = await req.json();
 
     if (!asin) {
@@ -184,6 +192,7 @@ Deno.serve(async (req) => {
     // Get product details from Catalog Items API
     let catalogData: any;
     try {
+      await waitForApiToken(rlClient, 'catalog_api');
       catalogData = await callSpApi(
         `/catalog/2022-04-01/items/${asin}`,
         accessToken,
@@ -230,6 +239,7 @@ Deno.serve(async (req) => {
     // Get competitive pricing
     let price = 0;
     try {
+      await waitForApiToken(rlClient, 'pricing_api');
       const pricingData = await callSpApi(
         '/products/pricing/v0/items/' + asin + '/offers',
         accessToken,

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getListingUnitCost } from "../_shared/cost-contract.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -487,6 +488,7 @@ async function syncFnskusFromReport(
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Catalog Items API for title and image
+      await waitForApiToken(supabase, 'catalog_api');
       const catalogData = await callSpApi(
         `/catalog/2022-04-01/items/${asin}`,
         accessToken,
@@ -501,6 +503,7 @@ async function syncFnskusFromReport(
       // Pricing API for current price
       let price: number | null = null;
       try {
+        await waitForApiToken(supabase, 'pricing_api');
         const pricingData = await callSpApi(
           `/products/pricing/v0/items/${asin}/offers`,
           accessToken,

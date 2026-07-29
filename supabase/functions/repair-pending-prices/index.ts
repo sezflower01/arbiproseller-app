@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -542,6 +543,7 @@ async function recalculateFxPrices(
 // NEW: Fetch listing price from Pricing API (same approach as fetch-listing-prices tool)
 // This is more reliable for non-US orders as it returns the actual marketplace price
 async function getMarketplacePricingPrice(
+  supabase: any,
   asin: string,
   marketplaceId: string,
   accessToken: string,
@@ -554,6 +556,7 @@ async function getMarketplacePricingPrice(
     const url = `${endpoint}${path}?${queryParams}`;
 
     const headers = await signRequest('GET', url, '', accessToken);
+    await waitForApiToken(supabase, 'pricing_api');
     const response = await fetch(url, { method: 'GET', headers });
 
     if (!response.ok) {
@@ -1260,7 +1263,7 @@ async function processUserOrders(
         console.log(`[REPAIR] 🌎 NON-US PRICING API: ${order.order_id} ASIN=${order.asin} marketplace=${order.marketplace} (${marketplaceId})`);
         
         // Call the Pricing API to get the actual marketplace price
-        const pricingResult = await getMarketplacePricingPrice(order.asin, marketplaceId, accessToken, fxRates);
+        const pricingResult = await getMarketplacePricingPrice(supabase, order.asin, marketplaceId, accessToken, fxRates);
         
         if (pricingResult.priceUsd !== null && pricingResult.priceUsd > 0) {
           const pricingApiPrice = pricingResult.priceUsd;
@@ -1437,7 +1440,7 @@ async function processUserOrders(
         const soldPrice = order.sold_price;
         
         // First, try to get the local price from Pricing API so we can pass it to Fees API
-        const pricingResult = await getMarketplacePricingPrice(order.asin, marketplaceId, accessToken, fxRates);
+        const pricingResult = await getMarketplacePricingPrice(supabase, order.asin, marketplaceId, accessToken, fxRates);
         
         let localPrice: number | undefined = undefined;
         let localCurrency: string | undefined = undefined;

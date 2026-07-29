@@ -1,5 +1,6 @@
 // Mobile Scan – Price History (time-series) + Live Offers via Keepa
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -563,6 +564,7 @@ async function fetchLiveSpApiOffers(
   );
   const accessToken = await getLwaAccessToken(sellerAuth.refresh_token);
   const url = `${endpoint}/products/pricing/v0/items/${asin}/offers?MarketplaceId=${marketplaceId}&ItemCondition=New`;
+  await waitForApiToken(admin, 'pricing_api');
   const response = await signedSpApiFetch(url, accessToken);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`SP-API offers ${response.status}: ${data?.errors?.[0]?.message || 'failed'}`);

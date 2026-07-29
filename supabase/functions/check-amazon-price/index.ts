@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,6 +64,7 @@ Deno.serve(async (req) => {
 
     // Fetch live price from Amazon Pricing API
     const livePrice = await fetchLivePriceFromAmazon({
+      supabase,
       asin: item.asin,
       sku: item.sku,
       accessToken,
@@ -130,12 +132,13 @@ async function getAccessToken(refreshToken: string, supabase?: any, userId?: str
 }
 
 async function fetchLivePriceFromAmazon(params: {
+  supabase: any;
   asin: string;
   sku: string;
   accessToken: string;
   marketplaceId: string;
 }): Promise<number | null> {
-  const { asin, sku, accessToken, marketplaceId } = params;
+  const { supabase, asin, sku, accessToken, marketplaceId } = params;
 
   const awsAccessKeyId = Deno.env.get('AWS_ACCESS_KEY_ID');
   const awsSecretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY');
@@ -207,6 +210,7 @@ async function fetchLivePriceFromAmazon(params: {
 
   console.log('Fetching price from:', url);
 
+  await waitForApiToken(supabase, 'pricing_api');
   const response = await fetch(url, {
     method: 'GET',
     headers: {

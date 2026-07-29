@@ -6660,6 +6660,8 @@ async function getMarketplacePricingPrice(
     const url = `${endpoint}${path}?${queryParams}`;
 
     const headers = await signRequest('GET', url, '', accessToken);
+    const rlClient = getRateLimitClient();
+    if (rlClient) await waitForApiToken(rlClient, 'pricing_api', { maxWaitMs: 6000 });
     const response = await fetch(url, { method: 'GET', headers });
 
     if (!response.ok) {
@@ -6876,6 +6878,8 @@ async function fetchBuyBoxPrice(accessToken: string, asin: string): Promise<numb
   
   try {
     const headers = await signRequest('GET', offersUrl, '', accessToken);
+    const rlClient = getRateLimitClient();
+    if (rlClient) await waitForApiToken(rlClient, 'pricing_api', { maxWaitMs: 6000 });
     const response = await fetch(offersUrl, { headers });
     
     if (response.status === 429) {
@@ -6950,8 +6954,10 @@ async function fetchCompetitivePricing(accessToken: string, asin: string): Promi
   
   try {
     const headers = await signRequest('GET', url, '', accessToken);
+    const rlClient = getRateLimitClient();
+    if (rlClient) await waitForApiToken(rlClient, 'pricing_api', { maxWaitMs: 6000 });
     const response = await fetch(url, { headers });
-    
+
     if (response.status === 429) {
       console.warn(`CompetitivePricing API rate limited for ${asin}`);
       return null;

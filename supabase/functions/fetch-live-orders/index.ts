@@ -621,6 +621,7 @@ async function getSellerListingPrice(
 // DEPRECATED for pending order estimation - use getSellerListingPrice instead
 // Kept for fallback when SKU is not available
 async function getMarketplacePricingPrice(
+  supabase: any,
   asin: string,
   marketplaceId: string,
   accessToken: string,
@@ -633,6 +634,7 @@ async function getMarketplacePricingPrice(
     const url = `${endpoint}${path}?${queryParams}`;
 
     const headers = await signRequest('GET', url, '', accessToken);
+    await waitForApiToken(supabase, 'pricing_api');
     const response = await fetch(url, { method: 'GET', headers });
 
     if (!response.ok) {
@@ -2375,7 +2377,7 @@ Deno.serve(async (req) => {
               if (!estimatedPrice) {
                 console.log(`[LIVE_ORDERS] 🌎 NON-US order ${orderId}: Fallback to Pricing API for ${marketplace} (no SKU or Listings API failed)`);
                 
-                const pricingResult = await getMarketplacePricingPrice(asin, marketplaceIdForPricing, accessToken, fxRates);
+                const pricingResult = await getMarketplacePricingPrice(supabase, asin, marketplaceIdForPricing, accessToken, fxRates);
                 
                 if (pricingResult.priceUsd !== null && pricingResult.priceUsd > 0) {
                   // CONTRACT: store NATIVE marketplace currency.
@@ -2941,7 +2943,7 @@ Deno.serve(async (req) => {
           if (!estimatedPrice) {
             console.log(`[LIVE_ORDERS] 🌎 NON-US enrichment ${orderId}: Fallback to Pricing API for ${marketplace}`);
             
-            const pricingResult = await getMarketplacePricingPrice(asin, marketplaceIdForPricing, accessToken, fxRates);
+            const pricingResult = await getMarketplacePricingPrice(supabase, asin, marketplaceIdForPricing, accessToken, fxRates);
             
             if (pricingResult.priceUsd !== null && pricingResult.priceUsd > 0) {
               // CONTRACT: store NATIVE marketplace currency.

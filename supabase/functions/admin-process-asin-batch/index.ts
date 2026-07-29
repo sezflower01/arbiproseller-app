@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -153,16 +154,17 @@ async function getLWAAccessToken() {
   return data.access_token;
 }
 
-async function enrichAsinWithSPAPI(asin: string): Promise<any> {
+async function enrichAsinWithSPAPI(supabase: any, asin: string): Promise<any> {
   const accessToken = await getLWAAccessToken();
   const marketplaceId = Deno.env.get('SPAPI_MARKETPLACE_ID');
   const region = Deno.env.get('SPAPI_AWS_REGION') || 'us-east-1';
-  
+
   // Use Catalog Items API 2022-04-01 to get product details (include productTypes for category)
   const catalogUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketplaceId}&includedData=summaries,images,salesRanks,productTypes`;
-  
+
   const catalogHeaders = await signRequest('GET', catalogUrl, accessToken, region);
-  
+
+  await waitForApiToken(supabase, 'catalog_api');
   const response = await fetch(catalogUrl, {
     method: 'GET',
     headers: catalogHeaders,
@@ -196,7 +198,8 @@ async function enrichAsinWithSPAPI(asin: string): Promise<any> {
   try {
     const priceUrl = `https://sellingpartnerapi-na.amazon.com/products/pricing/v0/items/${asin}/offers?MarketplaceId=${marketplaceId}&ItemCondition=New`;
     const priceHeaders = await signRequest('GET', priceUrl, accessToken, region);
-    
+
+    await waitForApiToken(supabase, 'pricing_api');
     const priceResponse = await fetch(priceUrl, {
       method: 'GET',
       headers: priceHeaders,
@@ -435,7 +438,7 @@ serve(async (req) => {
           .eq('id', item.id);
         
         // Enrich ASIN with SP-API (now returns null data instead of throwing on rate limit)
-        const amazon = await enrichAsinWithSPAPI(item.asin);
+        const amazon = await enrichAsinWithSPAPI(supabaseClient, item.asin);
         
         if (!amazon.amz_title || !amazon.amz_price) {
           // Mark as queued (not done) - rate limited or data unavailable

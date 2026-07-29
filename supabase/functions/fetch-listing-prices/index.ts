@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,7 +80,7 @@ Deno.serve(async (req) => {
     const results = await Promise.all(
       MARKETPLACES.map(async (mp) => {
         try {
-          const priceData = await fetchMarketplacePrice(asin, mp, accessToken);
+          const priceData = await fetchMarketplacePrice(supabase, asin, mp, accessToken);
           const fxRate = fxRates[mp.currency] || 1;
           
           // Fetch fees using the LISTING PRICE (consistent for comparison)
@@ -89,7 +90,7 @@ Deno.serve(async (req) => {
           
           if (referencePrice && referencePrice > 0) {
             console.log(`[FEES] Fetching fees for ${asin} in ${mp.name} at ${mp.currency} ${referencePrice} (using listing price)`);
-            feesData = await fetchMarketplaceFees(asin, mp.id, mp.currency, referencePrice, accessToken);
+            feesData = await fetchMarketplaceFees(supabase, asin, mp.id, mp.currency, referencePrice, accessToken);
           }
           
           return {
@@ -140,7 +141,7 @@ Deno.serve(async (req) => {
     // Also fetch product title from US marketplace
     let productTitle = null;
     try {
-      productTitle = await fetchProductTitle(asin, accessToken, 'ATVPDKIKX0DER');
+      productTitle = await fetchProductTitle(supabase, asin, accessToken, 'ATVPDKIKX0DER');
     } catch (e) {
       console.error('Failed to fetch product title:', e);
     }
@@ -198,6 +199,7 @@ async function getAccessToken(refreshToken: string): Promise<string> {
 }
 
 async function fetchMarketplacePrice(
+  supabase: any,
   asin: string,
   marketplace: MarketplaceConfig,
   accessToken: string
@@ -238,6 +240,7 @@ async function fetchMarketplacePrice(
 
   const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
+  await waitForApiToken(supabase, 'pricing_api');
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -304,6 +307,7 @@ async function fetchMarketplacePrice(
 
 // NEW: Fetch fees from Amazon Fees API using LOCAL CURRENCY price
 async function fetchMarketplaceFees(
+  supabase: any,
   asin: string,
   marketplaceId: string,
   currency: string,
@@ -356,6 +360,7 @@ async function fetchMarketplaceFees(
 
   const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
+  await waitForApiToken(supabase, 'fees_api');
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -422,7 +427,7 @@ async function fetchMarketplaceFees(
   }
 }
 
-async function fetchProductTitle(asin: string, accessToken: string, marketplaceId: string): Promise<string | null> {
+async function fetchProductTitle(supabase: any, asin: string, accessToken: string, marketplaceId: string): Promise<string | null> {
   const awsAccessKeyId = Deno.env.get('AWS_ACCESS_KEY_ID')!;
   const awsSecretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')!;
   const awsRegion = Deno.env.get('SPAPI_AWS_REGION') || 'us-east-1';
@@ -452,6 +457,7 @@ async function fetchProductTitle(asin: string, accessToken: string, marketplaceI
 
   const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${awsAccessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
+  await waitForApiToken(supabase, 'catalog_api');
   const response = await fetch(url, {
     method: 'GET',
     headers: {

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { checkModuleAccess } from "../_shared/module-access-guard.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -379,6 +380,7 @@ Deno.serve(async (req) => {
         A21TJRUUN4KGV:  'en_IN',
       };
       const locale = localeForMarketplace[marketplaceId] || 'en_US';
+      await waitForApiToken(adminClient, 'catalog_api');
       catalogData = await callSpApi(
         `/catalog/2022-04-01/items/${asin}`,
         accessToken,
@@ -485,6 +487,7 @@ Deno.serve(async (req) => {
     // Get competitive pricing for FBM offers
     let price = 0;
     try {
+      await waitForApiToken(adminClient, 'pricing_api');
       const pricingData = await callSpApi(
         '/products/pricing/v0/items/' + asin + '/offers',
         accessToken,
@@ -575,6 +578,7 @@ Deno.serve(async (req) => {
 
       console.log('Fees API request payload:', JSON.stringify(feesPayload, null, 2));
 
+      await waitForApiToken(adminClient, 'fees_api');
       const feesData = await callSpApi(
         `/products/fees/v0/items/${asin}/feesEstimate`,
         accessToken,
@@ -613,6 +617,7 @@ Deno.serve(async (req) => {
 
       console.log('FBA Fees API request payload:', JSON.stringify(fbaFeesPayload, null, 2));
 
+      await waitForApiToken(adminClient, 'fees_api');
       const fbaFeesData = await callSpApi(
         `/products/fees/v0/items/${asin}/feesEstimate`,
         accessToken,
@@ -666,6 +671,7 @@ Deno.serve(async (req) => {
     if (sku) {
       try {
         // Query by sellerSku for single-item direct lookup
+        await waitForApiToken(adminClient, 'inventory_api');
         const inventoryData = await callSpApi(
           '/fba/inventory/v1/summaries',
           accessToken,

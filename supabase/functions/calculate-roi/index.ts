@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -355,6 +356,7 @@ async function enrichAsinWithSPAPI(
   const catalogUrl = `https://${endpoint}/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketplaceId}&includedData=summaries,images`;
   const catalogHeaders = await signRequest("GET", catalogUrl, "", accessToken);
 
+  if (supabase) await waitForApiToken(supabase, 'catalog_api');
   const catalogResp = await fetch(catalogUrl, {
     method: "GET",
     headers: catalogHeaders,
@@ -390,7 +392,8 @@ async function enrichAsinWithSPAPI(
   // Method 1: Try GetPricing API (Competitive Pricing)
   const competitivePricingUrl = `https://${endpoint}/products/pricing/v0/price?MarketplaceId=${marketplaceId}&Asins=${asin}&ItemType=Asin`;
   const compPricingHeaders = await signRequest("GET", competitivePricingUrl, "", accessToken);
-  
+
+  if (supabase) await waitForApiToken(supabase, 'pricing_api');
   const compPricingResp = await fetch(competitivePricingUrl, {
     method: "GET",
     headers: compPricingHeaders,
@@ -460,6 +463,7 @@ async function enrichAsinWithSPAPI(
     const offersUrl = `https://${endpoint}/products/pricing/v0/items/${asin}/offers?MarketplaceId=${marketplaceId}&ItemCondition=New`;
     const offersHeaders = await signRequest("GET", offersUrl, "", accessToken);
 
+    if (supabase) await waitForApiToken(supabase, 'pricing_api');
     const offersResp = await fetch(offersUrl, {
       method: "GET",
       headers: offersHeaders,
