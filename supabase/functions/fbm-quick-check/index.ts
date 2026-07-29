@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { requireInternalCall } from '../_shared/require-internal.ts';
 import { exchangeLwaToken } from '../_shared/lwa-token.ts';
 import { getSpApiEndpoint, signRequest } from '../_shared/sp-api-sigv4.ts';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 // Fast FBM onboarding check.
 //
@@ -41,7 +42,7 @@ function extractFbmQuantity(listingData: any): number | null {
   return null;
 }
 
-async function fetchLiveFbmQuantity(params: {
+async function fetchLiveFbmQuantity(supabase: any, params: {
   accessToken: string;
   sellerId: string;
   sku: string;
@@ -50,6 +51,7 @@ async function fetchLiveFbmQuantity(params: {
   const { accessToken, sellerId, sku, marketplaceId } = params;
   const endpoint = getSpApiEndpoint(marketplaceId);
   const path = `/listings/2021-08-01/items/${sellerId}/${encodeURIComponent(sku)}`;
+  await waitForApiToken(supabase, 'listings_api');
   const url = `${endpoint}${path}?marketplaceIds=${marketplaceId}&includedData=fulfillmentAvailability`;
   const headers = await signRequest('GET', url, '', accessToken);
   const response = await fetch(url, { method: 'GET', headers: { ...headers, 'Content-Type': 'application/json' } });
@@ -123,7 +125,7 @@ Deno.serve(async (req) => {
     for (const item of candidates) {
       checked++;
       try {
-        const qty = await fetchLiveFbmQuantity({
+        const qty = await fetchLiveFbmQuantity(supabase, {
           accessToken,
           sellerId: sellerAuth.seller_id,
           sku: item.sku,

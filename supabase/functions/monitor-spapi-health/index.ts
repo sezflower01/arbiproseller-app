@@ -7,6 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { raiseSpapiAlert, resolveSpapiAlerts, classifySpapiError } from "../_shared/spapi-alert.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,8 +47,9 @@ async function getLWAToken(refreshToken: string, clientId: string, clientSecret:
   return JSON.parse(text).access_token as string;
 }
 
-async function pingSellersApi(accessToken: string, region: string) {
+async function pingSellersApi(supabase: any, accessToken: string, region: string) {
   const host = SP_API_HOSTS[region] ?? SP_API_HOSTS.na;
+  await waitForApiToken(supabase, 'marketplace_participations_api');
   const r = await fetch(`${host}/sellers/v1/marketplaceParticipations`, {
     headers: { "x-amz-access-token": accessToken, "Content-Type": "application/json" },
   });
@@ -113,7 +115,7 @@ Deno.serve(async (req) => {
 
       try {
         const tok = await getLWAToken(c.refresh_token, c.lwa_client_id, c.lwa_client_secret);
-        await pingSellersApi(tok, c.region || row.region || "na");
+        await pingSellersApi(admin, tok, c.region || row.region || "na");
 
         // Success → record + resolve any open alerts
         await admin.rpc("record_spapi_test_result", {

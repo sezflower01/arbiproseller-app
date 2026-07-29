@@ -11,6 +11,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { convertCurrency } from "../_shared/fx-utils.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -151,9 +152,10 @@ function extractLabelCost(events: any, orderId: string, allowUnscopedAdjustments
   return total > 0 ? { amount: Math.round(total * 100) / 100, currency } : null;
 }
 
-async function tryFinancesByOrder(orderId: string, accessToken: string, trace?: TraceStage[]): Promise<Resolved | null> {
+async function tryFinancesByOrder(supabase: any, orderId: string, accessToken: string, trace?: TraceStage[]): Promise<Resolved | null> {
   const url = `https://sellingpartnerapi-na.amazon.com/finances/v0/orders/${encodeURIComponent(orderId)}/financialEvents`;
   try {
+    await waitForApiToken(supabase, 'finances_api');
     const headers = await signSpApiRequest("GET", url, accessToken);
     const res = await fetch(url, { headers: { ...headers, accept: "application/json" } });
     const text = await res.text();
@@ -166,7 +168,7 @@ async function tryFinancesByOrder(orderId: string, accessToken: string, trace?: 
   } catch (err) { trace?.push({ stage: "finances_by_order", ok: false, reason: (err as Error).message }); return null; }
 }
 
-async function tryFinancesByRange(orderId: string, orderDate: string | null, accessToken: string, trace?: TraceStage[]): Promise<Resolved | null> {
+async function tryFinancesByRange(supabase: any, orderId: string, orderDate: string | null, accessToken: string, trace?: TraceStage[]): Promise<Resolved | null> {
   if (!orderDate) return null;
   const center = new Date(`${orderDate}T00:00:00.000Z`);
   if (Number.isNaN(center.getTime())) return null;
@@ -182,6 +184,7 @@ async function tryFinancesByRange(orderId: string, orderDate: string | null, acc
     const params = new URLSearchParams({ PostedAfter: after.toISOString(), PostedBefore: before.toISOString(), MaxResultsPerPage: "100" });
     if (nextToken) params.set("NextToken", nextToken);
     const url = `https://sellingpartnerapi-na.amazon.com/finances/v0/financialEvents?${params.toString()}`;
+    await waitForApiToken(supabase, 'finances_api');
     const headers = await signSpApiRequest("GET", url, accessToken);
     const res = await fetch(url, { headers: { ...headers, accept: "application/json" } });
     const text = await res.text();
@@ -274,8 +277,8 @@ serve(async (req) => {
 
         const trace: TraceStage[] = [];
         let found = await tryMerchantFulfillment(o.order_id, access, trace);
-        if (!found) found = await tryFinancesByOrder(o.order_id, access, trace);
-        if (!found) found = await tryFinancesByRange(o.order_id, o.order_date, access, trace);
+        if (!found) found = await tryFinancesByOrder(supabase, o.order_id, access, trace);
+        if (!found) found = await tryFinancesByRange(supabase, o.order_id, o.order_date, access, trace);
 
         if (found) {
           // FX SAFETY: shipping_label_fee column is USD. SP-API returns the

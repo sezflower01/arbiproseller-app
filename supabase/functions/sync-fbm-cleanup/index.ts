@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { gunzip } from "https://deno.land/x/compress@v0.4.5/gzip/mod.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -244,6 +245,7 @@ Deno.serve(async (req) => {
     const fbmReportedSkus = new Set<string>();
 
     try {
+      await waitForApiToken(supabase, 'reports_create_api');
       const fbmCreateResponse = await callSpApi('POST', '/reports/2021-06-30/reports', accessToken, {}, JSON.stringify({
         reportType: 'GET_MERCHANT_LISTINGS_ALL_DATA',
         marketplaceIds: [marketplaceId],
@@ -258,6 +260,7 @@ Deno.serve(async (req) => {
 
       while (fbmStatus !== 'DONE' && fbmStatus !== 'FATAL' && fbmStatus !== 'CANCELLED' && fbmPolls < 60) {
         await new Promise(resolve => setTimeout(resolve, 5000));
+        await waitForApiToken(supabase, 'reports_poll_api');
         const statusResponse = await callSpApi('GET', `/reports/2021-06-30/reports/${fbmReportId}`, accessToken);
         fbmStatus = statusResponse.processingStatus;
         fbmReportDocumentId = statusResponse.reportDocumentId || null;
@@ -265,6 +268,7 @@ Deno.serve(async (req) => {
       }
 
       if (fbmStatus === 'DONE' && fbmReportDocumentId) {
+        await waitForApiToken(supabase, 'reports_poll_api');
         const fbmDocResponse = await callSpApi('GET', `/reports/2021-06-30/documents/${fbmReportDocumentId}`, accessToken);
         const fbmText = await downloadReportText(fbmDocResponse.url, fbmDocResponse.compressionAlgorithm);
         const { lines: fbmLines, headers: fbmHeaders } = parseReportLines(fbmText);

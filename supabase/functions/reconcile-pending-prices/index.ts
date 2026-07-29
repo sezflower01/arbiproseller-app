@@ -8,6 +8,7 @@
 //  - Nightly: try to upgrade estimate -> actual
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -199,6 +200,7 @@ Deno.serve(async (req) => {
         for (const orderId of uniqueOrders) {
           const url = `https://${host}/orders/v0/orders/${orderId}/orderItems`;
           try {
+            await waitForApiToken(supabase, 'order_items_api');
             const headers = await signRequest('GET', url, '', token);
             const r = await fetch(url, { method: 'GET', headers: { ...headers, 'Content-Type': 'application/json' } });
 

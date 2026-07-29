@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 import { isInternalCaller } from '../_shared/require-internal.ts';
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -124,8 +125,9 @@ async function callSpApi(
   return await response.json();
 }
 
-async function fetchCatalogTitle(asin: string, accessToken: string, marketplaceId: string): Promise<{ title: string | null; imageUrl: string | null }> {
+async function fetchCatalogTitle(supabase: any, asin: string, accessToken: string, marketplaceId: string): Promise<{ title: string | null; imageUrl: string | null }> {
   try {
+    await waitForApiToken(supabase, 'catalog_api');
     const result = await callSpApi(
       `/catalog/2022-04-01/items/${asin}`,
       accessToken,
@@ -264,7 +266,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const { title, imageUrl } = await fetchCatalogTitle(item.asin, accessToken, marketplaceId);
+        const { title, imageUrl } = await fetchCatalogTitle(supabase, item.asin, accessToken, marketplaceId);
 
         // Title and image are independent -- a catalog lookup can return an
         // image even when title fetch/parsing comes back empty (or the item

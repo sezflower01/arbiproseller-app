@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -146,6 +147,7 @@ function buildV0ShipmentListUrl(params: URLSearchParams, nextToken: string | nul
 }
 
 async function fetchCatalogSummary(
+  supabase: any,
   asin: string,
   marketplaceId: string,
   accessToken: string,
@@ -153,6 +155,7 @@ async function fetchCatalogSummary(
   fallbackImageUrl?: string | null,
 ): Promise<{ asin: string; title?: string; image_url?: string }> {
   const catalogUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketplaceId}&includedData=summaries,images`;
+  await waitForApiToken(supabase, 'catalog_api');
   const catalogResponse = await callSpApi('GET', catalogUrl, accessToken);
   const summaries = catalogResponse?.summaries || [];
   const images = catalogResponse?.images || [];
@@ -1107,7 +1110,7 @@ serve(async (req) => {
               if (orderItem?.asin) {
                 if (!orderItem.title || !orderItem.image_url) {
                   try {
-                    skuDataMap.set(sku, await fetchCatalogSummary(orderItem.asin, auth.marketplace_id, accessToken, orderItem.title, orderItem.image_url));
+                    skuDataMap.set(sku, await fetchCatalogSummary(supabase, orderItem.asin, auth.marketplace_id, accessToken, orderItem.title, orderItem.image_url));
                     await new Promise(r => setTimeout(r, 200));
                   } catch (catalogErr) {
                     console.log(`[ENRICH] Catalog API error for sales order ASIN ${orderItem.asin}, using sales order data:`, (catalogErr as Error).message);

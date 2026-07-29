@@ -15,6 +15,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { exchangeLwaToken } from "../_shared/lwa-token.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -125,7 +126,7 @@ function issuesIndicateDeleted(issues: any[]): boolean {
  * Catches cases where Listings API says BUYABLE but Amazon removed the
  * product detail page (e.g. Funko purge on Amazon.ca).
  */
-async function checkCatalogPresence(opts: {
+async function checkCatalogPresence(admin: any, opts: {
   asin: string;
   marketplaceId: string;
   accessToken: string;
@@ -135,6 +136,7 @@ async function checkCatalogPresence(opts: {
   url.searchParams.set("marketplaceIds", opts.marketplaceId);
   url.searchParams.set("includedData", "summaries");
   try {
+    await waitForApiToken(admin, 'catalog_api');
     const headers = await signGet(url.toString(), opts.accessToken);
     const r = await fetch(url.toString(), { method: "GET", headers });
     if (r.status === 404) return "missing";
@@ -150,7 +152,7 @@ async function checkCatalogPresence(opts: {
   }
 }
 
-async function checkExistence(opts: {
+async function checkExistence(admin: any, opts: {
   sellerId: string;
   sku: string;
   asin: string;
@@ -162,6 +164,7 @@ async function checkExistence(opts: {
   url.searchParams.set("marketplaceIds", opts.marketplaceId);
   url.searchParams.set("includedData", "summaries,issues");
   try {
+    await waitForApiToken(admin, 'listings_api');
     const headers = await signGet(url.toString(), opts.accessToken);
     const r = await fetch(url.toString(), { method: "GET", headers });
     if (r.status === 404) return { result: "not_found", reason: "http_404", httpStatus: 404 };
@@ -186,7 +189,7 @@ async function checkExistence(opts: {
     if (summaryLooksAlive(statuses)) {
       // Secondary catalog check: BUYABLE listing must also have a live
       // product detail page in that marketplace.
-      const cat = await checkCatalogPresence({
+      const cat = await checkCatalogPresence(admin, {
         asin: opts.asin,
         marketplaceId: opts.marketplaceId,
         accessToken: opts.accessToken,
@@ -313,7 +316,7 @@ async function processOne(
     }
   }
 
-  const { result, reason, statuses = [] } = await checkExistence({
+  const { result, reason, statuses = [] } = await checkExistence(admin, {
     sellerId: auth.sellerId,
     sku: c.sku,
     asin: c.asin,
