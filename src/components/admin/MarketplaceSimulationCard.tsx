@@ -11,19 +11,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Globe2 } from "lucide-react";
+import { Loader2, Globe2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { getCurrencyForMarketplace } from "@/lib/marketplaceCurrency";
+import { getCurrencyForMarketplace, MARKETPLACE_LIST, NA_MARKETPLACES } from "@/lib/marketplaceCurrency";
 
-// Only the marketplaces the repricer engine + FX conversion fully support
-// today (NA_MARKETPLACES) — simulating an EU-primary account would just
-// silently fall back to US routing in several backend functions.
-const SIMULATABLE_MARKETPLACES = [
-  { value: "US", label: "🇺🇸 United States" },
-  { value: "CA", label: "🇨🇦 Canada" },
-  { value: "MX", label: "🇲🇽 Mexico" },
-  { value: "BR", label: "🇧🇷 Brazil" },
-];
+const SIMULATABLE_MARKETPLACES = MARKETPLACE_LIST.map((mp) => ({
+  value: mp.id,
+  label: `${mp.flag} ${mp.name}`,
+}));
 
 interface SettingsRow {
   primary_marketplace: string | null;
@@ -127,7 +122,7 @@ export default function MarketplaceSimulationCard() {
         </CardTitle>
         <CardDescription>
           Preview Live Sales, Sales Report, P&amp;L, and Repricer as if this account's home marketplace
-          were CA/MX/BR instead of US — using your real data, no synthetic records. This only overrides
+          were a different one — using your real data, no synthetic records. This only overrides
           your own account's <code className="text-[11px]">primary_marketplace</code> /{" "}
           <code className="text-[11px]">home_currency</code>, and pauses the weekly auto-detection so it
           doesn't get reverted while you're testing.
@@ -166,6 +161,18 @@ export default function MarketplaceSimulationCard() {
             </Button>
           )}
         </div>
+
+        {!NA_MARKETPLACES.includes(selected) && (
+          <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              This account has no real orders in this marketplace, so Live Sales / Sales Report / P&amp;L will
+              show mostly empty data — this only previews the currency symbol + FX conversion, using an
+              approximate static rate. The repricer engine, fee-cache, and Amazon connection flow don't
+              support {selected} yet, so assignments/pricing for it won't actually work.
+            </span>
+          </div>
+        )}
 
         <p className="text-[11px] text-muted-foreground">
           Repricer pricing math (min/max price, undercut amounts) is unaffected — those are native per-marketplace
