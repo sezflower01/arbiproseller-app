@@ -791,7 +791,12 @@ Deno.serve(async (req) => {
             else fbmOfferCount = Math.max(fbmOfferCount, nol.OfferCount || 0);
           }
         }
-        const totalOfferCount = summary?.TotalOfferCount || (fbaOfferCount + fbmOfferCount);
+        // Use the actual count of offers Amazon returned in the Offers array,
+        // not Summary.TotalOfferCount / NumberOfOffers — those are Amazon's
+        // own separate aggregates and can include offers (different
+        // condition, hidden, non-qualifying) that never appear in Offers,
+        // so they can diverge from what's actually inspectable/visible.
+        const totalOfferCount = rawOfferBreakdown.length;
 
         let lowestOverallPrice: number | null = null;
         if (lowestFbaPrice && lowestFbmPrice) lowestOverallPrice = Math.min(lowestFbaPrice, lowestFbmPrice);
@@ -1366,8 +1371,13 @@ async function fetchCompetitivePricing(params: {
     fbmOfferCount = Math.max(fbmOfferCount, summaryFbm);
   }
 
-  const totalOfferCount = summary?.TotalOfferCount || (fbaOfferCount + fbmOfferCount);
-  
+  // Use the actual count of offers Amazon returned in the Offers array, not
+  // Summary.TotalOfferCount / NumberOfOffers — those are Amazon's own
+  // separate aggregates and can include offers (different condition,
+  // hidden, non-qualifying) that never appear in Offers, so they can
+  // diverge from what's actually inspectable/visible.
+  const totalOfferCount = rawOfferBreakdown.length;
+
   let lowestOverallPrice: number | null = null;
   if (lowestFbaPrice && lowestFbmPrice) lowestOverallPrice = Math.min(lowestFbaPrice, lowestFbmPrice);
   else if (lowestFbaPrice) lowestOverallPrice = lowestFbaPrice;
