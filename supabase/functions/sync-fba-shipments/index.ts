@@ -181,7 +181,7 @@ function quantityValue(...values: any[]): number {
   return 0;
 }
 
-async function fetchV0ShipmentItems(shipmentId: string, marketplaceId: string, accessToken: string): Promise<any[]> {
+async function fetchV0ShipmentItems(supabase: any, shipmentId: string, marketplaceId: string, accessToken: string): Promise<any[]> {
   const collected: any[] = [];
   let nextToken: string | null = null;
 
@@ -189,6 +189,7 @@ async function fetchV0ShipmentItems(shipmentId: string, marketplaceId: string, a
     const params = new URLSearchParams({ MarketplaceId: marketplaceId });
     if (nextToken) params.set('NextToken', nextToken);
     const itemsUrl = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments/${encodeURIComponent(shipmentId)}/items?${params.toString()}`;
+    await waitForApiToken(supabase, 'inbound_api');
     const itemsResponse = await callSpApi('GET', itemsUrl, accessToken);
     const items = Array.isArray(itemsResponse.payload?.ItemData) ? itemsResponse.payload.ItemData : [];
     collected.push(...items);
@@ -200,7 +201,7 @@ async function fetchV0ShipmentItems(shipmentId: string, marketplaceId: string, a
   return collected;
 }
 
-async function fetchV2024ShipmentItems(inboundPlanId: string, internalShipmentId: string, accessToken: string): Promise<any[]> {
+async function fetchV2024ShipmentItems(supabase: any, inboundPlanId: string, internalShipmentId: string, accessToken: string): Promise<any[]> {
   const collected: any[] = [];
   let nextToken: string | null = null;
 
@@ -208,6 +209,7 @@ async function fetchV2024ShipmentItems(inboundPlanId: string, internalShipmentId
     const params = new URLSearchParams({ pageSize: '100' });
     if (nextToken) params.set('paginationToken', nextToken);
     const itemsUrl = `https://sellingpartnerapi-na.amazon.com/inbound/fba/2024-03-20/inboundPlans/${encodeURIComponent(inboundPlanId)}/shipments/${encodeURIComponent(internalShipmentId)}/items?${params.toString()}`;
+    await waitForApiToken(supabase, 'inbound_api');
     const response = await callSpApi('GET', itemsUrl, accessToken, '', 3);
     const items = Array.isArray(response?.items) ? response.items : [];
     collected.push(...items);
@@ -253,6 +255,7 @@ async function upsertShipmentItems(supabase: any, userId: string, shipmentId: st
 }
 
 async function discoverV2024Shipments(
+  supabase: any,
   accessToken: string,
   lookbackDays: number,
   requestedConfirmationId?: string | null,
@@ -304,6 +307,7 @@ async function discoverV2024Shipments(
 
       let planResp: any;
       try {
+        await waitForApiToken(supabase, 'inbound_api');
         planResp = await callSpApi('GET', planUrl, accessToken);
       } catch (e: any) {
         console.error(`[PHASE 1.5] inboundPlans failed status=${planStatus || 'ALL'}: ${e?.message?.slice(0, 120)}`);
@@ -326,6 +330,7 @@ async function discoverV2024Shipments(
         try {
           planDetailCalls++;
           const detailUrl = `https://sellingpartnerapi-na.amazon.com/inbound/fba/2024-03-20/inboundPlans/${encodeURIComponent(planId)}`;
+          await waitForApiToken(supabase, 'inbound_api');
           const planDetails = await callSpApi('GET', detailUrl, accessToken, '', 3);
           const shipments = Array.isArray(planDetails?.shipments) ? planDetails.shipments : [];
 
@@ -335,6 +340,7 @@ async function discoverV2024Shipments(
 
             try {
               const shipmentUrl = `https://sellingpartnerapi-na.amazon.com/inbound/fba/2024-03-20/inboundPlans/${encodeURIComponent(planId)}/shipments/${encodeURIComponent(internalShipmentId)}`;
+              await waitForApiToken(supabase, 'inbound_api');
               const details = await callSpApi('GET', shipmentUrl, accessToken, '', 3);
               if (addFromShipmentDetails(plan, details) && requestedConfirmationId) return discovered;
               await sleep(requestedConfirmationId ? 1200 : 2000);
@@ -506,7 +512,7 @@ serve(async (req) => {
         console.log(`[FAST_PATH] Shipment ${requestedShipmentId} exists, no cached items — fetching v0 items only`);
         for (const mp of fastMarketplaces) {
           try {
-            const bestItems = await fetchV0ShipmentItems(requestedShipmentId, mp, accessToken);
+            const bestItems = await fetchV0ShipmentItems(supabase, requestedShipmentId, mp, accessToken);
             fastAttempts.push(`${mp}:${bestItems.length}`);
             if (Array.isArray(bestItems) && bestItems.length > 0) {
               const itemsCount = await upsertShipmentItems(supabase, user.id, requestedShipmentId, bestItems);
@@ -553,6 +559,7 @@ serve(async (req) => {
       for (const mp of candidateMarketplaces) {
         const url = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments?MarketplaceId=${mp}&QueryType=SHIPMENT&ShipmentIdList=${encodeURIComponent(requestedShipmentId)}`;
         try {
+          await waitForApiToken(supabase, 'inbound_api');
           const resp = await callSpApi('GET', url, accessToken);
           const list = resp?.payload?.ShipmentData || [];
           attempts.push(`${mp}:${list.length}`);
@@ -571,6 +578,7 @@ serve(async (req) => {
       if (!shipment) {
         const url = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments?QueryType=SHIPMENT&ShipmentIdList=${encodeURIComponent(requestedShipmentId)}`;
         try {
+          await waitForApiToken(supabase, 'inbound_api');
           const resp = await callSpApi('GET', url, accessToken);
           const list = resp?.payload?.ShipmentData || [];
           attempts.push(`no-mp:${list.length}`);
@@ -589,7 +597,7 @@ serve(async (req) => {
       let v2024Shipment: any = null;
       if (!shipment) {
         try {
-          const matches = await discoverV2024Shipments(accessToken, Math.max(lookbackDays, 90), requestedShipmentId);
+          const matches = await discoverV2024Shipments(supabase, accessToken, Math.max(lookbackDays, 90), requestedShipmentId);
           attempts.push(`v2024-scan:${matches.length}`);
           if (matches[0]?.ShipmentId) {
             v2024Shipment = matches[0];
@@ -645,7 +653,7 @@ serve(async (req) => {
       // Fetch items - try v0 first, then v2024 if needed
       let itemsCount = 0;
       try {
-        const v0Items = await fetchV0ShipmentItems(requestedShipmentId, shipmentMarketplaceId, accessToken);
+        const v0Items = await fetchV0ShipmentItems(supabase, requestedShipmentId, shipmentMarketplaceId, accessToken);
         itemsCount += await upsertShipmentItems(supabase, user.id, requestedShipmentId, v0Items);
         console.log(`[DIRECT] v0 items for ${requestedShipmentId} (${shipmentMarketplaceId}): fetched=${v0Items.length} upserted=${itemsCount}`);
       } catch (e: any) {
@@ -660,7 +668,7 @@ serve(async (req) => {
           if (!v2024PlanId || !v2024InternalShipmentId) {
             throw new Error('Missing v2024 plan/internal shipment id for item lookup');
           }
-          const v2024Items = await fetchV2024ShipmentItems(v2024PlanId, v2024InternalShipmentId, accessToken);
+          const v2024Items = await fetchV2024ShipmentItems(supabase, v2024PlanId, v2024InternalShipmentId, accessToken);
           itemsCount += await upsertShipmentItems(supabase, user.id, requestedShipmentId, v2024Items);
           console.log(`[DIRECT] v2024 items for ${requestedShipmentId}: fetched=${v2024Items.length} upserted=${itemsCount}`);
         } catch (e: any) {
@@ -723,6 +731,7 @@ serve(async (req) => {
             const url = buildV0ShipmentListUrl(params, nextToken);
             console.log(`[DATE_RANGE] status=${status} page=${page}`);
 
+            await waitForApiToken(supabase, 'inbound_api');
             const response = await callSpApi('GET', url, accessToken);
             const shipments = Array.isArray(response.payload?.ShipmentData) ? response.payload.ShipmentData : [];
             nextToken = typeof response.payload?.NextToken === 'string' && response.payload.NextToken.length > 0
@@ -774,6 +783,7 @@ serve(async (req) => {
       for (const shipment of rangeShipments) {
         try {
           const itemsUrl = `https://sellingpartnerapi-na.amazon.com/fba/inbound/v0/shipments/${shipment.ShipmentId}/items?MarketplaceId=${marketplaceId}`;
+          await waitForApiToken(supabase, 'inbound_api');
           const itemsResp = await callSpApi('GET', itemsUrl, accessToken);
           const items = Array.isArray(itemsResp.payload?.ItemData) ? itemsResp.payload.ItemData : [];
 
@@ -845,6 +855,7 @@ serve(async (req) => {
         const url = buildV0ShipmentListUrl(params, nextToken);
         console.log(`[PHASE 1] Fetching page ${page}/${maxPages}...`);
 
+        await waitForApiToken(supabase, 'inbound_api');
         const response = await callSpApi('GET', url, accessToken);
 
         const shipments = Array.isArray(response.payload?.ShipmentData) ? response.payload.ShipmentData : [];
@@ -930,6 +941,7 @@ serve(async (req) => {
 
           const url = buildV0ShipmentListUrl(params, nextToken);
 
+          await waitForApiToken(supabase, 'inbound_api');
           const response = await callSpApi('GET', url, accessToken);
           const shipments = Array.isArray(response.payload?.ShipmentData) ? response.payload.ShipmentData : [];
           nextToken = typeof response.payload?.NextToken === 'string' && response.payload.NextToken.length > 0
@@ -986,7 +998,7 @@ serve(async (req) => {
         try {
           const items = shipment.__source === 'v2024' && shipment.__inboundPlanId && shipment.__v2024ShipmentId
             ? await fetchV2024ShipmentItems(shipment.__inboundPlanId, shipment.__v2024ShipmentId, accessToken)
-            : await fetchV0ShipmentItems(shipment.ShipmentId, marketplaceId, accessToken);
+            : await fetchV0ShipmentItems(supabase, shipment.ShipmentId, marketplaceId, accessToken);
           itemsCount += await upsertShipmentItems(supabase, user.id, shipment.ShipmentId, items);
           
           await new Promise(r => setTimeout(r, 300));
@@ -1032,6 +1044,7 @@ serve(async (req) => {
             if (!inv.title || !inv.image_url) {
               try {
                 const catalogUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${inv.asin}?marketplaceIds=${auth.marketplace_id}&includedData=summaries,images`;
+                await waitForApiToken(supabase, 'catalog_api');
                 const catalogResponse = await callSpApi('GET', catalogUrl, accessToken);
                 
                 const summaries = catalogResponse?.summaries || [];
@@ -1070,6 +1083,7 @@ serve(async (req) => {
               if (!listing.title || !listing.image_url) {
                 try {
                   const catalogUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${listing.asin}?marketplaceIds=${auth.marketplace_id}&includedData=summaries,images`;
+                  await waitForApiToken(supabase, 'catalog_api');
                   const catalogResponse = await callSpApi('GET', catalogUrl, accessToken);
                   
                   const summaries = catalogResponse?.summaries || [];
@@ -1123,6 +1137,7 @@ serve(async (req) => {
               // Last resort: try to get ASIN by searching SKU in catalog
               try {
                 const searchUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${auth.marketplace_id}&sellerId=${auth.seller_id || ''}&identifiersType=SKU&identifiers=${encodeURIComponent(sku)}&includedData=summaries,images`;
+                await waitForApiToken(supabase, 'catalog_api');
                 const searchResponse = await callSpApi('GET', searchUrl, accessToken);
                 
                 const items = searchResponse?.items || [];
