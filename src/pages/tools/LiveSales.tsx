@@ -9,7 +9,7 @@ import { useSalesSync } from "@/contexts/SalesSyncContext";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ShoppingCart, RefreshCw, AlertTriangle, Database, ArrowLeft, Copy, Truck, Search, History } from "lucide-react";
+import { Loader2, ShoppingCart, RefreshCw, AlertTriangle, Database, ArrowLeft, Copy, Truck, Search, History, Star } from "lucide-react";
 import FbmLabelCostDialog from "@/components/sales/FbmLabelCostDialog";
 import BbHistoryDialog from "@/components/sales/BbHistoryDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -658,7 +658,7 @@ const LiveSales = ({
 } = {}) => {
   const navigate = useNavigate();
   const { user, session } = useAuth();
-  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
+  const { homeMarketplace, homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const { startBackgroundSync, syncState, isSyncing } = useSalesSync();
   const [selectedMarketplace, setSelectedMarketplace] = useState<string>("ALL");
   const [availableMarketplaces, setAvailableMarketplaces] = useState<string[]>([]);
@@ -1972,13 +1972,15 @@ const LiveSales = ({
                     <button
                       key={mp}
                       onClick={() => setSelectedMarketplace(mp)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      title={mp === homeMarketplace ? "Your primary marketplace" : undefined}
+                      className={`relative px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                         selectedMarketplace === mp
                           ? "bg-primary text-primary-foreground shadow-md"
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      }`}
+                      } ${mp === homeMarketplace ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}`}
                     >
                       {MARKETPLACE_FLAGS[mp] || "🏳️"} {mp}
+                      {mp === homeMarketplace && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 absolute -top-1.5 -right-1.5" />}
                     </button>
                   ))}
                 </div>

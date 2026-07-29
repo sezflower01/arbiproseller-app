@@ -255,7 +255,7 @@ const defaultAiRule: Partial<RepricerRule> = {
 
 export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps) {
   const { user } = useAuth();
-  const { homeCurrencySymbol } = useHomeMarketplace();
+  const { homeCurrencySymbol, homeMarketplace } = useHomeMarketplace();
   const [rules, setRules] = useState<RepricerRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1062,6 +1062,8 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                             : "outline"
                         }
                         size="sm"
+                        title={mp.value === homeMarketplace ? "Your primary marketplace" : undefined}
+                        className={mp.value === homeMarketplace ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}
                         onClick={() => {
                           const current = formData.marketplaces || [];
                           const updated = current.includes(mp.value)
@@ -1070,6 +1072,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                           setFormData({ ...formData, marketplaces: updated });
                         }}
                       >
+                        {mp.value === homeMarketplace && <Star className="h-3 w-3 fill-amber-400 text-amber-400 mr-1" />}
                         {mp.label}
                       </Button>
                     ))}
@@ -1359,6 +1362,8 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                             : "outline"
                         }
                         size="sm"
+                        title={mp.value === homeMarketplace ? "Your primary marketplace" : undefined}
+                        className={mp.value === homeMarketplace ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}
                         onClick={() => {
                           const current = formData.marketplaces || [];
                           const updated = current.includes(mp.value)
@@ -1367,6 +1372,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
                           setFormData({ ...formData, marketplaces: updated });
                         }}
                       >
+                        {mp.value === homeMarketplace && <Star className="h-3 w-3 fill-amber-400 text-amber-400 mr-1" />}
                         {mp.label}
                       </Button>
                     ))}

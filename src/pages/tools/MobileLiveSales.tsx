@@ -19,7 +19,7 @@ import {
 } from "@/lib/sales/learnedFeeMultipliers";
 import { getOrderPromoUsd } from "@/lib/salesCalculations";
 import { getConfirmedSalesOrderRevenueUsd, getConfirmedSalesOrderUnitRevenueUsd } from "@/lib/sales/currencyConversion";
-import { Loader2, RefreshCw, RefreshCcw, RotateCw, ShoppingCart, ArrowLeft, AlertTriangle, Package, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Truck } from "lucide-react";
+import { Loader2, RefreshCw, RefreshCcw, RotateCw, ShoppingCart, ArrowLeft, AlertTriangle, Package, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Truck, Star } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import FbmLabelCostDialog from "@/components/sales/FbmLabelCostDialog";
 import { Button } from "@/components/ui/button";
@@ -663,7 +663,7 @@ const MobileLiveSales = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { startBackgroundSync, syncState, isSyncing } = useSalesSync();
-  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
+  const { homeMarketplace, homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const [rows, setRows] = useState<AsinRow[]>([]);
   const [todaySummary, setTodaySummary] = useState({ units: 0, orders: 0, revenue: 0, fees: 0, cost: 0, profit: 0, roi: 0 });
   const [todayRefunds, setTodayRefunds] = useState({ amount: 0, count: 0 });
@@ -2345,13 +2345,15 @@ const MobileLiveSales = () => {
               <button
                 key={m}
                 onClick={() => setMarketplaceFilter(m)}
-                className={`flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                title={m === homeMarketplace ? "Your primary marketplace" : undefined}
+                className={`relative flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors ${
                   marketplaceFilter === m
                     ? "bg-blue-500 text-white border-blue-400"
                     : "bg-white/5 text-white border-white/15 hover:bg-white/10"
-                }`}
+                } ${m === homeMarketplace ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}`}
               >
                 {m}
+                {m === homeMarketplace && <Star className="h-2 w-2 fill-amber-400 text-amber-400 absolute -top-1 -right-1" />}
               </button>
             ))}
           </div>

@@ -6698,19 +6698,22 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-1.5 shadow-sm">
               {visibleMarketplaces.map((mp) => {
                 const isActive = marketplace === mp.id;
+                const isPrimary = mp.id === homeMarketplace;
                 return (
                   <button
                     key={mp.id}
                     onClick={() => onMarketplaceChange?.(mp.id)}
+                    title={isPrimary ? "Your primary marketplace" : undefined}
                     className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all duration-200 cursor-pointer whitespace-nowrap ${
                       isActive
                         ? "bg-primary text-primary-foreground border-primary shadow-md scale-[1.02]"
                         : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted hover:border-border hover:scale-[1.02]"
-                    }`}
+                    } ${isPrimary ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}`}
                   >
                     {isActive && <Check className="h-3 w-3" />}
                     <span>{mp.flag}</span>
                     <span>{mp.id}</span>
+                    {isPrimary && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 absolute -top-1.5 -right-1.5" />}
                   </button>
                 );
               })}

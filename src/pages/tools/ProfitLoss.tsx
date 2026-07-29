@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Package, Download, Loader2, Calculator, RefreshCw, Search, Trash2, CalendarIcon, ReceiptText, AlertTriangle, WifiOff } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Package, Download, Loader2, Calculator, RefreshCw, Search, Trash2, CalendarIcon, ReceiptText, AlertTriangle, WifiOff, Star } from "lucide-react";
 import OrdersCostEditor from "@/components/profitloss/OrdersCostEditor";
 import CogsAdjustmentsPanel from "@/components/profitloss/CogsAdjustmentsPanel";
 // HybridPLPanel removed — Monthly P&L Breakdown is the single P&L display.
@@ -253,7 +253,7 @@ export default function ProfitLoss() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isAdmin } = useModuleAccess();
-  const { homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
+  const { homeMarketplace, homeCurrency, homeCurrencySymbol } = useHomeMarketplace();
   const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1 });
   useEffect(() => {
     let cancelled = false;
@@ -2161,13 +2161,15 @@ export default function ProfitLoss() {
                   type="button"
                   onClick={() => setMarketplaceFilter(m)}
                   disabled={controlsDisabled}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-colors disabled:opacity-50 ${
+                  title={m === homeMarketplace ? "Your primary marketplace" : undefined}
+                  className={`relative px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-colors disabled:opacity-50 ${
                     marketplaceFilter === m
                       ? "bg-blue-500 text-white border-blue-400"
                       : "bg-muted/40 text-foreground border-border hover:bg-muted"
-                  }`}
+                  } ${m === homeMarketplace ? "ring-2 ring-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" : ""}`}
                 >
                   {m}
+                  {m === homeMarketplace && <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 absolute -top-1.5 -right-1.5" />}
                 </button>
               ))}
               {marketplaceFilter !== "ALL" && (
