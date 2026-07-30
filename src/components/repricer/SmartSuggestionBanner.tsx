@@ -157,9 +157,16 @@ export function detectSuggestion(
   }
 
   // Priority 5: BB suppressed
-  const isBbSuppressed =
-    reason.includes("buy box suppressed") ||
-    (bb == null && lowestCompetitor != null && reason.includes("suppressed"));
+  // Previously required the literal word "suppressed" in the free-text
+  // last_recommendation_reason -- but that string is written by many
+  // different code paths with different wording ("Stock-gated hold...",
+  // "Lowest filtered protection...", "Target ($X) - $0.00 undercut", etc.),
+  // none of which use that word even though bb is genuinely null. Confirmed
+  // live: 416 of 649 US assignments had bb == null, but only 1 matched the
+  // old substring check. Key off bb == null directly instead -- that's the
+  // actual ground truth (matches the "-" shown in the BB column), not a
+  // guess about specific wording.
+  const isBbSuppressed = bb == null;
   if (
     isBbSuppressed &&
     lowestCompetitor != null &&
