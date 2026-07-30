@@ -6952,7 +6952,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               ))}
             </SelectContent>
           </Select>
-          {selectedIds.size > 0 && (
+          {false && selectedIds.size > 0 && (
             <div className="flex gap-2 items-center">
               <span className="text-sm text-muted-foreground">
                 {selectedIds.size} selected
