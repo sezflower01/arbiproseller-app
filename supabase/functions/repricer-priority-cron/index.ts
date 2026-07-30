@@ -26,10 +26,15 @@ const corsHeaders = {
  * 2. Auto-pause priority: pauses with exponential backoff on 429/throttle
  * 3. BB-moved-only: skips evaluation if buybox hasn't changed since last check
  * 4. Turbo gate: Pass 2 only fires if Pass 1 found BB movement
+ *
+ * Per-pass throughput is derived from each user's sp_api_calls_per_minute_cap
+ * (repricer_settings), which is itself scaled by plan tier via
+ * subscription_plans.sp_api_calls_per_minute_cap (see migration
+ * 20260729210000_scale_priority_cap_by_plan.sql) — MAX_ASINS_PER_PASS below is
+ * just an engineering safety rail on a single invocation, not a plan limit.
  */
 
-const MAX_PRIORITY_PER_USER = 5;
-const ASINS_PER_MINUTE = 2;
+const MAX_ASINS_PER_PASS = 20;
 const RATE_WINDOW_SECONDS = 60;
 const TURBO_DELAY_MS = 25_000; // 25 seconds between passes
 const TURBO_MAX_STARRED = 2; // Only turbo when ≤2 starred
@@ -285,7 +290,7 @@ async function executePriorityPass(
     return result;
   }
 
-  const maxAsinsByBudget = Math.min(ASINS_PER_MINUTE, Math.floor(budgetRemaining / 2));
+  const maxAsinsByBudget = Math.min(MAX_ASINS_PER_PASS, Math.floor(budgetRemaining / 2));
 
   // Fetch priority assignments ordered by oldest checked first (round-robin)
   const { data: priorityItems, error: priorityError } = await supabase

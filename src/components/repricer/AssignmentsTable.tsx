@@ -6440,8 +6440,10 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     }
   };
 
-  // Priority star toggle
-  const MAX_PRIORITY = 10;
+  // Priority star toggle — scales with plan tier (see subscription_plans.priority_star_cap);
+  // kept roughly in step with the priority cron's sp_api_calls_per_minute_cap so every
+  // starred ASIN still gets a full pass about once a minute at any plan size.
+  const MAX_PRIORITY = effectivePlan?.priority_star_cap ?? 5;
   const [priorityCount, setPriorityCount] = useState(0);
 
   // Fetch true priority count from DB (not just visible rows)

@@ -12,6 +12,8 @@ export interface SubscriptionPlan {
   stripe_price_id?: string;
   stripe_product_id?: string;
   stripe_annual_price_id?: string;
+  priority_star_cap: number;
+  sp_api_calls_per_minute_cap: number;
 }
 
 export interface UserSubscription {
