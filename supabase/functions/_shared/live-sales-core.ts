@@ -25,8 +25,10 @@ import { getListingUnitCost, getInventoryUnitCost } from "./cost-contract.ts";
 import {
   applyLearnedFeeMultiplier,
   loadLearnedFeeMultipliers,
+  loadAsinFeeMultipliers,
   loadLearnedFeeSettings,
   type LearnedFeeMultiplierMap,
+  type AsinFeeMultiplierMap,
   type LearnedFeeSettings,
 } from "./learned-fee-multipliers.ts";
 
@@ -867,6 +869,7 @@ export async function computeLiveSalesSummary(opts: {
   // mem://features/sales/learned-intl-fee-multipliers-v1.
   const learnedFeeSettings: LearnedFeeSettings = await loadLearnedFeeSettings(admin, userId);
   const learnedFeeMultipliers: LearnedFeeMultiplierMap = await loadLearnedFeeMultipliers(admin, userId);
+  const asinFeeMultipliers: AsinFeeMultiplierMap = await loadAsinFeeMultipliers(admin, userId);
 
   // UI fee calc (mirrors LiveSales.tsx fees/cost effect):
   //   feeBasisUsd = rawRevenueUsd || (estimated_price * qty in USD)
@@ -886,6 +889,7 @@ export async function computeLiveSalesSummary(opts: {
     // Learned multiplier (pending CA/MX/BR only — guarded inside helper).
     feesUsd = applyLearnedFeeMultiplier({
       row, rawFeesUsd: feesUsd, settings: learnedFeeSettings, multipliers: learnedFeeMultipliers,
+      asinMultipliers: asinFeeMultipliers,
     });
     return feesUsd;
   };

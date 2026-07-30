@@ -28,8 +28,10 @@ import { feeCacheKey, getCachedFeesUsd, getSalesOrderFeesUsd, isFeeCacheMissingF
 import {
   applyLearnedFeeMultiplier,
   loadLearnedFeeMultipliers,
+  loadAsinFeeMultipliers,
   loadLearnedFeeSettings,
   type LearnedFeeMultiplierMap,
+  type AsinFeeMultiplierMap,
   type LearnedFeeSettings,
 } from "@/lib/sales/learnedFeeMultipliers";
 import { getOrderPromoUsd } from "@/lib/salesCalculations";
@@ -998,6 +1000,7 @@ const LiveSales = ({
         // mem://features/sales/learned-intl-fee-multipliers-v1.
         const learnedFeeSettings: LearnedFeeSettings = await loadLearnedFeeSettings(supabase, user.id);
         const learnedFeeMultipliers: LearnedFeeMultiplierMap = await loadLearnedFeeMultipliers(supabase, user.id);
+        const asinFeeMultipliers: AsinFeeMultiplierMap = await loadAsinFeeMultipliers(supabase, user.id);
 
         const { getRevenueUsdWithFallback } = await buildUsdFallbackContext({
           userId: user.id,
@@ -1047,6 +1050,7 @@ const LiveSales = ({
             rawFeesUsd: feesUsd,
             settings: learnedFeeSettings,
             multipliers: learnedFeeMultipliers,
+            asinMultipliers: asinFeeMultipliers,
           });
           feesUsd = learnedFee.feesUsd;
 

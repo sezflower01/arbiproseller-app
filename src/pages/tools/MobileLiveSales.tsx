@@ -14,8 +14,10 @@ import { feeCacheKey, getCachedFeesUsd, getSalesOrderFeeBreakdownUsd, isFeeCache
 import {
   applyLearnedFeeMultiplier,
   loadLearnedFeeMultipliers,
+  loadAsinFeeMultipliers,
   loadLearnedFeeSettings,
   type LearnedFeeMultiplierMap,
+  type AsinFeeMultiplierMap,
   type LearnedFeeSettings,
 } from "@/lib/sales/learnedFeeMultipliers";
 import { getOrderPromoUsd } from "@/lib/salesCalculations";
@@ -1518,6 +1520,7 @@ const MobileLiveSales = () => {
       // See mem://features/sales/learned-intl-fee-multipliers-v1.
       const learnedFeeSettings: LearnedFeeSettings = await loadLearnedFeeSettings(supabase, user.id);
       const learnedFeeMultipliers: LearnedFeeMultiplierMap = await loadLearnedFeeMultipliers(supabase, user.id);
+      const asinFeeMultipliers: AsinFeeMultiplierMap = await loadAsinFeeMultipliers(supabase, user.id);
 
       const getMarketplaceNativeEstimate = (row: any, asin: string) => {
         const mp = String(row.marketplace || "US").trim().toUpperCase() || "US";
@@ -1609,6 +1612,7 @@ const MobileLiveSales = () => {
           rawFeesUsd: feesUsd,
           settings: learnedFeeSettings,
           multipliers: learnedFeeMultipliers,
+          asinMultipliers: asinFeeMultipliers,
         });
         if (learnedFee.applied && learnedFee.multiplier && learnedFee.multiplier > 0) {
           const m = learnedFee.multiplier;
@@ -1804,6 +1808,7 @@ const MobileLiveSales = () => {
           rawFeesUsd: feesUsd,
           settings: learnedFeeSettings,
           multipliers: learnedFeeMultipliers,
+          asinMultipliers: asinFeeMultipliers,
         });
         feesUsd = learned.feesUsd;
         const sku = String((row as any).sku || (row as any).seller_sku || "").trim();

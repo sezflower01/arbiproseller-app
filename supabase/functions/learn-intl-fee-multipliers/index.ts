@@ -1,13 +1,21 @@
 // Nightly learner for international fee multipliers (CA / MX / BR).
 //
-// For each user × marketplace × fee_component, compares the SP-API fee
-// estimate that was captured on `sales_orders` at ingest time against the
-// actual settled fee on `financial_events_cache`. The resulting ratio
-// (actual / estimated) is stored in `learned_fee_multipliers`.
+// For each user × marketplace × fee_component, compares a FRESH estimate —
+// recomputed from asin_fee_cache (referral_rate × real settled price, cached
+// FBA fee, media-closing constant), the exact same formula the live
+// pending-order path uses — against the actual settled fee on
+// `financial_events_cache`. The resulting ratio (actual / estimated) is
+// stored in `learned_fee_multipliers` / `learned_fee_multipliers_asin`.
 //
-// Phase 1 (this deploy): data collection only. No surface in the app
-// consumes these multipliers yet — we want to observe stability for a
-// couple of weeks before turning the read path on.
+// IMPORTANT (2026-07-30 rework): this used to read the "estimate" side off
+// `sales_orders.referral_fee/fba_fee/closing_fee/total_fees`. That became a
+// tautology once a separate historical-settlement reconciliation started
+// overwriting those exact columns with the FEC actual for settled orders —
+// comparing a value to itself always yields multiplier≈1.0, silently
+// masking any real correction. Recomputing the estimate independently from
+// asin_fee_cache (never touched by that reconciliation) fixes this and
+// matches what the read path is actually correcting for: "how far off is
+// today's cache-based estimate formula from reality for this product."
 //
 // Safety rails:
 //  - Per-user, per-marketplace. No global aggregation.
@@ -32,6 +40,11 @@ const COMPONENTS = ["referral", "fba", "closing", "total"] as const;
 const MIN_SALE_PRICE_USD = 5;
 const CLAMP_MIN = 0.5;
 const CLAMP_MAX = 4.0;
+// Matches src/lib/sales/feeNormalization.ts getCachedFeesUsd's assumed
+// per-unit media closing fee when only the cache (no live SP-API call) is
+// available. Keep these in sync.
+const MEDIA_CLOSING_FEE_USD = 1.8;
+const DEFAULT_REFERRAL_RATE = 0.15;
 
 type Component = (typeof COMPONENTS)[number];
 
@@ -41,26 +54,39 @@ interface SettledRow {
   fba_fees: number;
   variable_closing_fees: number;
   fixed_closing_fees: number;
+  sales: number;
 }
 
-interface OrderRow {
+interface OrderMetaRow {
   order_id: string;
-  marketplace: string | null;
-  sold_price: number | null;
-  total_sale_amount: number | null;
-  referral_fee: number | null;
-  fba_fee: number | null;
-  closing_fee: number | null;
-  total_fees: number | null;
-  fees_invalid: boolean | null;
+  asin: string | null;
+  quantity: number | null;
   is_cancelled: boolean | null;
-  order_status: string | null;
+}
+
+interface FeeCacheRow {
+  asin: string;
+  referral_rate: number | null;
+  fba_fee_fixed: number | null;
+  is_media: boolean | null;
 }
 
 function confidenceFor(n: number): "insufficient" | "low" | "medium" | "high" {
   if (n < 10) return "insufficient";
   if (n < 30) return "low";
   if (n < 100) return "medium";
+  return "high";
+}
+
+// ASIN-level samples are inherently much smaller than the marketplace-wide
+// blend (a handful of settled orders per product vs. hundreds account-wide),
+// so the floor to even attempt a per-ASIN correction is lower. Below
+// MIN_ASIN_SAMPLE the read path always falls back to the marketplace blend.
+const MIN_ASIN_SAMPLE = 3;
+function confidenceForAsin(n: number): "insufficient" | "low" | "medium" | "high" {
+  if (n < MIN_ASIN_SAMPLE) return "insufficient";
+  if (n < 10) return "low";
+  if (n < 30) return "medium";
   return "high";
 }
 
@@ -88,7 +114,7 @@ async function processUserMarketplace(
     const { data, error } = await supabase
       .from("financial_events_cache")
       .select(
-        "amazon_order_id, referral_fees, fba_fees, variable_closing_fees, fixed_closing_fees",
+        "amazon_order_id, referral_fees, fba_fees, variable_closing_fees, fixed_closing_fees, sales",
       )
       .eq("user_id", userId)
       .eq("event_type", "shipment")
@@ -113,6 +139,7 @@ async function processUserMarketplace(
         fba_fees: 0,
         variable_closing_fees: 0,
         fixed_closing_fees: 0,
+        sales: 0,
       };
       // Settled fees in FEC are negative; we want absolute values.
       prev.referral_fees += Math.abs(Number(r.referral_fees || 0));
@@ -121,6 +148,7 @@ async function processUserMarketplace(
         Number(r.variable_closing_fees || 0),
       );
       prev.fixed_closing_fees += Math.abs(Number(r.fixed_closing_fees || 0));
+      prev.sales += Math.abs(Number(r.sales || 0));
       settledByOrder.set(oid, prev);
     }
     if (data.length < PAGE) break;
@@ -152,17 +180,19 @@ async function processUserMarketplace(
     return { written: 0, skipped: 0 };
   }
 
-  // 2) Pull matching sales_orders rows for the estimates.
+  // 2) Pull matching sales_orders rows — metadata only (asin, quantity).
+  // Deliberately does NOT read referral_fee/fba_fee/closing_fee/total_fees:
+  // those columns get overwritten with the FEC actual by the historical-
+  // settlement reconciliation step, so trusting them here would compare a
+  // value to itself. See file header.
   const orderIds = Array.from(settledByOrder.keys());
-  const estByOrder = new Map<string, OrderRow>();
+  const metaByOrder = new Map<string, OrderMetaRow>();
   const CHUNK = 200;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
     const slice = orderIds.slice(i, i + CHUNK);
     const { data, error } = await supabase
       .from("sales_orders")
-      .select(
-        "order_id, marketplace, sold_price, total_sale_amount, referral_fee, fba_fee, closing_fee, total_fees, fees_invalid, is_cancelled, order_status",
-      )
+      .select("order_id, asin, quantity, is_cancelled")
       .eq("user_id", userId)
       .eq("marketplace", marketplace)
       .in("order_id", slice);
@@ -176,68 +206,111 @@ async function processUserMarketplace(
     for (const r of data || []) {
       const oid = String(r.order_id || "").trim();
       if (!oid) continue;
-      // Skip refund / cancel / invalid rows.
+      // Skip refund / cancelled rows.
       if (oid.endsWith("-REFUND")) continue;
       if (r.is_cancelled === true) continue;
-      if (r.fees_invalid === true) continue;
-      const salePrice = Number(r.total_sale_amount || r.sold_price || 0);
-      if (!(salePrice >= MIN_SALE_PRICE_USD)) continue;
-      estByOrder.set(oid, r as OrderRow);
+      metaByOrder.set(oid, r as OrderMetaRow);
     }
   }
 
-  // 3) Build per-component sums.
-  const sums: Record<
-    Component,
-    { actual: number; estimated: number; samples: string[] }
-  > = {
-    referral: { actual: 0, estimated: 0, samples: [] },
-    fba: { actual: 0, estimated: 0, samples: [] },
-    closing: { actual: 0, estimated: 0, samples: [] },
-    total: { actual: 0, estimated: 0, samples: [] },
-  };
+  // 2b) Pull asin_fee_cache for every distinct real ASIN among these orders —
+  // this is the independent source of "what would the estimate formula
+  // produce", never touched by sales_orders reconciliation.
+  const isRealAsin = (val: string | null | undefined): val is string =>
+    !!val && val !== "PENDING" && val !== "UNKNOWN";
+  const distinctAsins = Array.from(
+    new Set(
+      Array.from(metaByOrder.values())
+        .map((r) => (isRealAsin(r.asin) ? r.asin : null))
+        .filter((a): a is string => !!a),
+    ),
+  );
+  const feeCacheByAsin = new Map<string, FeeCacheRow>();
+  for (let i = 0; i < distinctAsins.length; i += CHUNK) {
+    const slice = distinctAsins.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from("asin_fee_cache")
+      .select("asin, referral_rate, fba_fee_fixed, is_media")
+      .eq("user_id", userId)
+      .eq("marketplace", marketplace)
+      .in("asin", slice);
+    if (error) {
+      console.warn(
+        `[learn-intl-fee-multipliers] asin_fee_cache pull error user=${userId} mp=${marketplace}:`,
+        error.message,
+      );
+      continue;
+    }
+    for (const r of data || []) {
+      const asin = String(r.asin || "").trim();
+      if (!asin) continue;
+      feeCacheByAsin.set(asin, r as FeeCacheRow);
+    }
+  }
 
-  for (const [oid, est] of estByOrder) {
+  // 3) Build per-component sums — both the marketplace-wide blend and, in
+  // parallel, a per-ASIN breakdown. The blend stays account-wide (many
+  // products' fee profiles averaged together); the per-ASIN sums let the
+  // read path correct a specific product from its own settlement history
+  // instead of a blended average that may not represent it well.
+  type Sums = Record<Component, { actual: number; estimated: number; samples: string[]; count: number }>;
+  const makeSums = (): Sums => ({
+    referral: { actual: 0, estimated: 0, samples: [], count: 0 },
+    fba: { actual: 0, estimated: 0, samples: [], count: 0 },
+    closing: { actual: 0, estimated: 0, samples: [], count: 0 },
+    total: { actual: 0, estimated: 0, samples: [], count: 0 },
+  });
+  const sums: Sums = makeSums();
+  const asinSums = new Map<string, Sums>();
+
+  for (const [oid, meta] of metaByOrder) {
     const settled = settledByOrder.get(oid);
     if (!settled) continue;
+    if (!(settled.sales >= MIN_SALE_PRICE_USD)) continue;
 
-    const settledClosing =
-      settled.variable_closing_fees + settled.fixed_closing_fees;
-    const settledTotal =
-      settled.referral_fees +
-      settled.fba_fees +
-      settledClosing;
+    const asin = isRealAsin(meta.asin) ? meta.asin : null;
+    const cache = asin ? feeCacheByAsin.get(asin) : undefined;
+    if (!cache) continue; // no independent estimate source available — skip
 
-    const components: Record<Component, { actual: number; estimated: number }> =
-      {
-        referral: {
-          actual: settled.referral_fees,
-          estimated: Number(est.referral_fee || 0),
-        },
-        fba: {
-          actual: settled.fba_fees,
-          estimated: Number(est.fba_fee || 0),
-        },
-        closing: {
-          actual: settledClosing,
-          estimated: Number(est.closing_fee || 0),
-        },
-        total: {
-          actual: settledTotal,
-          estimated: Number(est.total_fees || 0),
-        },
-      };
+    const qty = Math.max(1, Number(meta.quantity || 0));
+    const referralRate = cache.referral_rate != null && cache.referral_rate > 0
+      ? Number(cache.referral_rate)
+      : DEFAULT_REFERRAL_RATE;
+    const estReferral = settled.sales * referralRate;
+    const estFba = Number(cache.fba_fee_fixed || 0) * qty;
+    const estClosing = cache.is_media ? MEDIA_CLOSING_FEE_USD * qty : 0;
+    const estTotal = estReferral + estFba + estClosing;
+
+    const settledClosing = settled.variable_closing_fees + settled.fixed_closing_fees;
+    const settledTotal = settled.referral_fees + settled.fba_fees + settledClosing;
+
+    const components: Record<Component, { actual: number; estimated: number }> = {
+      referral: { actual: settled.referral_fees, estimated: estReferral },
+      fba: { actual: settled.fba_fees, estimated: estFba },
+      closing: { actual: settledClosing, estimated: estClosing },
+      total: { actual: settledTotal, estimated: estTotal },
+    };
+
+    if (asin && !asinSums.has(asin)) asinSums.set(asin, makeSums());
+    const asinS = asin ? asinSums.get(asin)! : null;
 
     for (const c of COMPONENTS) {
       const { actual, estimated } = components[c];
-      // Skip orders where the estimate is missing or zero — they'd produce
-      // div-by-zero or infinite ratios. We still count `total` as long as
-      // any positive estimate exists.
+      // Skip components where the fresh estimate is zero — they'd produce
+      // div-by-zero or infinite ratios (e.g. non-media closing fee).
       if (!(estimated > 0)) continue;
       if (!(actual >= 0)) continue;
       sums[c].actual += actual;
       sums[c].estimated += estimated;
+      sums[c].count += 1;
       if (sums[c].samples.length < 5) sums[c].samples.push(oid);
+
+      if (asinS) {
+        asinS[c].actual += actual;
+        asinS[c].estimated += estimated;
+        asinS[c].count += 1;
+        if (asinS[c].samples.length < 5) asinS[c].samples.push(oid);
+      }
     }
   }
 
@@ -246,24 +319,8 @@ async function processUserMarketplace(
   let skipped = 0;
   for (const component of COMPONENTS) {
     const s = sums[component];
-    // sample_count = orders that contributed (we used samples.length only for
-    // the audit list; the true count is harder — derive from estByOrder size
-    // when estimated>0 for this component). Recompute properly:
-    let n = 0;
-    for (const [oid, est] of estByOrder) {
-      if (!settledByOrder.has(oid)) continue;
-      const v =
-        component === "referral"
-          ? Number(est.referral_fee || 0)
-          : component === "fba"
-            ? Number(est.fba_fee || 0)
-            : component === "closing"
-              ? Number(est.closing_fee || 0)
-              : Number(est.total_fees || 0);
-      if (v > 0) n += 1;
-    }
     const multiplier = clampMultiplier(s.actual, s.estimated);
-    const confidence = multiplier === null ? "insufficient" : confidenceFor(n);
+    const confidence = multiplier === null ? "insufficient" : confidenceFor(s.count);
 
     const { error } = await supabase
       .from("learned_fee_multipliers")
@@ -272,7 +329,7 @@ async function processUserMarketplace(
           user_id: userId,
           marketplace,
           fee_component: component,
-          sample_count: n,
+          sample_count: s.count,
           multiplier,
           confidence,
           window_start: windowStart,
@@ -292,6 +349,53 @@ async function processUserMarketplace(
       skipped += 1;
     } else {
       written += 1;
+    }
+  }
+
+  // 5) Upsert per-ASIN breakdown, batched into one call per marketplace to
+  // avoid one round trip per (asin, component) pair — a seller can easily
+  // have hundreds of ASINs with intl settlement history.
+  if (asinSums.size > 0) {
+    const asinRows: Record<string, unknown>[] = [];
+    for (const [asin, s] of asinSums) {
+      for (const component of COMPONENTS) {
+        const cs = s[component];
+        const multiplier = clampMultiplier(cs.actual, cs.estimated);
+        const confidence = multiplier === null ? "insufficient" : confidenceForAsin(cs.count);
+        asinRows.push({
+          user_id: userId,
+          marketplace,
+          asin,
+          fee_component: component,
+          sample_count: cs.count,
+          multiplier,
+          confidence,
+          window_start: windowStart,
+          window_end: windowEnd,
+          sample_orders: cs.samples,
+          raw_estimated_total: Math.round(cs.estimated * 10000) / 10000,
+          raw_actual_total: Math.round(cs.actual * 10000) / 10000,
+          last_computed_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Batch in chunks of 500 to stay well under any request-size limits.
+    const UPSERT_CHUNK = 500;
+    for (let i = 0; i < asinRows.length; i += UPSERT_CHUNK) {
+      const chunk = asinRows.slice(i, i + UPSERT_CHUNK);
+      const { error } = await supabase
+        .from("learned_fee_multipliers_asin")
+        .upsert(chunk, { onConflict: "user_id,marketplace,asin,fee_component" });
+      if (error) {
+        console.warn(
+          `[learn-intl-fee-multipliers] asin upsert error user=${userId} mp=${marketplace}:`,
+          error.message,
+        );
+        skipped += chunk.length;
+      } else {
+        written += chunk.length;
+      }
     }
   }
 

@@ -46,6 +46,13 @@ const INTL_MARKETPLACES = new Set<IntlMarketplace>(["CA", "MX", "BR"]);
 
 export type LearnedFeeMultiplierMap = Map<IntlMarketplace, LearnedFeeMultiplier>;
 
+/** Keyed by `${marketplace}::${asin}`. */
+export type AsinFeeMultiplierMap = Map<string, LearnedFeeMultiplier>;
+
+function asinKey(marketplace: string, asin: string): string {
+  return `${marketplace}::${asin}`;
+}
+
 export async function loadLearnedFeeSettings(
   supabase: SupabaseClient,
   userId: string,
@@ -118,6 +125,64 @@ export async function loadLearnedFeeMultipliers(
   return out;
 }
 
+/**
+ * ASIN-specific counterpart to loadLearnedFeeMultipliers. A per-product
+ * correction, calibrated from that product's own settlement history, avoids
+ * overcorrecting products whose fee profile differs from the marketplace-wide
+ * average (see mem://features/sales/learned-intl-fee-multipliers-v1 — the
+ * account-wide blend can overcorrect a specific ASIN whose raw estimate
+ * already tracks close to its own real fees).
+ */
+export async function loadAsinFeeMultipliers(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<AsinFeeMultiplierMap> {
+  const out: AsinFeeMultiplierMap = new Map();
+  const { data, error } = await supabase
+    .from("learned_fee_multipliers_asin")
+    .select("marketplace, asin, fee_component, multiplier, confidence, sample_count")
+    .eq("user_id", userId);
+  if (error || !data) return out;
+  type Acc = Partial<LearnedFeeMultiplier> & { marketplace: IntlMarketplace; asin: string };
+  const acc = new Map<string, Acc>();
+  for (const row of data as any[]) {
+    const mp = String(row.marketplace || "").toUpperCase();
+    const asin = String(row.asin || "").trim();
+    if (!INTL_MARKETPLACES.has(mp as IntlMarketplace) || !asin) continue;
+    const key = asinKey(mp, asin);
+    const comp = String(row.fee_component || "").toLowerCase();
+    const mult = row.multiplier == null ? null : Number(row.multiplier);
+    const cur = acc.get(key) || {
+      marketplace: mp as IntlMarketplace,
+      asin,
+      referral: null, fba: null, closing: null, total: null,
+      confidence: "insufficient" as LearnedFeeConfidence,
+      sampleSize: 0,
+    };
+    if (comp === "referral") cur.referral = mult;
+    else if (comp === "fba") cur.fba = mult;
+    else if (comp === "closing") cur.closing = mult;
+    else if (comp === "total") {
+      cur.total = mult;
+      cur.confidence = (row.confidence || "insufficient") as LearnedFeeConfidence;
+      cur.sampleSize = Number(row.sample_count || 0);
+    }
+    acc.set(key, cur);
+  }
+  for (const [key, v] of acc) {
+    out.set(key, {
+      marketplace: v.marketplace,
+      referral: v.referral ?? null,
+      fba: v.fba ?? null,
+      closing: v.closing ?? null,
+      total: v.total ?? null,
+      confidence: v.confidence ?? "insufficient",
+      sampleSize: v.sampleSize ?? 0,
+    });
+  }
+  return out;
+}
+
 function isIntlMarketplace(mp: string | null | undefined): mp is IntlMarketplace {
   const norm = String(mp || "").trim().toUpperCase();
   return INTL_MARKETPLACES.has(norm as IntlMarketplace);
@@ -153,6 +218,9 @@ export interface LearnedFeeResult {
   marketplace: IntlMarketplace | null;
   /** True when the learned multiplier was applied. */
   applied: boolean;
+  /** Whether the applied multiplier came from this specific ASIN's own
+   *  settlement history, or the marketplace-wide blend. Null when not applied. */
+  source: "asin" | "marketplace" | null;
 }
 
 const CONFIDENCE_RANK: Record<LearnedFeeConfidence, number> = {
@@ -170,6 +238,7 @@ const CONFIDENCE_RANK: Record<LearnedFeeConfidence, number> = {
  */
 export function applyLearnedFeeMultiplier(params: {
   row: {
+    asin?: string | null;
     marketplace?: string | null;
     sold_price?: number | null;
     total_sale_amount?: number | null;
@@ -178,9 +247,12 @@ export function applyLearnedFeeMultiplier(params: {
   rawFeesUsd: number;
   settings: LearnedFeeSettings;
   multipliers: LearnedFeeMultiplierMap;
+  /** ASIN-specific corrections, preferred over `multipliers` when the ASIN
+   *  has enough of its own settlement history (confidence >= minConfidence). */
+  asinMultipliers?: AsinFeeMultiplierMap;
   minConfidence?: LearnedFeeConfidence;
 }): LearnedFeeResult {
-  const { row, rawFeesUsd, settings, multipliers } = params;
+  const { row, rawFeesUsd, settings, multipliers, asinMultipliers } = params;
   const minConfidence = params.minConfidence || "low";
 
   const base: LearnedFeeResult = {
@@ -190,6 +262,7 @@ export function applyLearnedFeeMultiplier(params: {
     confidence: null,
     marketplace: null,
     applied: false,
+    source: null,
   };
 
   if (!settings.enabled) return base;
@@ -198,6 +271,20 @@ export function applyLearnedFeeMultiplier(params: {
   if (!isIntlMarketplace(mp)) return base;
   if (!settings.perMarketplace[mp]) return base;
   if (!isPendingRowForLearnedFee(row)) return base;
+
+  const asin = String(row.asin || "").trim();
+  const asinM = asin && asinMultipliers ? asinMultipliers.get(asinKey(mp, asin)) : undefined;
+  if (asinM && asinM.total != null && asinM.total > 0 && CONFIDENCE_RANK[asinM.confidence] >= CONFIDENCE_RANK[minConfidence]) {
+    return {
+      feesUsd: rawFeesUsd * asinM.total,
+      rawFeesUsd,
+      multiplier: asinM.total,
+      confidence: asinM.confidence,
+      marketplace: mp,
+      applied: true,
+      source: "asin",
+    };
+  }
 
   const m = multipliers.get(mp);
   if (!m) return base;
@@ -211,6 +298,7 @@ export function applyLearnedFeeMultiplier(params: {
     confidence: m.confidence,
     marketplace: mp,
     applied: true,
+    source: "marketplace",
   };
 }
 
@@ -219,5 +307,6 @@ export function formatLearnedFeeBadge(result: LearnedFeeResult): string {
   if (!result.applied || !result.marketplace || result.multiplier == null) {
     return "Raw SP-API estimate";
   }
-  return `${result.marketplace} learned ×${result.multiplier.toFixed(2)} (${result.confidence}) — based on settled history. Final fees update after settlement.`;
+  const scope = result.source === "asin" ? "this ASIN's own" : `${result.marketplace}-wide`;
+  return `${scope} learned ×${result.multiplier.toFixed(2)} (${result.confidence}) — based on settled history. Final fees update after settlement.`;
 }

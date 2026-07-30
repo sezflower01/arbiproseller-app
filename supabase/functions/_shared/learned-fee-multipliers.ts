@@ -26,6 +26,11 @@ const RANK: Record<LearnedFeeConfidence, number> = {
 };
 
 export type LearnedFeeMultiplierMap = Map<IntlMarketplace, LearnedFeeMultiplier>;
+/** Keyed by `${marketplace}::${asin}`. */
+export type AsinFeeMultiplierMap = Map<string, LearnedFeeMultiplier>;
+function asinKey(marketplace: string, asin: string): string {
+  return `${marketplace}::${asin}`;
+}
 
 export async function loadLearnedFeeSettings(admin: any, userId: string): Promise<LearnedFeeSettings> {
   const { data } = await admin
@@ -65,6 +70,31 @@ export async function loadLearnedFeeMultipliers(admin: any, userId: string): Pro
   return out;
 }
 
+/**
+ * ASIN-specific counterpart, preferred over the marketplace-wide blend when
+ * an ASIN has enough of its own settlement history. See
+ * src/lib/sales/learnedFeeMultipliers.ts (frontend twin) for the rationale.
+ */
+export async function loadAsinFeeMultipliers(admin: any, userId: string): Promise<AsinFeeMultiplierMap> {
+  const out: AsinFeeMultiplierMap = new Map();
+  const { data } = await admin
+    .from("learned_fee_multipliers_asin")
+    .select("marketplace, asin, multiplier, confidence, fee_component")
+    .eq("user_id", userId)
+    .eq("fee_component", "total");
+  for (const row of (data || []) as any[]) {
+    const mp = String(row.marketplace || "").toUpperCase();
+    const asin = String(row.asin || "").trim();
+    if (!INTL.has(mp as IntlMarketplace) || !asin) continue;
+    out.set(asinKey(mp, asin), {
+      marketplace: mp as IntlMarketplace,
+      total: row.multiplier == null ? null : Number(row.multiplier),
+      confidence: (row.confidence || "insufficient") as LearnedFeeConfidence,
+    });
+  }
+  return out;
+}
+
 export function isPendingRowForLearnedFee(row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
@@ -77,13 +107,14 @@ export function isPendingRowForLearnedFee(row: {
 }
 
 export function applyLearnedFeeMultiplier(params: {
-  row: { marketplace?: string | null; sold_price?: number | null; total_sale_amount?: number | null; price_confidence?: string | null };
+  row: { asin?: string | null; marketplace?: string | null; sold_price?: number | null; total_sale_amount?: number | null; price_confidence?: string | null };
   rawFeesUsd: number;
   settings: LearnedFeeSettings;
   multipliers: LearnedFeeMultiplierMap;
+  asinMultipliers?: AsinFeeMultiplierMap;
   minConfidence?: LearnedFeeConfidence;
 }): number {
-  const { row, rawFeesUsd, settings, multipliers } = params;
+  const { row, rawFeesUsd, settings, multipliers, asinMultipliers } = params;
   const minConfidence = params.minConfidence || "low";
   if (!settings.enabled) return rawFeesUsd;
   if (rawFeesUsd <= 0) return rawFeesUsd;
@@ -91,6 +122,13 @@ export function applyLearnedFeeMultiplier(params: {
   if (!INTL.has(mp as IntlMarketplace)) return rawFeesUsd;
   if (!settings.perMarketplace[mp as IntlMarketplace]) return rawFeesUsd;
   if (!isPendingRowForLearnedFee(row)) return rawFeesUsd;
+
+  const asin = String(row.asin || "").trim();
+  const asinM = asin && asinMultipliers ? asinMultipliers.get(asinKey(mp, asin)) : undefined;
+  if (asinM && asinM.total != null && asinM.total > 0 && RANK[asinM.confidence] >= RANK[minConfidence]) {
+    return rawFeesUsd * asinM.total;
+  }
+
   const m = multipliers.get(mp as IntlMarketplace);
   if (!m || m.total == null || !(m.total > 0)) return rawFeesUsd;
   if (RANK[m.confidence] < RANK[minConfidence]) return rawFeesUsd;
