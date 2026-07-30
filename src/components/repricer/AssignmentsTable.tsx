@@ -6552,7 +6552,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-2 shadow-sm">
                  {renderChip(allChip)}
                  <div className="h-6 w-px bg-border/60" />
-                 {renderGroup("Issues", operationalIssues)}
+                 {renderGroup("", operationalIssues)}
                  <div className="h-6 w-px bg-border/60" />
                  {renderGroup("", automationStates)}
                  <div className="h-6 w-px bg-border/60" />
