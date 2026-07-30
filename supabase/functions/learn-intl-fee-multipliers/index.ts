@@ -27,6 +27,7 @@
 //  - Settled fees are never written or modified.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchLiveFeesForAsin } from "../_shared/spapi-fees-live.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +46,19 @@ const CLAMP_MAX = 4.0;
 // available. Keep these in sync.
 const MEDIA_CLOSING_FEE_USD = 1.8;
 const DEFAULT_REFERRAL_RATE = 0.15;
+
+// Targeted live-fee refresh for below-floor ASINs (see the "someone is
+// waiting on this number today" scoping discussion): only ASINs that both
+// (a) have fewer than MIN_ASIN_SAMPLE settled orders and (b) currently have
+// a pending intl order get a live SP-API Fees lookup, instead of refreshing
+// every below-floor ASIN in the account's whole history regardless of
+// whether anything is actively pending. Bounded globally per invocation so
+// a large backlog can't balloon run time or contend with the repricer's
+// own live pricing calls; any overflow is simply picked up the next night.
+const MAX_LIVE_FETCHES_PER_RUN = 100;
+// Don't re-verify an ASIN that was already live-checked recently — pending
+// orders can sit for weeks without their price/fees changing day to day.
+const LIVE_FETCH_STALENESS_DAYS = 14;
 
 type Component = (typeof COMPONENTS)[number];
 
@@ -99,13 +113,142 @@ function clampMultiplier(actualSum: number, estSum: number): number | null {
   return Math.round(m * 10000) / 10000;
 }
 
+interface LiveFetchBudget {
+  remaining: number;
+}
+
+/**
+ * Targeted live-fee refresh: only ASINs that are both below the sample
+ * floor AND have a currently-pending intl order get a live SP-API Fees
+ * lookup (see the "someone is waiting on this number today" scoping
+ * decision). Results are cached into asin_fee_cache tagged
+ * fee_source='live_verified' so the normal read path stays DB-only and
+ * fast — this never runs synchronously during a page render.
+ */
+async function liveRefreshBelowFloorPendingAsins(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  marketplace: "CA" | "MX" | "BR",
+  budget: LiveFetchBudget,
+): Promise<{ attempted: number; succeeded: number }> {
+  if (budget.remaining <= 0) return { attempted: 0, succeeded: 0 };
+
+  // Distinct real ASINs with a currently-pending order in this marketplace,
+  // and the native-currency price to use for the Fees API call (estimated_price
+  // is stored native for non-US marketplaces per the Sales Currency Contract).
+  const { data: pendingRows, error: pendingErr } = await supabase
+    .from("sales_orders")
+    .select("asin, estimated_price")
+    .eq("user_id", userId)
+    .eq("marketplace", marketplace)
+    .eq("status", "pending")
+    .not("order_id", "like", "%-REFUND")
+    .not("asin", "is", null)
+    .neq("asin", "PENDING")
+    .neq("asin", "UNKNOWN")
+    .gt("estimated_price", 0);
+  if (pendingErr) {
+    console.warn(`[learn-intl-fee-multipliers] LIVE_REFRESH pending pull error user=${userId} mp=${marketplace}:`, pendingErr.message);
+    return { attempted: 0, succeeded: 0 };
+  }
+  if (!pendingRows || pendingRows.length === 0) return { attempted: 0, succeeded: 0 };
+
+  const priceByAsin = new Map<string, number>();
+  for (const r of pendingRows) {
+    const asin = String((r as any).asin || "").trim();
+    if (!asin || priceByAsin.has(asin)) continue;
+    const p = Number((r as any).estimated_price || 0);
+    if (p > 0) priceByAsin.set(asin, p);
+  }
+  if (priceByAsin.size === 0) return { attempted: 0, succeeded: 0 };
+
+  const distinctAsins = Array.from(priceByAsin.keys());
+  const CHUNK = 200;
+
+  // Which of these are below the sample floor? (missing row counts as 0)
+  const sampleCountByAsin = new Map<string, number>();
+  for (let i = 0; i < distinctAsins.length; i += CHUNK) {
+    const slice = distinctAsins.slice(i, i + CHUNK);
+    const { data } = await supabase
+      .from("learned_fee_multipliers_asin")
+      .select("asin, sample_count")
+      .eq("user_id", userId)
+      .eq("marketplace", marketplace)
+      .eq("fee_component", "total")
+      .in("asin", slice);
+    for (const r of data || []) sampleCountByAsin.set(String((r as any).asin), Number((r as any).sample_count || 0));
+  }
+  const belowFloor = distinctAsins.filter((a) => (sampleCountByAsin.get(a) ?? 0) < MIN_ASIN_SAMPLE);
+  if (belowFloor.length === 0) return { attempted: 0, succeeded: 0 };
+
+  // Skip ones already live-verified recently — pending orders can sit for
+  // weeks without their price/fees changing day to day.
+  const staleCutoff = new Date(Date.now() - LIVE_FETCH_STALENESS_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data: existingCache } = await supabase
+    .from("asin_fee_cache")
+    .select("asin, fee_source, last_verified_at")
+    .eq("user_id", userId)
+    .eq("marketplace", marketplace)
+    .in("asin", belowFloor);
+  const recentlyVerified = new Set(
+    (existingCache || [])
+      .filter((r: any) => r.fee_source === "live_verified" && r.last_verified_at && r.last_verified_at > staleCutoff)
+      .map((r: any) => String(r.asin)),
+  );
+  const toRefresh = belowFloor.filter((a) => !recentlyVerified.has(a));
+  if (toRefresh.length === 0) return { attempted: 0, succeeded: 0 };
+
+  let attempted = 0;
+  let succeeded = 0;
+  for (const asin of toRefresh) {
+    if (budget.remaining <= 0) break;
+    const price = priceByAsin.get(asin);
+    if (!price) continue;
+    budget.remaining -= 1;
+    attempted += 1;
+
+    const result = await fetchLiveFeesForAsin(supabase, asin, marketplace, price);
+    if (!result) continue;
+
+    const { error: upsertErr } = await supabase
+      .from("asin_fee_cache")
+      .upsert(
+        {
+          user_id: userId,
+          asin,
+          marketplace,
+          fba_fee_fixed: result.fbaFee,
+          referral_rate: result.referralRate,
+          is_media: result.isMedia,
+          fee_source: "live_verified",
+          last_verified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          attempt_count: 0,
+          last_error: null,
+        },
+        { onConflict: "user_id,asin,marketplace" },
+      );
+    if (upsertErr) {
+      console.warn(`[learn-intl-fee-multipliers] LIVE_REFRESH cache upsert error ${asin}/${marketplace}:`, upsertErr.message);
+    } else {
+      succeeded += 1;
+    }
+  }
+
+  console.log(
+    `[learn-intl-fee-multipliers] LIVE_REFRESH ${marketplace} user=${userId}: pendingAsins=${distinctAsins.length} belowFloor=${belowFloor.length} toRefresh=${toRefresh.length} attempted=${attempted} succeeded=${succeeded} budgetLeft=${budget.remaining}`,
+  );
+  return { attempted, succeeded };
+}
+
 async function processUserMarketplace(
   supabase: ReturnType<typeof createClient>,
   userId: string,
   marketplace: "CA" | "MX" | "BR",
   windowStart: string,
   windowEnd: string,
-): Promise<{ written: number; skipped: number }> {
+  liveFetchBudget: LiveFetchBudget,
+): Promise<{ written: number; skipped: number; liveFetchAttempted: number; liveFetchSucceeded: number }> {
   // 1) Pull settled fees from FEC for this marketplace, this window.
   //    Aggregate per amazon_order_id (one order can have multiple shipment events).
   const settledByOrder = new Map<string, SettledRow>();
@@ -177,7 +320,11 @@ async function processUserMarketplace(
           { onConflict: "user_id,marketplace,fee_component" },
         );
     }
-    return { written: 0, skipped: 0 };
+    // No settled history at all yet — still worth a live-fee check for any
+    // currently-pending order on a first-time-sale ASIN (see "first time
+    // sales, no settled history at all" case).
+    const liveResult = await liveRefreshBelowFloorPendingAsins(supabase, userId, marketplace, liveFetchBudget);
+    return { written: 0, skipped: 0, liveFetchAttempted: liveResult.attempted, liveFetchSucceeded: liveResult.succeeded };
   }
 
   // 2) Pull matching sales_orders rows — metadata only (asin, quantity).
@@ -399,7 +546,12 @@ async function processUserMarketplace(
     }
   }
 
-  return { written, skipped };
+  // 6) Targeted live-fee refresh (see "someone is waiting on this number
+  // today" scoping decision) — only for below-floor ASINs with a currently-
+  // pending order, bounded by the shared per-invocation budget.
+  const liveResult = await liveRefreshBelowFloorPendingAsins(supabase, userId, marketplace, liveFetchBudget);
+
+  return { written, skipped, liveFetchAttempted: liveResult.attempted, liveFetchSucceeded: liveResult.succeeded };
 }
 
 Deno.serve(async (req) => {
@@ -465,14 +617,19 @@ Deno.serve(async (req) => {
     const start = new Date(today.getTime() - WINDOW_DAYS * 86400 * 1000);
     const windowStart = start.toISOString().slice(0, 10);
 
-    // Get user set. We pull distinct users from financial_events_cache who
-    // have any settled intl event in the window — no point computing for
-    // users who don't have intl settlement history.
+    // Get user set. Two sources, unioned:
+    //  (a) users with any settled intl event in the window — the normal
+    //      case, needed to compute/refresh the learned multipliers.
+    //  (b) users with a currently-pending intl order, even with ZERO
+    //      settled history — a first-time intl sale wouldn't appear in (a)
+    //      at all, but still deserves the targeted live-fee-refresh check.
     let userIds: string[] = [];
     if (onlyUserId) {
       userIds = [onlyUserId];
     } else {
-      const { data, error } = await supabase
+      const set = new Set<string>();
+
+      const { data: settledUsers, error: settledErr } = await supabase
         .from("financial_events_cache")
         .select("user_id")
         .eq("event_type", "shipment")
@@ -480,23 +637,38 @@ Deno.serve(async (req) => {
         .gte("event_date", windowStart)
         .lte("event_date", windowEnd)
         .limit(50000);
-      if (error) {
-        console.warn(
-          "[learn-intl-fee-multipliers] user enumeration error:",
-          error.message,
-        );
+      if (settledErr) {
+        console.warn("[learn-intl-fee-multipliers] settled-user enumeration error:", settledErr.message);
       }
-      const set = new Set<string>();
-      for (const r of data || []) {
+      for (const r of settledUsers || []) {
         const uid = String((r as { user_id?: string }).user_id || "").trim();
         if (uid) set.add(uid);
       }
+
+      const { data: pendingUsers, error: pendingErr } = await supabase
+        .from("sales_orders")
+        .select("user_id")
+        .eq("status", "pending")
+        .in("marketplace", MARKETPLACES as unknown as string[])
+        .not("order_id", "like", "%-REFUND")
+        .limit(50000);
+      if (pendingErr) {
+        console.warn("[learn-intl-fee-multipliers] pending-user enumeration error:", pendingErr.message);
+      }
+      for (const r of pendingUsers || []) {
+        const uid = String((r as { user_id?: string }).user_id || "").trim();
+        if (uid) set.add(uid);
+      }
+
       userIds = Array.from(set);
     }
 
     let totalWritten = 0;
     let totalSkipped = 0;
+    let totalLiveFetchAttempted = 0;
+    let totalLiveFetchSucceeded = 0;
     let userCount = 0;
+    const liveFetchBudget: LiveFetchBudget = { remaining: MAX_LIVE_FETCHES_PER_RUN };
     for (const uid of userIds) {
       for (const mp of MARKETPLACES) {
         try {
@@ -506,9 +678,12 @@ Deno.serve(async (req) => {
             mp,
             windowStart,
             windowEnd,
+            liveFetchBudget,
           );
           totalWritten += r.written;
           totalSkipped += r.skipped;
+          totalLiveFetchAttempted += r.liveFetchAttempted;
+          totalLiveFetchSucceeded += r.liveFetchSucceeded;
         } catch (e) {
           console.warn(
             `[learn-intl-fee-multipliers] user=${uid} mp=${mp} failed:`,
@@ -526,7 +701,7 @@ Deno.serve(async (req) => {
         p_id: cronRunId,
         p_status: "done",
         p_rows: totalWritten,
-        p_notes: `users=${userCount} written=${totalWritten} skipped=${totalSkipped}`,
+        p_notes: `users=${userCount} written=${totalWritten} skipped=${totalSkipped} live_attempted=${totalLiveFetchAttempted} live_succeeded=${totalLiveFetchSucceeded}`,
       });
     }
 
@@ -536,6 +711,9 @@ Deno.serve(async (req) => {
         users: userCount,
         rows_written: totalWritten,
         rows_skipped: totalSkipped,
+        live_fetch_attempted: totalLiveFetchAttempted,
+        live_fetch_succeeded: totalLiveFetchSucceeded,
+        live_fetch_budget_remaining: liveFetchBudget.remaining,
         window_start: windowStart,
         window_end: windowEnd,
       }),
