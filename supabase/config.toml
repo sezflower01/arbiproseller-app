@@ -415,3 +415,6 @@ verify_jwt = true
 
 [functions.repricer-detect-primary-marketplace]
 verify_jwt = false
+
+[functions.auto-assign-bulk-intl-sweep]
+verify_jwt = false

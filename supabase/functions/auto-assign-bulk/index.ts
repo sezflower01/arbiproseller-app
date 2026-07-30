@@ -4,6 +4,7 @@ import { getListingUnitCost } from "../_shared/cost-contract.ts";
 import { exchangeLwaToken } from "../_shared/lwa-token.ts";
 import { getSpApiEndpoint, signRequest } from "../_shared/sp-api-sigv4.ts";
 import { resolveMinRoiEnabled } from "../_shared/min-roi-enabled.ts";
+import { waitForApiToken } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +74,7 @@ async function fetchLiveOwnPrice(params: {
   marketplaceId: string;
 }): Promise<number | null> {
   const { supabase, userId, sellerAuth, sku, marketplaceId } = params;
+  await waitForApiToken(supabase, "listings_api");
   const accessToken = await exchangeLwaToken(sellerAuth.refresh_token, supabase, userId);
   const endpoint = getSpApiEndpoint(marketplaceId);
   const path = `/listings/2021-08-01/items/${sellerAuth.seller_id}/${encodeURIComponent(sku)}`;
