@@ -12,6 +12,7 @@ import { checkModuleAccess } from '../_shared/module-access-guard.ts';
 import { tagUnnecessaryUndercut } from '../_shared/unnecessaryUndercutTagger.ts';
 import { logHealthSignal, HealthSignals } from "../_shared/health-signal.ts";
 import { requireInternalOrUser } from '../_shared/require-internal.ts';
+import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -722,15 +723,51 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const inventoryLivePriceCents = inv.my_price != null
-          ? Math.round(inv.my_price * 100)
-          : (inv.price != null ? Math.round(inv.price * 100) : null);
-        const inventoryPriceUpdateTs = inv.last_price_update_at ? new Date(inv.last_price_update_at).getTime() : 0;
+        // update-amazon-price only writes my_price/price back into `inventory`
+        // for the US marketplace (non-US submissions are intentionally kept
+        // out of that row to avoid cross-marketplace contamination — see
+        // update-amazon-price/index.ts). But it bumps last_price_update_at/
+        // last_price_update_status='success' for EVERY marketplace. So for
+        // non-US, inv.my_price/price is permanently stale while its
+        // timestamp keeps looking fresh — trusting it here fed a frozen
+        // price into the evaluator on every cycle, which the Universal
+        // Floor Guard then "corrected" back down, undoing legitimate raises
+        // (observed on B07VSNBTSH/CA: inv.my_price stuck at $16.37 forever
+        // while real submitted prices reached $35-40). Non-US must instead
+        // check the marketplace-scoped cache that update-amazon-price does
+        // keep current: asin_my_price_cache.
+        let inventoryLivePriceCents: number | null = null;
+        let inventoryPriceUpdateTs = 0;
+        let inventoryLiveStatusOk = false;
+        if (marketplace === 'US') {
+          inventoryLivePriceCents = inv.my_price != null
+            ? Math.round(inv.my_price * 100)
+            : (inv.price != null ? Math.round(inv.price * 100) : null);
+          inventoryPriceUpdateTs = inv.last_price_update_at ? new Date(inv.last_price_update_at).getTime() : 0;
+          inventoryLiveStatusOk = inv.last_price_update_status === 'success';
+        } else {
+          const amazonMarketplaceId = MARKETPLACE_META[marketplace]?.amazonMarketplaceId;
+          if (amazonMarketplaceId) {
+            const { data: priceCache } = await supabase
+              .from('asin_my_price_cache')
+              .select('my_price, fetched_at')
+              .eq('user_id', userId)
+              .eq('asin', asin)
+              .eq('marketplace_id', amazonMarketplaceId)
+              .eq('seller_sku', sku || '__NO_SKU__')
+              .maybeSingle();
+            if (priceCache?.my_price != null) {
+              inventoryLivePriceCents = Math.round(priceCache.my_price * 100);
+              inventoryPriceUpdateTs = priceCache.fetched_at ? new Date(priceCache.fetched_at).getTime() : 0;
+              inventoryLiveStatusOk = true;
+            }
+          }
+        }
         const assignmentLastAppliedTs = assignment.last_applied_at ? new Date(assignment.last_applied_at).getTime() : 0;
         const shouldPreferInventoryLivePrice = Boolean(
           inventoryLivePriceCents != null &&
           (spApiMyPriceCents == null || Math.abs(inventoryLivePriceCents - spApiMyPriceCents) >= 1) &&
-          inv.last_price_update_status === 'success' &&
+          inventoryLiveStatusOk &&
           inventoryPriceUpdateTs >= assignmentLastAppliedTs
         );
 
