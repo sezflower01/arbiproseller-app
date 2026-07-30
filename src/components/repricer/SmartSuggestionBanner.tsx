@@ -311,7 +311,7 @@ export default function SmartSuggestionBanner({
 
   return (
     <div
-      className={`rounded-md border px-2 py-1.5 text-[11px] space-y-1 ${severityColors[suggestion.severity]}`}
+      className={`rounded-md border px-1 py-1.5 text-[11px] space-y-1 ${severityColors[suggestion.severity]}`}
     >
       <div className="flex items-center gap-1.5">
         <AlertTriangle
