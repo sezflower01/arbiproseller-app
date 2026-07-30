@@ -7729,7 +7729,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           <TableCell>
                             <div className="flex items-center gap-1 flex-wrap">
                               {/* New-inbound pin: highlights rows auto-activated in last 24h */}
-                              {item.auto_activated_at && (Date.now() - new Date(item.auto_activated_at).getTime()) < 24 * 60 * 60 * 1000 && (
+                              {false && item.auto_activated_at && (Date.now() - new Date(item.auto_activated_at).getTime()) < 24 * 60 * 60 * 1000 && (
                                 <span
                                   className="inline-flex items-center gap-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                                   title={`Auto-activated ${new Date(item.auto_activated_at).toLocaleString()} — reason: ${item.auto_activated_reason || 'inbound'}`}
