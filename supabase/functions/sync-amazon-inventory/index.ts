@@ -241,26 +241,40 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
-    }
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-
-    if (authError || !user) {
-      throw new Error('Unauthorized');
-    }
-
-    // Check optional body params
-    let fetchCreationDates = false;
+    // Parse body once up front so both the internal-call auth check and the
+    // optional params below can use it.
+    let requestBody: any = {};
     try {
-      const body = await req.json();
-      fetchCreationDates = body?.fetchCreationDates === true;
+      requestBody = await req.json();
     } catch {
-      // No body or invalid JSON, use defaults
+      // No body or invalid JSON — treat as empty
+    }
+    const fetchCreationDates = requestBody?.fetchCreationDates === true;
+
+    // Auth: either a real user JWT, OR internal-secret + body.user_id (used
+    // by amazon-oauth-callback's background sync for brand-new users, who
+    // have no user session available server-side).
+    const internalSecret = req.headers.get('x-internal-secret');
+    const expectedInternalSecret = Deno.env.get('INTERNAL_SYNC_SECRET');
+    let user: { id: string };
+
+    if (internalSecret && expectedInternalSecret && internalSecret === expectedInternalSecret && requestBody?.user_id) {
+      user = { id: requestBody.user_id };
+      console.log(`[INTERNAL] Syncing Amazon inventory for user: ${user.id}`);
+    } else {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        throw new Error('No authorization header');
+      }
+
+      const { data: { user: fetchedUser }, error: authError } = await supabase.auth.getUser(
+        authHeader.replace('Bearer ', '')
+      );
+
+      if (authError || !fetchedUser) {
+        throw new Error('Unauthorized');
+      }
+      user = fetchedUser;
     }
 
     console.log(`Syncing Amazon inventory for user: ${user.id} (fetchCreationDates: ${fetchCreationDates})`);

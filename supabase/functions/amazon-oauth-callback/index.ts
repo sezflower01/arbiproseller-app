@@ -206,16 +206,26 @@ serve(async (req: Request) => {
         console.log("🚀 Starting all background syncs for user:", userId);
 
         // Internal-call headers: service-role bearer + explicit user_id in
-        // each body. Used for the repricer setup steps below instead of the
-        // legacy session-minting approach further down (supabase.auth.admin.
-        // createSession is not a real supabase-js method — it throws, which
-        // was silently aborting this entire function before any sync ran).
-        // Not fixing that pre-existing bug here (separate, larger issue
-        // affecting the FNSKU/shipments/inventory/sales syncs below); these
-        // two new steps just don't depend on it.
+        // each body. Used for every sync below instead of the old session-
+        // minting approach (supabase.auth.admin.createSession is not a real
+        // supabase-js method — it throws immediately, which was silently
+        // aborting this entire function before ANY sync ran). Each
+        // downstream function accepts a slightly different internal-call
+        // shape; internalHeaders (service-role bearer) covers auto-assign-
+        // bulk, repricer-detect-primary-marketplace, and sync-sales-orders.
+        // sync-fba-shipments and sync-amazon-inventory ALSO require a valid
+        // Authorization bearer (verify_jwt=true at the platform gateway
+        // level, checked before the function's own x-internal-secret logic
+        // even runs) — the service-role key is itself a valid signed JWT, so
+        // it satisfies both layers at once.
         const internalHeaders = {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        };
+        const internalSecretHeaders = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "x-internal-secret": Deno.env.get("INTERNAL_SYNC_SECRET") || "",
         };
 
         // ============================================================
@@ -263,60 +273,41 @@ serve(async (req: Request) => {
           console.error("🌍 detect-primary-marketplace error:", err);
         }
 
-        // Get a fresh session token for the user to call the sync functions
-        const { data: userData } = await supabase.auth.admin.getUserById(userId);
-
-        if (!userData?.user) {
-          console.error("Could not find user for background syncs");
-          return;
-        }
-
-        // Generate an access token for the user
-        const { data: sessionData, error: sessionError } = await (supabase.auth.admin as any).createSession({
-          user_id: userId,
-        });
-
-        if (sessionError) {
-          console.error("Failed to create session for syncs:", sessionError);
-          return;
-        }
-
-        if (!sessionData?.access_token) {
-          console.error("No access token generated for syncs");
-          return;
-        }
-
-        const authHeaders = {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${sessionData.access_token}`,
-        };
-
         // Helper to format date as YYYY-MM-DD
         const formatDate = (d: Date) => d.toISOString().split('T')[0];
-        
+
         // Calculate 2-year date range
         const endDate = new Date();
         const startDate = new Date();
         startDate.setFullYear(startDate.getFullYear() - 2);
-        
+
         // ============================================================
         // 1. Sync FNSKU/Inventory Report (matches AmazonConnect.tsx Step 1)
+        // sync-fnsku-report's automated-call branch needs the raw
+        // credentials in the body (no header check) — pass the exact
+        // values just written to seller_authorizations above.
         // ============================================================
         try {
           console.log("📊 [1/5] Starting FNSKU/inventory report sync...");
           const fnskuResponse = await fetch(`${supabaseUrl}/functions/v1/sync-fnsku-report`, {
             method: "POST",
-            headers: authHeaders,
+            headers: internalHeaders,
+            body: JSON.stringify({
+              user_id: userId,
+              seller_id: sellingPartnerId || "unknown",
+              marketplace_id: marketplaceId,
+              refresh_token,
+            }),
           });
           const fnskuResult = await fnskuResponse.json();
           console.log("📊 [1/5] FNSKU sync result:", fnskuResult);
         } catch (err) {
           console.error("📊 [1/5] FNSKU sync error:", err);
         }
-        
+
         // Delay between syncs to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         // ============================================================
         // 2. Sync FBA Shipments (recent, status-based)
         // ============================================================
@@ -324,43 +315,45 @@ serve(async (req: Request) => {
           console.log("📦 [2/6] Starting FBA shipments sync...");
           const shipmentsResponse = await fetch(`${supabaseUrl}/functions/v1/sync-fba-shipments`, {
             method: "POST",
-            headers: authHeaders,
+            headers: internalSecretHeaders,
+            body: JSON.stringify({ user_id: userId }),
           });
           const shipmentsResult = await shipmentsResponse.json();
           console.log("📦 [2/6] Shipments sync result:", shipmentsResult);
         } catch (err) {
           console.error("📦 [2/6] Shipments sync error:", err);
         }
-        
+
         // Delay between syncs
         await new Promise(resolve => setTimeout(resolve, 3000));
-        
+
         // ============================================================
         // 2.5. Sync 2-Year FBA Shipment History (DATE_RANGE, chunked monthly)
         // This catches CLOSED shipments that status-based sync misses
         // ============================================================
         try {
           console.log("📦 [2.5/6] Starting 2-year FBA shipment history (DATE_RANGE)...");
-          
+
           // Process in 2-month chunks to avoid rate limits
           const chunkMonths = 2;
           const totalMonths = 24; // 2 years
           let syncedChunks = 0;
-          
+
           for (let i = 0; i < totalMonths; i += chunkMonths) {
             const chunkEnd = new Date();
             chunkEnd.setMonth(chunkEnd.getMonth() - i);
-            
+
             const chunkStart = new Date();
             chunkStart.setMonth(chunkStart.getMonth() - i - chunkMonths);
-            
+
             console.log(`📦 [2.5/6] Syncing chunk ${i / chunkMonths + 1}/${totalMonths / chunkMonths}: ${formatDate(chunkStart)} to ${formatDate(chunkEnd)}`);
-            
+
             try {
               const chunkResponse = await fetch(`${supabaseUrl}/functions/v1/sync-fba-shipments`, {
                 method: "POST",
-                headers: authHeaders,
+                headers: internalSecretHeaders,
                 body: JSON.stringify({
+                  user_id: userId,
                   dateRangeStart: formatDate(chunkStart),
                   dateRangeEnd: formatDate(chunkEnd),
                 }),
@@ -371,21 +364,21 @@ serve(async (req: Request) => {
             } catch (chunkErr) {
               console.error(`📦 [2.5/6] Chunk error:`, chunkErr);
             }
-            
+
             // Wait 5 seconds between chunks to avoid rate limiting
             if (i + chunkMonths < totalMonths) {
               await new Promise(resolve => setTimeout(resolve, 5000));
             }
           }
-          
+
           console.log(`📦 [2.5/6] Completed ${syncedChunks} chunks of 2-year shipment history`);
         } catch (err) {
           console.error("📦 [2.5/6] 2-year shipment history error:", err);
         }
-        
+
         // Delay between syncs
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         // ============================================================
         // 3. Sync Amazon Inventory
         // ============================================================
@@ -393,14 +386,15 @@ serve(async (req: Request) => {
           console.log("📋 [3/6] Starting Amazon inventory sync...");
           const inventoryResponse = await fetch(`${supabaseUrl}/functions/v1/sync-amazon-inventory`, {
             method: "POST",
-            headers: authHeaders,
+            headers: internalSecretHeaders,
+            body: JSON.stringify({ user_id: userId }),
           });
           const inventoryResult = await inventoryResponse.json();
           console.log("📋 [3/6] Inventory sync result:", inventoryResult);
         } catch (err) {
           console.error("📋 [3/6] Inventory sync error:", err);
         }
-        
+
         // Delay between syncs
         await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -411,8 +405,9 @@ serve(async (req: Request) => {
           console.log("💰 [4/6] Starting 2-year sales history sync...");
           const salesResponse = await fetch(`${supabaseUrl}/functions/v1/sync-sales-orders`, {
             method: "POST",
-            headers: authHeaders,
+            headers: internalHeaders,
             body: JSON.stringify({
+              user_id: userId,
               sync_history: true,
               start_date: formatDate(startDate),
               end_date: formatDate(endDate),
@@ -423,10 +418,10 @@ serve(async (req: Request) => {
         } catch (err) {
           console.error("💰 [4/6] Sales sync error:", err);
         }
-        
+
         // Delay between syncs
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         // ============================================================
         // 5. Sync 2 Years Refund History (matches AmazonConnect.tsx Step 4)
         // ============================================================
@@ -434,8 +429,9 @@ serve(async (req: Request) => {
           console.log("💸 [5/6] Starting 2-year refund history sync...");
           const refundsResponse = await fetch(`${supabaseUrl}/functions/v1/sync-sales-orders`, {
             method: "POST",
-            headers: authHeaders,
+            headers: internalHeaders,
             body: JSON.stringify({
+              user_id: userId,
               sync_all_refunds_historical: true,
             }),
           });
