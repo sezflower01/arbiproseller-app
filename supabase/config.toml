@@ -272,9 +272,6 @@ verify_jwt = false
 [functions.repricer-batch-update]
 verify_jwt = false
 
-[functions.repricer-priority-cron]
-verify_jwt = false
-
 [functions.repricer-auto-turbo]
 verify_jwt = false
 

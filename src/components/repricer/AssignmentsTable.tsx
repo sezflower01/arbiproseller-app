@@ -6440,9 +6440,12 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     }
   };
 
-  // Priority star toggle — scales with plan tier (see subscription_plans.priority_star_cap);
-  // kept roughly in step with the priority cron's sp_api_calls_per_minute_cap so every
-  // starred ASIN still gets a full pass about once a minute at any plan size.
+  // Priority star toggle — scales with plan tier (see subscription_plans.priority_star_cap).
+  // Cadence is governed by repricer-unified-dispatch's per-ASIN hourly eval cap, not a
+  // separate cron: starred items are bucketed as HOT (6-8 evals/hr vs 3/hr) and score +100,
+  // so they're checked ~2x more often and land at the front of the HOT queue — there's no
+  // "every ~1 minute" guarantee (repricer-priority-cron, which promised that, was dead code
+  // with no live pg_cron schedule and has been removed).
   const MAX_PRIORITY = effectivePlan?.priority_star_cap ?? 5;
   const [priorityCount, setPriorityCount] = useState(0);
 
@@ -6757,7 +6760,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                     {stockFilter === "MANUAL_STAR" ? "Showing only starred ASINs" : "Filter to your starred ASINs"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Starring (⭐) an ASIN manually pins it to the Priority Queue — up to {MAX_PRIORITY} at a time. Starred ASINs get re-checked and repriced every ~1 minute instead of waiting for their normal turn, and stay protected from the repricer's automatic rotation.
+                    Starring (⭐) an ASIN manually pins it to the Priority Queue — up to {MAX_PRIORITY} at a time. Starred ASINs are checked more often than the normal rotation and go to the front of the queue, and stay protected from the repricer's automatic rotation.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -7057,7 +7060,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
             <span className="font-medium">Priority Queue:</span>
             <span className="text-muted-foreground">
-              Starred: {priorityCount}/{MAX_PRIORITY} · Evaluated every ~1 min
+              Starred: {priorityCount}/{MAX_PRIORITY} · Checked more often, ahead of the queue
             </span>
           </div>
         )}
@@ -7539,7 +7542,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                               </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Priority Queue — starred ASINs are evaluated every minute (max {MAX_PRIORITY})</p>
+                              <p>Priority Queue — starred ASINs are checked more often and ahead of the queue (max {MAX_PRIORITY})</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
