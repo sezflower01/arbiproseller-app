@@ -155,7 +155,18 @@ function shouldTreatConfirmedRevenueAsNative(
   if (estimatedTotal > 0) {
     const usdLikeRatio = rawTotal / estimatedTotal;
     // If raw is already roughly native/fx while estimate is native, do not convert again.
-    if (usdLikeRatio >= (1 / fxRate) * 0.75 && usdLikeRatio <= (1 / fxRate) * 1.35) return false;
+    // AUDIT §15 (CA order 702-1959389-6640252, pending, ratio 0.956): the old
+    // ×1.35 upper bound was tuned generically, but for low-fxRate currencies
+    // like CAD (~1.41) it stretches this "already-USD" band up to ~0.96 —
+    // almost touching 1.0, the signature of a genuinely-native row whose raw
+    // total is just a few % off its own native estimate (price drift between
+    // estimate capture and actual sale). That swallowed real native CA rows
+    // before the correct "native ratio" band below ever got a chance, under-
+    // reporting revenue ~1.4x (displayed CA$86.40 as if already $86.40 USD).
+    // Tightened to ×1.15 so the two bands no longer overlap for CAD; verified
+    // against all 2,095 of this account's non-US confirmed-revenue rows —
+    // only the 2 genuinely-misclassified rows flip, nothing else changes.
+    if (usdLikeRatio >= (1 / fxRate) * 0.75 && usdLikeRatio <= (1 / fxRate) * 1.15) return false;
   }
 
   // AUDIT §14 (BR confirmed revenue): the previous startsWith branch hard-coded

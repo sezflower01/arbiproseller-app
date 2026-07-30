@@ -76,7 +76,9 @@ function shouldTreatConfirmedRevenueAsNative(
   const estimatedTotal = Number(row.estimated_price || 0) * qty;
   if (estimatedTotal > 0) {
     const usdLikeRatio = rawTotal / estimatedTotal;
-    if (usdLikeRatio >= (1 / fxRate) * 0.75 && usdLikeRatio <= (1 / fxRate) * 1.35) return false;
+    // See AUDIT §15 in src/lib/sales/currencyConversion.ts (this is a straight
+    // port) — ×1.35 overlapped with genuinely-native CAD rows near ratio≈1.0.
+    if (usdLikeRatio >= (1 / fxRate) * 0.75 && usdLikeRatio <= (1 / fxRate) * 1.15) return false;
   }
 
   if (estimatedTotal > 0) {
