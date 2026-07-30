@@ -7278,7 +7278,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           SKU<SortIcon column="sku" />
                         </button>
                       </TableHead>
-                      <TableHead className="text-center min-w-[40px] px-1">BB</TableHead>
                       <TableHead className="text-center min-w-[35px] px-1">
                         <button className="flex items-center justify-center hover:text-foreground" onClick={() => toggleSort("available")}>
                           Qty<SortIcon column="available" />
@@ -7832,31 +7831,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             </div>
                           </TableCell>
 
-                          {/* BB Owner */}
-                          <TableCell className="text-center">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  {item.buybox_seller_id ? (
-                                    <div className="flex flex-col items-center">
-                                      {item.buybox_is_fba ? (
-                                        <Badge variant="outline" className="text-xs bg-green-100 text-green-700">FBA</Badge>
-                                      ) : (
-                                        <Badge variant="outline" className="text-xs bg-muted">FBM</Badge>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-muted-foreground">—</span>
-                                  )}
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {item.buybox_seller_id || "No Buy Box data"}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableCell>
-
-
                           {/* Qty */}
                           <TableCell className="text-center">
                             <TooltipProvider>
@@ -8264,6 +8238,27 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             {item.buybox_price != null ? (
                               <div className="font-medium text-primary">{formatPrice(Number(item.buybox_price), marketplace)}</div>
                             ) : "—"}
+                            {/* BB Owner fulfillment (FBA/FBM/—) — merged in from its own column */}
+                            <div className="flex items-center justify-end mt-0.5">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    {item.buybox_seller_id ? (
+                                      item.buybox_is_fba ? (
+                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700">FBA</Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-muted">FBM</Badge>
+                                      )
+                                    ) : (
+                                      <span className="text-muted-foreground text-[10px]">—</span>
+                                    )}
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {item.buybox_seller_id || "No Buy Box data"}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
                             {/* ROI at Buy Box price — computed instantly from cached fees, same as Min/Max/Low, no API call */}
                             {(() => {
                               const bbRoiHere = item.buybox_price != null ? calculateRoiFromPrice(item, Number(item.buybox_price)) : null;
