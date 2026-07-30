@@ -130,14 +130,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     );
 
-    // THEN check for existing session. We want to AVOID releasing
-    // loading=false prematurely while a valid token is sitting in localStorage
-    // — otherwise ProtectedRoute will flash the login screen / redirect a
-    // signed-in user. Strategy:
-    //   - if NO sb-*-auth-token in localStorage → user is truly signed out;
-    //     release loading quickly (1.5s) so /login renders.
-    //   - if a token IS present → it's just hydration latency; keep the
-    //     spinner up to 12s while getSession() resolves.
+    // THEN check for existing session. Previously a 12s timeout would force
+    // loading=false (with user still null) if getSession() hadn't resolved
+    // yet, even when a valid token was sitting in localStorage — ProtectedRoute
+    // treats loading=false + user=null as "confirmed signed out" and hard-
+    // redirects to /login. If getSession() was just a bit slower than 12s that
+    // time (network blip, cold connection) but still eventually succeeded, the
+    // user got bounced to /login and had to navigate back in once the real
+    // session arrived — a false "signed out, then comes back" a few seconds
+    // later. Fixed by never flipping loading=false on a mere timeout when a
+    // token is present — only a genuine getSession() resolution/rejection or
+    // an auth state event may resolve it, so ProtectedRoute never sees
+    // loading=false+user=null unless that's actually confirmed. The timeout
+    // below is now just a diagnostic log, plus (for the no-token case, where
+    // there's nothing to hydrate and no race) the original fast release.
     let initialResolved = false;
     const hasStoredToken = (() => {
       try {
@@ -150,10 +156,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     })();
 
     const initialSessionTimeout = setTimeout(() => {
-      if (!initialResolved) {
-        console.warn('Initial getSession() slow — releasing loading without clearing session.');
+      if (initialResolved) return;
+      if (!hasStoredToken) {
+        // No token to hydrate — this is a real "signed out", not a race.
         setLoading(false);
+        return;
       }
+      // A token exists but getSession() is still pending — this is only
+      // hydration latency, not a confirmed answer. Keep loading=true (and
+      // thus the SessionCheckingScreen, which already tells the user to
+      // refresh if this persists) instead of guessing "signed out".
+      console.warn('Initial getSession() slow (>12s) — still waiting, not clearing session.');
     }, hasStoredToken ? 12000 : 1500);
 
     supabase.auth.getSession().then(({ data: { session } }) => {
