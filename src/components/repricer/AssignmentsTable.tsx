@@ -7461,7 +7461,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 if (targetRoi == null || targetRoi <= 0) return null;
                                 if (!item.rule_id) return null;
                                 const isRaising = raisingToRoi.has(item.id);
-                                const currentRoi = typeof item.actual_roi === 'number' ? item.actual_roi : null;
+                                const currentRoi = currentPrice != null ? calculateRoiFromPrice(item, Number(currentPrice)) : null;
                                 const belowTarget = currentRoi != null && currentRoi < targetRoi;
                                 const tooltip = currentRoi == null
                                   ? `Raise Min Price to hit ${targetRoi}% ROI (current ROI unknown)`
@@ -8066,38 +8066,21 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 → {formatPrice(Number(item.last_recommended_price), marketplace)}
                               </div>
                             )}
-                            {/* Actual ROI — moved here from its own column */}
-                            <div className="flex items-center justify-end gap-1 mt-0.5">
-                              <span className={`text-[10px] font-mono ${
-                                item.actual_roi != null
-                                  ? item.actual_roi >= 0
-                                    ? "text-green-600 dark:text-green-400"
-                                    : "text-red-600 dark:text-red-400"
-                                  : "text-muted-foreground"
-                              }`}>
-                                {item.actual_roi != null
-                                  ? `${item.actual_roi >= 0 ? "+" : ""}${item.actual_roi.toFixed(1)}%`
-                                  : "—"}
-                              </span>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-4 w-4 text-muted-foreground hover:text-primary"
-                                      onClick={() => calculateActualRoi(item)}
-                                      disabled={fetchingRoi.has(item.id)}
-                                    >
-                                      <RefreshCw className={`h-2.5 w-2.5 ${fetchingRoi.has(item.id) ? "animate-spin" : ""}`} />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Calculate actual ROI</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </div>
+                            {/* ROI at current price — computed instantly from cached fees, same as Min/Max/Low, no API call */}
+                            {(() => {
+                              const roiHere = currentPrice != null ? calculateRoiFromPrice(item, Number(currentPrice)) : null;
+                              return (
+                                <div className={`text-[10px] font-mono text-right ${
+                                  roiHere != null
+                                    ? roiHere >= 0
+                                      ? "text-green-600 dark:text-green-400"
+                                      : "text-red-600 dark:text-red-400"
+                                    : "text-muted-foreground"
+                                }`}>
+                                  {roiHere != null ? `${roiHere >= 0 ? "+" : ""}${roiHere.toFixed(1)}%` : "—"}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
 
                           {/* Set Price - manual price input */}
@@ -8281,37 +8264,21 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             {item.buybox_price != null ? (
                               <div className="font-medium text-primary">{formatPrice(Number(item.buybox_price), marketplace)}</div>
                             ) : "—"}
-                            <div className="flex items-center justify-end gap-1 mt-0.5">
-                              <span className={`text-[10px] font-mono ${
-                                item.buybox_roi != null
-                                  ? item.buybox_roi >= 0
-                                    ? "text-green-600 dark:text-green-400"
-                                    : "text-red-600 dark:text-red-400"
-                                  : "text-muted-foreground"
-                              }`}>
-                                {item.buybox_roi != null
-                                  ? `${item.buybox_roi >= 0 ? "+" : ""}${item.buybox_roi.toFixed(1)}%`
-                                  : "—"}
-                              </span>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-4 w-4 text-muted-foreground hover:text-primary"
-                                      onClick={() => calculateBuyBoxRoi(item)}
-                                      disabled={fetchingBbRoi.has(item.id)}
-                                    >
-                                      <RefreshCw className={`h-2.5 w-2.5 ${fetchingBbRoi.has(item.id) ? "animate-spin" : ""}`} />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Calculate ROI at Buy Box price</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </div>
+                            {/* ROI at Buy Box price — computed instantly from cached fees, same as Min/Max/Low, no API call */}
+                            {(() => {
+                              const bbRoiHere = item.buybox_price != null ? calculateRoiFromPrice(item, Number(item.buybox_price)) : null;
+                              return (
+                                <div className={`text-[10px] font-mono ${
+                                  bbRoiHere != null
+                                    ? bbRoiHere >= 0
+                                      ? "text-green-600 dark:text-green-400"
+                                      : "text-red-600 dark:text-red-400"
+                                    : "text-muted-foreground"
+                                }`}>
+                                  {bbRoiHere != null ? `${bbRoiHere >= 0 ? "+" : ""}${bbRoiHere.toFixed(1)}%` : "—"}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
 
                           {/* Offers */}
