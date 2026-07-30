@@ -816,28 +816,28 @@ Deno.serve(async (req) => {
 
         if (evalMode === 'auto') {
           const noChangeStreak = assignment.no_change_streak || 0;
-          const priceGapPct = (competitorCents && myCurrentPriceCents && myCurrentPriceCents > 0)
-            ? Math.abs(myCurrentPriceCents - competitorCents) / myCurrentPriceCents * 100
-            : 0;
 
           // ≤1000 ASINs: keep all Smart — catalog is small enough for full AI coverage
-          // >1000 ASINs: allow auto-switching to Basic for stuck/non-competitive listings
+          // >1000 ASINs: allow auto-switching to Basic for listings that are already
+          // comfortably won and stable — NOT for stuck/losing listings. A listing that's
+          // stuck and losing needs Smart's guards and reasoning most; a listing that's
+          // been holding the Buy Box unchanged for many cycles has nothing left for
+          // Smart to optimize, so "match/hold BB" already captures the achievable value.
           const hybridThreshold = 1000;
+          const stableCyclesThreshold = 5;
 
-          // Switch to BASIC when: >1000 ASINs AND not BB owner AND stuck (no_change ≥ 3) AND price gap > 3%
-          if (userTotalActive > hybridThreshold && !isBuyboxWinner && noChangeStreak >= 3 && priceGapPct >= 3 && activeEvalMode === 'smart') {
+          // Switch to BASIC when: >1000 ASINs AND currently BB owner AND stable (no_change ≥ 5)
+          if (userTotalActive > hybridThreshold && isBuyboxWinner && noChangeStreak >= stableCyclesThreshold && activeEvalMode === 'smart') {
             activeEvalMode = 'basic';
             evalModeSwitched = true;
-            evalModeSwitchReason = `Auto→Basic: no_change_streak=${noChangeStreak}, gap=${priceGapPct.toFixed(1)}%, not BB owner`;
+            evalModeSwitchReason = `Auto→Basic: BB owner stable for ${noChangeStreak} cycles — nothing left to optimize`;
             console.log(`[eval-mode-switch] ${asin}/${marketplace}: ${evalModeSwitchReason}`);
           }
-          // Switch back to SMART when: BB owner OR gap < 1%
-          else if (activeEvalMode === 'basic' && (isBuyboxWinner || priceGapPct < 1)) {
+          // Switch back to SMART when: no longer BB owner — needs Smart's help to fight back
+          else if (activeEvalMode === 'basic' && !isBuyboxWinner) {
             activeEvalMode = 'smart';
             evalModeSwitched = true;
-            evalModeSwitchReason = isBuyboxWinner
-              ? 'Basic→Smart: Buy Box regained'
-              : `Basic→Smart: gap normalized (${priceGapPct.toFixed(1)}%)`;
+            evalModeSwitchReason = 'Basic→Smart: Buy Box lost — needs Smart evaluation to recover';
             console.log(`[eval-mode-switch] ${asin}/${marketplace}: ${evalModeSwitchReason}`);
           }
 
