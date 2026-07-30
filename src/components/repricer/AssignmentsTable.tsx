@@ -6733,10 +6733,10 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           {/* Suggestion Decisions hidden — Auto Floor permanently disabled */}
           {/* Force Re-evaluate All hidden — automated dispatch (unified-dispatch/priority-cron) confirmed healthy, manual full-catalog re-evaluation no longer needed */}
           {/* Run Now hidden — same automated dispatch already covers this; unbounded manual trigger was a pre-automation safety net */}
-          {selectedIds.size > 0 && (
-            <Button 
-              variant="outline" 
-              size="sm" 
+          {false && selectedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={runSelectedScheduler}
               disabled={runningSelected}
             >
@@ -6744,10 +6744,10 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               Run Selected ({selectedIds.size})
             </Button>
           )}
-          {selectedIds.size > 0 && marketplace === "US" && (
-            <Button 
-              variant="outline" 
-              size="sm" 
+          {false && selectedIds.size > 0 && marketplace === "US" && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={syncSelectedInternational}
               disabled={syncingIntl}
               title="Sync selected ASINs to CA, MX, BR marketplaces"
