@@ -6449,17 +6449,29 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   const MAX_PRIORITY = effectivePlan?.priority_star_cap ?? 5;
   const [priorityCount, setPriorityCount] = useState(0);
 
-  // Fetch true priority count from DB (not just visible rows)
+  // Fetch true priority count from DB (not just visible rows).
+  // is_enabled=true alone isn't enough -- a starred assignment can stay
+  // is_enabled=true even after its listing goes to zero stock / inactive on
+  // Amazon, silently occupying a star slot forever. Cross-check real stock
+  // the same way repricer-auto-turbo does for its own rotation pool.
   useEffect(() => {
     const fetchPriorityCount = async () => {
       if (!user?.id) return;
-      const { count } = await supabase
+      const { data: rows } = await supabase
         .from('repricer_assignments')
-        .select('id', { count: 'exact', head: true })
+        .select('sku')
         .eq('user_id', user.id)
         .eq('is_priority', true)
         .eq('is_enabled', true);
-      setPriorityCount(count || 0);
+      const skus = [...new Set((rows || []).map(r => r.sku).filter(Boolean))];
+      if (skus.length === 0) { setPriorityCount(0); return; }
+      const { data: stockItems } = await supabase
+        .from('inventory')
+        .select('sku, available')
+        .eq('user_id', user.id)
+        .in('sku', skus);
+      const inStock = new Set((stockItems || []).filter(i => (i.available ?? 0) > 0).map(i => i.sku));
+      setPriorityCount((rows || []).filter(r => r.sku && inStock.has(r.sku)).length);
     };
     fetchPriorityCount();
   }, [user?.id, items]);

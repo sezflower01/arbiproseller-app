@@ -107,19 +107,33 @@ Deno.serve(async (req) => {
       let rotationCursor: number = userSettings.auto_turbo_rotation_cursor || 0;
 
       // ========== STEP 0: Count manual stars (protected from auto-rotation) ==========
-      // is_enabled=true excludes orphaned stars on disabled/dead assignments --
-      // confirmed live: 3 stars from weeks ago on now-INACTIVE/zero-stock
-      // listings were silently consuming slots with no way for the user to
-      // see or clear them (invisible in the normal Assignments view).
-      const { count: manualStarCount } = await sb
+      // is_enabled=true alone isn't enough -- confirmed live: B007P1ZO94's
+      // US assignment has is_enabled=true but its SKU's inventory is
+      // available=0 (listing_status INACTIVE), i.e. the real Amazon listing
+      // is dead, yet nothing clears is_enabled when a listing goes inactive.
+      // Mirror the same zero-stock check already used below for the
+      // rotation pool so dead listings can't consume a star slot forever.
+      const { data: manualStarRows } = await sb
         .from("repricer_assignments")
-        .select("id", { count: "exact", head: true })
+        .select("id, sku")
         .eq("user_id", userId)
         .eq("is_manual_priority", true)
         .eq("is_priority", true)
         .eq("is_enabled", true);
-      
-      const manualStars = manualStarCount || 0;
+
+      let manualStars = 0;
+      if (manualStarRows && manualStarRows.length > 0) {
+        const manualSkus = [...new Set(manualStarRows.map((r: any) => r.sku).filter(Boolean))];
+        const { data: manualStockItems } = await sb
+          .from("inventory")
+          .select("sku, available")
+          .eq("user_id", userId)
+          .in("sku", manualSkus);
+        const manualInStock = new Set(
+          (manualStockItems || []).filter((i: any) => (i.available ?? 0) > 0).map((i: any) => i.sku)
+        );
+        manualStars = manualStarRows.filter((r: any) => r.sku && manualInStock.has(r.sku)).length;
+      }
       const MAX_TOTAL = resolveStarCap(userId);
       const autoSlots = Math.max(0, MAX_TOTAL - manualStars);
       
