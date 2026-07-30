@@ -166,18 +166,22 @@ export function detectSuggestion(
   // old substring check. Key off bb == null directly instead -- that's the
   // actual ground truth (matches the "-" shown in the BB column), not a
   // guess about specific wording.
+  // Show every BB-null listing, not just the subset where price is also
+  // above the lowest competitor -- per request, this should surface ALL
+  // suppressed listings, including ones already competitively priced
+  // (nothing to fix, but still worth seeing as "suppressed").
   const isBbSuppressed = bb == null;
-  if (
-    isBbSuppressed &&
-    lowestCompetitor != null &&
-    currentPrice > lowestCompetitor &&
-    !isClampedByFloor
-  ) {
+  if (isBbSuppressed) {
+    const detail = lowestCompetitor != null
+      ? (currentPrice > lowestCompetitor
+        ? `No active Buy Box. System is targeting lowest competitor at ${formatPrice(lowestCompetitor, item.marketplace)}.`
+        : `No active Buy Box. Already at or below lowest competitor (${formatPrice(lowestCompetitor, item.marketplace)}) — holding current price.`)
+      : `No active Buy Box, and no competitor price data available.`;
     return {
       type: "bb_suppressed",
       severity: "blue",
       message: "Buy Box suppressed — competing on lowest price",
-      detail: `No active Buy Box. System is targeting lowest competitor at ${formatPrice(lowestCompetitor, item.marketplace)}.`,
+      detail,
       actions: [],
     };
   }
