@@ -288,6 +288,105 @@ Deno.serve(async (req) => {
         } catch (ordersErr: any) {
           console.warn(`[sync-historical-settled] ⚠️ sales_orders backfill error (non-blocking): ${ordersErr?.message}`);
         }
+
+        // STEP 3: Reconcile fees/revenue/ROI directly from the FEC rows just
+        // verified above — same data already fetched in this operation, no
+        // separate reconciliation pass or extra SP-API call. The Orders-API
+        // backfill in Step 2 only estimates fees (learned-history fallback);
+        // this overwrites those estimates with the authoritative settled
+        // referral/FBA/closing fees and sales amount for orders that have an
+        // exact match in financial_events_cache.
+        try {
+          const { data: fecRowsForMonth, error: fecReconErr } = await supabase
+            .from('financial_events_cache')
+            .select('amazon_order_id, sales, referral_fees, fba_fees, fixed_closing_fees, variable_closing_fees')
+            .eq('user_id', userId)
+            .eq('event_type', 'shipment')
+            .gte('event_date', month.start)
+            .lte('event_date', month.end)
+            .not('amazon_order_id', 'is', null)
+            .neq('amazon_order_id', '');
+
+          if (fecReconErr) {
+            console.warn(`[sync-historical-settled] ⚠️ FEC_RECONCILE fetch error (non-blocking): ${fecReconErr.message}`);
+          } else if (fecRowsForMonth && fecRowsForMonth.length > 0) {
+            const fecByOrder = new Map<string, typeof fecRowsForMonth>();
+            for (const row of fecRowsForMonth) {
+              const key = String(row.amazon_order_id || '').trim();
+              if (!key) continue;
+              const list = fecByOrder.get(key) || [];
+              list.push(row);
+              fecByOrder.set(key, list);
+            }
+
+            let reconciledCount = 0;
+            let reconcileFailed = 0;
+            for (const [orderId, fecRows] of fecByOrder) {
+              const salesUsd = fecRows.reduce((s, r) => s + Math.abs(Number(r.sales) || 0), 0);
+              const referralUsd = fecRows.reduce((s, r) => s + Math.abs(Number(r.referral_fees) || 0), 0);
+              const fbaUsd = fecRows.reduce((s, r) => s + Math.abs(Number(r.fba_fees) || 0), 0);
+              const closingUsd = fecRows.reduce((s, r) => {
+                const variable = Math.abs(Number(r.variable_closing_fees) || 0);
+                const fixed = Math.abs(Number(r.fixed_closing_fees) || 0);
+                return s + (variable > 0 ? variable : fixed);
+              }, 0);
+              const totalFeesUsd = referralUsd + fbaUsd + closingUsd;
+              if (salesUsd <= 0) continue;
+
+              const { data: soRows, error: soFetchErr } = await supabase
+                .from('sales_orders')
+                .select('id, quantity, unit_cost')
+                .eq('user_id', userId)
+                .eq('order_id', orderId)
+                .not('order_id', 'like', '%-REFUND');
+
+              if (soFetchErr || !soRows || soRows.length === 0) continue;
+
+              const totalQty = soRows.reduce((s, r) => s + Math.max(1, Number(r.quantity || 0)), 0) || 1;
+
+              for (const so of soRows) {
+                const qty = Math.max(1, Number(so.quantity || 0));
+                const share = soRows.length === 1 ? 1 : qty / totalQty;
+                const orderSalesUsd = salesUsd * share;
+                const orderTotalFees = totalFeesUsd * share;
+                const orderReferralFee = referralUsd * share;
+                const orderFbaFee = fbaUsd * share;
+                const orderClosingFee = closingUsd * share;
+                const soldPriceUsd = orderSalesUsd / qty;
+                const unitCost = Number(so.unit_cost || 0);
+                const totalCost = unitCost * qty;
+                const roi = totalCost > 0
+                  ? Math.round(((orderSalesUsd - orderTotalFees - totalCost) / totalCost) * 1000) / 10
+                  : null;
+
+                const { error: updateErr } = await supabase
+                  .from('sales_orders')
+                  .update({
+                    sold_price: Number(soldPriceUsd.toFixed(2)),
+                    item_price: Number(soldPriceUsd.toFixed(2)),
+                    total_sale_amount: Number(orderSalesUsd.toFixed(2)),
+                    referral_fee: Number(orderReferralFee.toFixed(2)),
+                    fba_fee: Number(orderFbaFee.toFixed(2)),
+                    closing_fee: Number(orderClosingFee.toFixed(2)),
+                    total_fees: Number(orderTotalFees.toFixed(2)),
+                    roi,
+                    price_source: 'reconciled_fec',
+                    fees_source: 'financial_events',
+                    price_confidence: 'CONFIRMED',
+                    status: 'settled',
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', so.id);
+
+                if (updateErr) reconcileFailed++;
+                else reconciledCount++;
+              }
+            }
+            console.log(`[sync-historical-settled] 🔄 FEC_RECONCILE: ${month.label} — reconciled ${reconciledCount} sales_orders row(s) from ${fecByOrder.size} FEC order(s), ${reconcileFailed} failed`);
+          }
+        } catch (reconcileErr: any) {
+          console.warn(`[sync-historical-settled] ⚠️ FEC_RECONCILE error (non-blocking): ${reconcileErr?.message}`);
+        }
       } catch (err: any) {
         console.error(`[sync-historical-settled] ❌ ${month.label} error:`, (err as Error).message);
         await supabase.from('historical_sync_checkpoints').upsert({

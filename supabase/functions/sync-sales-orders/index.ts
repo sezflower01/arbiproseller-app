@@ -233,6 +233,7 @@ import { HealthSignals } from '../_shared/health-signal.ts';
 import { maybeFirePromoTripwire } from '../_shared/promo-tripwire.ts';
 import { computeBbOwnEstimateFields, makeSellerIdCache } from '../_shared/bbOwnEstimate.ts';
 import { computeNetRefundFromFecRows } from '../_shared/refund-math.ts';
+import { getConfirmedSalesOrderRevenueUsd, getMarketplaceCurrency } from '../_shared/salesCurrencyGuard.ts';
 
 
 type CostSource = 'listing' | 'inventory' | 'inventory_manual';
@@ -2769,10 +2770,10 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       
       const { data: ordersToFix, error: fetchErr } = await supabase
         .from('sales_orders')
-        .select('id, order_id, asin, unit_cost, quantity, sold_price, total_fees')
+        .select('id, order_id, asin, unit_cost, quantity, sold_price, total_fees, marketplace, total_sale_amount, price_source, price_calc_mode, estimated_price')
         .eq('user_id', userId)
         .gte('created_at', thirtyDaysAgo.toISOString());
-      
+
       if (fetchErr || !ordersToFix) {
         console.error('Failed to fetch orders for unit cost fix:', fetchErr);
         return new Response(JSON.stringify({
@@ -2782,8 +2783,11 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      
+
       console.log(`💰 FIX_UNIT_COSTS: Checking ${ordersToFix.length} orders from last 30 days`);
+      const fixUnitCostsFxRates = await fetchFxRates(supabase);
+      const fixUnitCostsToUsd = (amount: number, mp: string | null | undefined) =>
+        convertToUsd(amount, getMarketplaceCurrency(mp), fixUnitCostsFxRates);
       
       // Get all unique ASINs
       const uniqueAsins = [...new Set(ordersToFix.map(o => o.asin).filter(Boolean))];
@@ -2821,16 +2825,18 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           continue;
         }
         
-        // Calculate new ROI
+        // Calculate new ROI — currency-safe: sold_price on non-US orders may be
+        // stored native or USD depending on which writer touched it (see
+        // Sales Currency Contract), so use the same source-aware guard the
+        // frontend uses rather than treating it as USD unconditionally.
         const qty = order.quantity || 1;
         const totalCost = correctUnitCost * qty;
-        const soldPrice = order.sold_price || 0;
         const totalFees = Math.abs(order.total_fees || 0);
-        const totalSale = soldPrice * qty;
+        const totalSale = getConfirmedSalesOrderRevenueUsd(order as any, fixUnitCostsToUsd);
         const netProfit = totalSale - totalFees - totalCost;
         const newRoi = totalCost > 0 ? (netProfit / totalCost) * 100 : 0;
         const roundedRoi = Math.round(newRoi * 10) / 10;
-        
+
         console.log(`💰 UNIT_COST_FIX: ${order.order_id} (${order.asin}) - old: $${order.unit_cost?.toFixed(2) || 'null'} -> new: $${correctUnitCost.toFixed(2)}, ROI: ${roundedRoi}%`);
         
         const { error: updateErr } = await supabase
@@ -2870,9 +2876,9 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       // Fetch ALL sales orders for this user (no date filter)
       const { data: allOrders, error: fetchErr } = await supabase
         .from('sales_orders')
-        .select('id, order_id, asin, unit_cost, quantity, sold_price, total_fees')
+        .select('id, order_id, asin, unit_cost, quantity, sold_price, total_fees, marketplace, total_sale_amount, price_source, price_calc_mode, estimated_price')
         .eq('user_id', userId);
-      
+
       if (fetchErr || !allOrders) {
         console.error('Failed to fetch all orders for unit cost refresh:', fetchErr);
         return new Response(JSON.stringify({
@@ -2882,8 +2888,11 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      
+
       console.log(`💰 REFRESH_ALL_UNIT_COSTS: Found ${allOrders.length} total orders`);
+      const refreshAllFxRates = await fetchFxRates(supabase);
+      const refreshAllToUsd = (amount: number, mp: string | null | undefined) =>
+        convertToUsd(amount, getMarketplaceCurrency(mp), refreshAllFxRates);
       
       // Get all unique ASINs
       const uniqueAsins = [...new Set(allOrders.map(o => o.asin).filter(Boolean))];
@@ -2933,16 +2942,15 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           continue;
         }
         
-        // Calculate new ROI
+        // Calculate new ROI — currency-safe, same source-aware guard as above.
         const qty = order.quantity || 1;
         const totalCost = correctUnitCost * qty;
-        const soldPrice = order.sold_price || 0;
         const totalFees = Math.abs(order.total_fees || 0);
-        const totalSale = soldPrice * qty;
+        const totalSale = getConfirmedSalesOrderRevenueUsd(order as any, refreshAllToUsd);
         const netProfit = totalSale - totalFees - totalCost;
         const newRoi = totalCost > 0 ? (netProfit / totalCost) * 100 : 0;
         const roundedRoi = Math.round(newRoi * 10) / 10;
-        
+
         const { error: updateErr } = await supabase
           .from('sales_orders')
           .update({
@@ -2952,12 +2960,12 @@ async function handleSyncRequest(req: Request): Promise<Response> {
             updated_at: new Date().toISOString(),
           })
           .eq('id', order.id);
-        
+
         if (!updateErr) {
           fixedCount++;
         }
       }
-      
+
       console.log(`💰 REFRESH_ALL_UNIT_COSTS complete: Fixed ${fixedCount} of ${allOrders.length} orders`);
       
       return new Response(JSON.stringify({
@@ -2983,7 +2991,7 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       // Build query - get orders that need fee recalculation
       let query = supabase
         .from('sales_orders')
-        .select('id, order_id, asin, sold_price, total_fees, unit_cost, quantity, referral_fee, fba_fee, closing_fee')
+        .select('id, order_id, asin, sold_price, total_fees, unit_cost, quantity, referral_fee, fba_fee, closing_fee, marketplace, total_sale_amount, price_source, price_calc_mode, estimated_price')
         .eq('user_id', userId)
         .gt('sold_price', 0);
       
@@ -3014,7 +3022,10 @@ async function handleSyncRequest(req: Request): Promise<Response> {
       }
       
       console.log(`💰 RECALCULATE_FEES: Found ${ordersToRecalc.length} orders to process`);
-      
+      const recalcFeesFxRates = await fetchFxRates(supabase);
+      const recalcFeesToUsd = (amount: number, mp: string | null | undefined) =>
+        convertToUsd(amount, getMarketplaceCurrency(mp), recalcFeesFxRates);
+
       let updatedCount = 0;
       let skippedCount = 0;
       
@@ -3047,8 +3058,8 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           continue;
         }
         
-        // Recalculate ROI with new fees
-        const totalSale = order.sold_price * qty;
+        // Recalculate ROI with new fees — currency-safe, same source-aware guard as above.
+        const totalSale = getConfirmedSalesOrderRevenueUsd(order as any, recalcFeesToUsd);
         const unitCost = order.unit_cost || 0;
         const totalCost = unitCost * qty;
         const netProfit = totalSale - newTotalFees - totalCost;
