@@ -6734,7 +6734,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           )}
           </>)}
         </div>
-        {isAdmin && hasActiveFilters && (
+        {false && isAdmin && hasActiveFilters && (
           <div className="flex items-center gap-1">
             <Button
               variant={showHiddenOnly ? "default" : "ghost"}
