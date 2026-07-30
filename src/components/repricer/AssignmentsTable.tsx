@@ -7316,18 +7316,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           </Tooltip>
                         </TooltipProvider>
                       </TableHead>
-                      <TableHead className="text-center min-w-[30px] px-1">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="cursor-help">ROI</span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Calculate ROI at Min/Max prices</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableHead>
                       <TableHead className="text-right min-w-[70px] px-1">
                         <button className="flex items-center justify-end hover:text-foreground ml-auto" onClick={() => toggleSort("price")}>
                           Price<SortIcon column="price" />
@@ -8044,33 +8032,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           />
 
 
-
-                          {/* Calc ROI Range Button */}
-                          <TableCell className="text-center">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-6 w-6"
-                                    onClick={() => calculateRoiRange(item)}
-                                    disabled={fetchingRoiRange.has(item.id)}
-                                    title="Calculate ROI at Min/Max prices"
-                                  >
-                                    {fetchingRoiRange.has(item.id) ? (
-                                      <RefreshCw className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Zap className="h-3 w-3" />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Calculate ROI at Min/Max prices</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableCell>
 
                           {/* Your Price - native currency + Fetch button */}
                           <TableCell className="text-right font-mono">
