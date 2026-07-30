@@ -412,83 +412,19 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
               <span className="font-medium">Priority Queue</span>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={starredItems.length >= 5 ? "destructive" : "secondary"}>
-                Starred: {starredItems.length}/5
+              <Badge variant={starredItems.length >= priorityStarCap ? "destructive" : "secondary"}>
+                Starred: {starredItems.length}/{priorityStarCap}
               </Badge>
-              <span className="text-xs text-muted-foreground">· Evaluated every ~1 min</span>
+              <span className="text-xs text-muted-foreground">· Checked more often, ahead of the queue</span>
             </div>
           </div>
-
-          {starredLoading ? (
-            <p className="text-xs text-muted-foreground">Loading...</p>
-          ) : starredItems.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No ASINs in Turbo mode. Star items from the Assignments tab.</p>
-          ) : (
-            <div className="space-y-2">
-              {starredItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-2 rounded border bg-background text-sm">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500 shrink-0" />
-                    <span className="font-mono font-medium">{item.asin}</span>
-                    <span className="text-xs text-muted-foreground truncate">{item.sku}</span>
-                    {item.marketplace !== "US" && (
-                      <Badge variant="outline" className="text-[10px] h-4">{item.marketplace}</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      title="Copy ASIN"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(item.asin);
-                          toast.success("ASIN copied!");
-                        } catch { toast.error("Failed to copy"); }
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      title="Remove from Turbo"
-                      onClick={async () => {
-                        const { error } = await supabase
-                          .from("repricer_assignments")
-                          .update({ is_priority: false })
-                          .eq("id", item.id);
-                        if (error) { toast.error("Failed"); return; }
-                        setStarredItems(prev => prev.filter(i => i.id !== item.id));
-                        toast.success(`${item.asin} removed from Turbo`);
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-
-              {/* Copy All ASINs */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full text-xs mt-1"
-                onClick={async () => {
-                  const asins = starredItems.map(i => i.asin).join(", ");
-                  try {
-                    await navigator.clipboard.writeText(asins);
-                    toast.success(`${starredItems.length} ASINs copied!`);
-                  } catch { toast.error("Failed to copy"); }
-                }}
-              >
-                <Copy className="h-3 w-3 mr-1" />
-                Copy All ASINs
-              </Button>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {starredLoading
+              ? "Loading..."
+              : starredItems.length === 0
+                ? "No ASINs starred. Star items from the Assignments tab."
+                : "Manage which ASINs are starred from the Assignments tab."}
+          </p>
         </div>
 
         {/* Auto-Turbo Rotation Panel */}
