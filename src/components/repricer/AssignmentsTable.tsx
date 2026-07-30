@@ -6536,11 +6536,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                    {isActive && <Check className="h-3 w-3 shrink-0" />}
                    {!isActive && opt.icon}
                    {opt.label}
-                   <span className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${
-                     isActive ? "bg-background/25 text-current" : "bg-current/15"
-                   }`}>
-                     {count}
-                   </span>
                  </button>
                );
              };
