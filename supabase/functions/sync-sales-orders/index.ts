@@ -6817,6 +6817,8 @@ async function fetchListingPriceFromListingsApi(
 
   try {
     const headers = await signRequest('GET', url, '', accessToken);
+    const rlClient = getRateLimitClient();
+    if (rlClient) await waitForApiToken(rlClient, 'listings_api', { maxWaitMs: 6000 });
     const response = await fetch(url, { headers });
 
     if (response.status === 429) {
