@@ -3172,8 +3172,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     [items]
   );
 
-  const marketplaceManagedRowCount = sortedItems.length;
-
   // Counts per chip — computed over reprice-eligible items, ignoring suggestionFilter
   // so totals stay stable while the user clicks between chips.
   const chipCounts = useMemo(() => {
@@ -6460,7 +6458,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
         <div className="flex items-center gap-3 flex-wrap">
           <CardTitle className="text-lg flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Repricer{isAdmin ? ` (${marketplaceManagedRowCount} Managed ASINs)` : ''}
+            Repricer{isAdmin ? ` (${chipCounts.ALL} Managed ASINs)` : ''}
           </CardTitle>
 
           {visibleMarketplaces.length >= 1 && (
