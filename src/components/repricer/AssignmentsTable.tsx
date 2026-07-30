@@ -103,7 +103,6 @@ import { logSettingChange } from "@/lib/repricerChangeLog";
 
 import SuggestionReviewPanel from "./SuggestionReviewPanel";
 import SmartSuggestionBanner, { detectSuggestion } from "./SmartSuggestionBanner";
-import EvalModeBar from "./EvalModeBar";
 import EvalModeBadge, { type EvalMode, type ActiveEvalMode } from "./EvalModeBadge";
 import ListingVerificationDialog from "./ListingVerificationDialog";
 import LiveSalesPopup from "./LiveSalesPopup";
@@ -6452,7 +6451,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
 
   return (
     <>
-    {isAdmin && <EvalModeBar marketplace={marketplace} />}
     <Card className="bg-[hsl(220,65%,18%)] text-white border-white/10">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-3 flex-wrap">
