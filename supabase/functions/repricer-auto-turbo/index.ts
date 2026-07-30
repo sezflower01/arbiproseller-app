@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const durationMinutes = userSettings.auto_turbo_duration_minutes || 30;
+      const durationMinutes = userSettings.auto_turbo_duration_minutes || 10;
       const turboRuleId = userSettings.auto_turbo_rule_id;
       const currentBatch: any[] = userSettings.auto_turbo_current_batch || [];
       let rotationPool: string[] = userSettings.auto_turbo_rotation_pool || [];

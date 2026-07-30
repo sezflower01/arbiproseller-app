@@ -83,7 +83,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
   const [userRules, setUserRules] = useState<Array<{ id: string; name: string }>>([]);
   const [autoTurboForm, setAutoTurboForm] = useState({
     enabled: false,
-    duration_minutes: 30,
+    duration_minutes: 10,
     rule_id: "" as string,
   });
 
@@ -226,7 +226,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
         // Auto-turbo settings
         setAutoTurboForm({
           enabled: (data as any).auto_turbo_enabled ?? false,
-          duration_minutes: (data as any).auto_turbo_duration_minutes ?? 30,
+          duration_minutes: (data as any).auto_turbo_duration_minutes ?? 10,
           rule_id: (data as any).auto_turbo_rule_id ?? "",
         });
       }
