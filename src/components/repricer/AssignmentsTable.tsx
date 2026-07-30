@@ -1316,7 +1316,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   // NA marketplaces (US, CA, MX, BR) share the same seller account, so if any NA market
   // is authorized, all NA markets are eligible. Same logic for EU.
   const [eligibleMarketplaces, setEligibleMarketplaces] = useState<string[]>(["US"]);
-  const [hasResolvedEligibleMarketplaces, setHasResolvedEligibleMarketplaces] = useState(false);
   useEffect(() => {
     if (!user?.id) return;
     const detect = async () => {
@@ -1339,8 +1338,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
         }
       } catch (e) {
         console.error("Failed to detect eligible marketplaces:", e);
-      } finally {
-        setHasResolvedEligibleMarketplaces(true);
       }
     };
     detect();
@@ -1367,19 +1364,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     },
     [eligibleMarketplaces, isAdmin, homeMarketplace]
   );
-  const billingMarketplaces = useMemo(() => {
-    const naMarkets = ["US", "CA", "MX", "BR"];
-    const hasAnyNaEligible = eligibleMarketplaces.some((mp) => naMarkets.includes(mp));
-    if (hasAnyNaEligible) {
-      return MARKETPLACE_LIST.filter((mp) => naMarkets.includes(mp.id));
-    }
-    return visibleMarketplaces;
-  }, [eligibleMarketplaces, visibleMarketplaces]);
-  const visibleMarketplaceIdsKey = useMemo(
-    () => billingMarketplaces.map((mp) => mp.id).join("|"),
-    [billingMarketplaces]
-  );
-
   // Use caching hook for data persistence
   const fetchFn = useCallback(async () => {
     if (!user?.id) return [];
@@ -1408,95 +1392,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     setSalesMetricsReady(false);
   }, [user?.id, marketplace]);
 
-  // Cross-marketplace assignment counts for the plan bar
-  const [allMarketplaceCounts, setAllMarketplaceCounts] = useState<Record<string, number>>({});
-  const [hasLoadedMarketplaceCounts, setHasLoadedMarketplaceCounts] = useState(false);
-  const [marketplaceCountsError, setMarketplaceCountsError] = useState(false);
-  const lastGoodMarketplaceCountsRef = useRef<Record<string, number>>({});
-  const countsFetchedOnceRef = useRef(false);
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user?.id) {
-      setAllMarketplaceCounts({});
-      setHasLoadedMarketplaceCounts(false);
-      setMarketplaceCountsError(false);
-      setHasResolvedEligibleMarketplaces(false);
-      lastGoodMarketplaceCountsRef.current = {};
-      countsFetchedOnceRef.current = false;
-      return;
-    }
-    if (!hasResolvedEligibleMarketplaces) return;
-    if (countsFetchedOnceRef.current) return;
-
-    let cancelled = false;
-
-    const fetchCounts = async () => {
-      try {
-        setMarketplaceCountsError(false);
-
-        // Step 1: Get the set of reprice-eligible ASINs (available > 0 OR reserved > 0)
-        // This is the source of truth for billing — inbound-only items are excluded
-        const eligibleRows = await fetchAllPaged(() =>
-          supabase
-            .from("inventory")
-            .select("asin")
-            .eq("user_id", user.id)
-            .or("available.gt.0,reserved.gt.0")
-        );
-
-        const eligibleAsins = new Set(
-          (eligibleRows || []).map((r: any) => r.asin).filter(Boolean)
-        );
-        console.log(`[Repricer] Billing: ${eligibleAsins.size} eligible ASINs (stock > 0)`);
-
-        // Step 2: Count assignments per marketplace, filtered to eligible ASINs only
-        const countPromises = billingMarketplaces.map(async (mp) => {
-          const rows = await fetchAllPaged(() =>
-            supabase
-              .from("repricer_assignments")
-              .select("asin")
-              .eq("user_id", user.id)
-              .eq("marketplace", mp.id)
-              .eq("is_enabled", true)
-          );
-          const count = (rows || []).filter(
-            (r: any) => r.asin && eligibleAsins.has(r.asin)
-          ).length;
-          return { mpId: mp.id, count };
-        });
-
-        const results = await Promise.all(countPromises);
-
-        if (cancelled) return;
-
-        const nextCounts: Record<string, number> = {};
-        for (const r of results) {
-          nextCounts[r.mpId] = r.count;
-        }
-        console.log(`[Repricer] Billing counts:`, JSON.stringify(nextCounts));
-
-        lastGoodMarketplaceCountsRef.current = nextCounts;
-        setAllMarketplaceCounts(nextCounts);
-        setHasLoadedMarketplaceCounts(true);
-        countsFetchedOnceRef.current = true;
-      } catch (e) {
-        console.error("[Repricer] Failed to fetch cross-marketplace counts:", e);
-        if (cancelled) return;
-        setMarketplaceCountsError(true);
-        if (Object.keys(lastGoodMarketplaceCountsRef.current).length > 0) {
-          setAllMarketplaceCounts(lastGoodMarketplaceCountsRef.current);
-        }
-        setHasLoadedMarketplaceCounts(true);
-        countsFetchedOnceRef.current = true;
-      }
-    };
-
-    fetchCounts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, user?.id, hasResolvedEligibleMarketplaces, visibleMarketplaceIdsKey]);
 
   // Live Sales Popup
   const [liveSalesOpen, setLiveSalesOpen] = useState(false);
@@ -6567,42 +6462,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             <Package className="h-5 w-5" />
             Repricer{isAdmin ? ` (${marketplaceManagedRowCount} Managed ASINs)` : ''}
           </CardTitle>
-
-          {/* Plan usage bar — admin only */}
-          {isAdmin && hasLoadedMarketplaceCounts && (() => {
-            const totalUsed = Object.values(allMarketplaceCounts).reduce((s, c) => s + c, 0);
-            const pct = planLimit > 0 ? Math.min(100, Math.round((totalUsed / planLimit) * 100)) : 0;
-            const isNearLimit = pct >= 80;
-            const isAtLimit = pct >= 100;
-            return (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/50 text-xs">
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        {totalUsed.toLocaleString()} / {planLimit.toLocaleString()}
-                      </span>
-                      <div className="w-20 h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${isAtLimit ? 'bg-destructive' : isNearLimit ? 'bg-amber-500' : 'bg-primary'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className={`font-medium ${isAtLimit ? 'text-destructive' : isNearLimit ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                        {pct}%
-                      </span>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs space-y-1">
-                    <p className="font-semibold">{effectivePlan?.name || 'Plan'} — {totalUsed.toLocaleString()} of {planLimit.toLocaleString()} active ASINs</p>
-                    {Object.entries(allMarketplaceCounts).filter(([, c]) => c > 0).map(([mp, c]) => (
-                      <p key={mp}>{mp}: {c.toLocaleString()} ASINs</p>
-                    ))}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            );
-          })()}
 
           {visibleMarketplaces.length >= 1 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-1.5 shadow-sm">
