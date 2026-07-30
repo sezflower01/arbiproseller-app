@@ -6506,11 +6506,9 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               const operationalIssues = [
                 { value: "blocked_review_soon", label: "🟡 Review Soon", color: "bg-amber-950/60 text-amber-300 border-amber-500/30", activeColor: "bg-amber-500 text-white shadow-md shadow-amber-500/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
                 { value: "blocked_by_min", label: "All Blocked", color: "bg-red-950/60 text-red-300 border-destructive/30", activeColor: "bg-destructive text-white shadow-md shadow-destructive/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
-                { value: "profit_guard_block", label: "Profit Guard", color: "bg-amber-950/60 text-amber-300 border-amber-500/30", activeColor: "bg-amber-600 text-white shadow-md shadow-amber-600/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
                 { value: "bb_suppressed", label: "BB Suppressed", color: "bg-blue-950/60 text-blue-300 border-blue-500/30", activeColor: "bg-blue-500 text-white shadow-md shadow-blue-500/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
               ] as const;
               const automationStates = [
-                { value: "blocked_auto", label: "Auto-Handling", color: "bg-slate-900/70 text-slate-300 border-slate-600/40", activeColor: "bg-muted-foreground text-white shadow-md", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
                 { value: "NONE", label: "Healthy", color: "bg-emerald-950/60 text-emerald-300 border-emerald-500/30", activeColor: "bg-emerald-500 text-white shadow-md shadow-emerald-500/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
               ] as const;
               const analytics = [
@@ -6524,7 +6522,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
              const renderChip = (opt: { value: string; label: string; color: string; activeColor: string; icon: React.ReactNode }) => {
                const count = (chipCounts as any)[opt.value] ?? 0;
                const isActive = suggestionFilter === opt.value;
-               const isPriority = opt.value === "blocked_review_soon" || opt.value === "profit_guard_block" || opt.value === "bb_suppressed";
+               const isPriority = opt.value === "blocked_review_soon" || opt.value === "bb_suppressed";
                const dim = !isActive && count === 0;
                return (
                  <button
