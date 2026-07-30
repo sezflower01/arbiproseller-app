@@ -6596,31 +6596,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           <div className="w-[230px] h-9 flex items-center px-3 rounded-md border border-input bg-background text-sm text-muted-foreground">
             All Active Repricer Assignments
           </div>
-          {isAdmin && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={stockFilter === "MANUAL_STAR" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setStockFilter(prev => prev === "MANUAL_STAR" ? "ALL" : "MANUAL_STAR")}
-                    className="text-xs h-9 gap-1.5"
-                  >
-                    <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
-                    Priority
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px]">
-                  <p className="font-medium mb-1">
-                    {stockFilter === "MANUAL_STAR" ? "Showing only starred ASINs" : "Filter to your starred ASINs"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Starring (⭐) an ASIN manually pins it to the Priority Queue — up to {MAX_PRIORITY} at a time. Starred ASINs are checked more often than the normal rotation and go to the front of the queue, and stay protected from the repricer's automatic rotation.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
 
           {false && (<>
           {/* Price filter */}
@@ -6639,21 +6614,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           </Select>
           
           </>)}
-
-          {/* Rule filter — kept visible */}
-          <Select value={ruleFilter} onValueChange={setRuleFilter}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="All Rules" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Rules</SelectItem>
-              {rules.map(r => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
 
           {false && (<>
 
@@ -6951,6 +6911,44 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                 : `Expand${hiddenZeroAvailableCount > 0 ? ` (${hiddenZeroAvailableCount})` : ""}`}
             </Button>
           )}
+          {isAdmin && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={stockFilter === "MANUAL_STAR" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setStockFilter(prev => prev === "MANUAL_STAR" ? "ALL" : "MANUAL_STAR")}
+                    className="text-xs h-9 gap-1.5"
+                  >
+                    <Star className={`h-3.5 w-3.5 ${stockFilter === "MANUAL_STAR" ? "fill-current" : "fill-orange-400 text-orange-400"}`} />
+                    Priority
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px]">
+                  <p className="font-medium mb-1">
+                    {stockFilter === "MANUAL_STAR" ? "Showing only starred ASINs" : "Filter to your starred ASINs"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Starring (⭐) an ASIN manually pins it to the Priority Queue — up to {MAX_PRIORITY} at a time. Starred ASINs are checked more often than the normal rotation and go to the front of the queue, and stay protected from the repricer's automatic rotation.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          <Select value={ruleFilter} onValueChange={setRuleFilter}>
+            <SelectTrigger className="w-[160px] h-9">
+              <SelectValue placeholder="All Rules" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Rules</SelectItem>
+              {rules.map(r => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {selectedIds.size > 0 && (
             <div className="flex gap-2 items-center">
               <span className="text-sm text-muted-foreground">
