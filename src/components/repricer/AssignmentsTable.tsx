@@ -6952,7 +6952,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               ))}
             </SelectContent>
           </Select>
-          {false && selectedIds.size > 0 && (
+          {selectedIds.size > 0 && (
             <div className="flex gap-2 items-center">
               <span className="text-sm text-muted-foreground">
                 {selectedIds.size} selected
@@ -6976,7 +6976,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                   "Apply"
                 )}
               </Button>
-              <Button size="sm" variant="outline" onClick={async () => {
+              {false && <Button size="sm" variant="outline" onClick={async () => {
                 const selected = items.filter(i => selectedIds.has(i.id) && i.assignment_id);
                 if (selected.length === 0) { toast.error("No assignments selected"); return; }
                 const ids = selected.map(i => i.assignment_id!);
@@ -6988,8 +6988,8 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               }} className="text-xs gap-1 border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">
                 <Ban className="h-3 w-3" />
                 Mark Restricted (Manual)
-              </Button>
-              <Button size="sm" variant="outline" onClick={async () => {
+              </Button>}
+              {false && <Button size="sm" variant="outline" onClick={async () => {
                 const selected = items.filter(i => selectedIds.has(i.id) && i.assignment_id && i.is_restricted);
                 if (selected.length === 0) { toast.error("No restricted assignments selected"); return; }
                 const ids = selected.map(i => i.assignment_id!);
@@ -7001,9 +7001,9 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               }} className="text-xs gap-1">
                 <Globe className="h-3 w-3" />
                 Unrestrict
-              </Button>
+              </Button>}
               {/* Bulk Eval Mode (admin only) */}
-              {isAdmin && (
+              {false && isAdmin && (
               <>
               <Button size="sm" variant="outline" onClick={async () => {
                 const selected = items.filter(i => selectedIds.has(i.id) && i.assignment_id);
