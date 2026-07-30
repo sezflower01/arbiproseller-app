@@ -6503,7 +6503,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
 
            {/* Alerts Filter — admin only — grouped by intent */}
            {isAdmin && (() => {
-             const allChip = { value: "ALL", label: "All", color: "bg-muted text-muted-foreground border-transparent", activeColor: "bg-primary text-primary-foreground shadow-md", icon: null as React.ReactNode };
               const operationalIssues = [
                 { value: "blocked_review_soon", label: "🟡 Review Soon", color: "bg-amber-950/60 text-amber-300 border-amber-500/30", activeColor: "bg-amber-500 text-white shadow-md shadow-amber-500/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
                 { value: "blocked_by_min", label: "All Blocked", color: "bg-red-950/60 text-red-300 border-destructive/30", activeColor: "bg-destructive text-white shadow-md shadow-destructive/25", icon: <span className="h-2 w-2 rounded-full bg-current" /> },
@@ -6559,8 +6558,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
 
              return (
                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-2 shadow-sm">
-                 {renderChip(allChip)}
-                 <div className="h-6 w-px bg-border/60" />
                  {renderGroup("Issues", operationalIssues)}
                  <div className="h-6 w-px bg-border/60" />
                  {renderGroup("Automation", automationStates)}
