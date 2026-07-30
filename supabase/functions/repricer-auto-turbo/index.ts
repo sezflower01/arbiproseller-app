@@ -64,6 +64,31 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
 
+    // Resolve each user's effective plan-based priority star cap (the same
+    // subscription_plans.priority_star_cap the frontend's MAX_PRIORITY reads)
+    // instead of a flat MAX_TOTAL=5 below -- otherwise higher-tier accounts
+    // hit 0 auto-turbo slots the moment they manually star more than 5 ASINs,
+    // well below their actual star cap. Mirrors src/hooks/use-subscription.ts's
+    // effectivePlanId resolution (admin override wins, else user_subscriptions,
+    // else 'tier_100').
+    const userIds = settings.map((s: any) => s.user_id);
+    const [subsRes, overridesRes, plansRes] = await Promise.all([
+      sb.from("user_subscriptions").select("user_id, plan_id").in("user_id", userIds),
+      sb.from("admin_subscription_override").select("user_id, override_enabled, override_plan_id").in("user_id", userIds),
+      sb.from("subscription_plans").select("id, priority_star_cap"),
+    ]);
+    const planIdByUser = new Map<string, string>((subsRes.data || []).map((s: any) => [s.user_id, s.plan_id]));
+    const overrideByUser = new Map<string, any>((overridesRes.data || []).map((o: any) => [o.user_id, o]));
+    const starCapByPlan = new Map<string, number>((plansRes.data || []).map((p: any) => [p.id, p.priority_star_cap]));
+
+    function resolveStarCap(userId: string): number {
+      const override = overrideByUser.get(userId);
+      const effectivePlanId = (override?.override_enabled && override?.override_plan_id)
+        ? override.override_plan_id
+        : (planIdByUser.get(userId) ?? "tier_100");
+      return starCapByPlan.get(effectivePlanId) ?? 5;
+    }
+
     for (const userSettings of settings) {
       const userId = userSettings.user_id;
 
@@ -90,7 +115,7 @@ Deno.serve(async (req) => {
         .eq("is_priority", true);
       
       const manualStars = manualStarCount || 0;
-      const MAX_TOTAL = 5;
+      const MAX_TOTAL = resolveStarCap(userId);
       const autoSlots = Math.max(0, MAX_TOTAL - manualStars);
       
       console.log(`[auto-turbo] User ${userId}: manual stars=${manualStars}, auto slots=${autoSlots}`);

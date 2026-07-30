@@ -15,6 +15,7 @@ import { Settings, Zap, Clock, Save, RefreshCw, CheckCircle, AlertTriangle, Info
 import { calculateOptimizedSettings } from "@/lib/repricerOptimizer";
 import TurboHistoryPanel from "./TurboHistoryPanel";
 import { getDeviceNickname, setDeviceNickname } from "@/lib/repricerChangeLog";
+import { useSubscription } from "@/hooks/use-subscription";
 
 function DeviceNicknameInput() {
   const [nickname, setNickname] = useState(getDeviceNickname());
@@ -63,6 +64,8 @@ interface RepricerSettingsProps {
 
 export default function RepricerSettings({ onSettingsChange, isAdmin = false }: RepricerSettingsProps) {
   const { user } = useAuth();
+  const { effectivePlan } = useSubscription();
+  const priorityStarCap = effectivePlan?.priority_star_cap ?? 5;
   const [settings, setSettings] = useState<RepricerSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -503,7 +506,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
             />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
-            Automatically rotates BB price alert ASINs (highest drop first) into Turbo mode in batches of 5, 
+            Automatically rotates BB price alert ASINs (highest drop first) into Turbo mode in batches of up to {priorityStarCap},
             overriding their rule for the chosen duration, then reverting and moving to the next batch.
           </p>
 
@@ -530,7 +533,7 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Each batch of 5 ASINs stays in Turbo for this duration before rotating to the next 5.
+                  Each batch stays in Turbo for this duration before rotating to the next batch. Manually-starred ASINs (Assignments tab) share this same {priorityStarCap}-slot budget, so turbo gets whatever's left.
                 </p>
               </div>
 
