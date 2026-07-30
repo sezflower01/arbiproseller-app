@@ -208,6 +208,24 @@ Deno.serve(async (req) => {
     let body: any = {};
     try { body = await req.json(); } catch { body = {}; }
 
+    if (body?.all_users !== true && typeof body?.user_id === "string" && body.user_id) {
+      // Internal single-user path: e.g. amazon-oauth-callback's background
+      // sync, which needs to run detection for a brand-new user without a
+      // real user JWT available server-side. Requires internal auth (never
+      // trust a client-supplied user_id without it).
+      const forbiddenInternal = requireInternalCall(req);
+      if (forbiddenInternal) return forbiddenInternal;
+
+      const { data: fxRows } = await admin.from("fx_rates").select("quote, rate");
+      const fxRates: Record<string, number> = {};
+      for (const row of (fxRows as any[]) || []) fxRates[String(row.quote || "")] = Number(row.rate) || 1;
+
+      const result = await detectForUser(admin, body.user_id, fxRates);
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (body?.all_users !== true) {
       // Self-service path: run detection immediately for the calling user —
       // e.g. right after they connect a new marketplace — instead of waiting

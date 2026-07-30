@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { marketplaceIdToCode } from "../_shared/marketplace-map.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,8 +41,9 @@ serve(async (req: Request) => {
     // from forcing arbitrary token-exchange requests through us and gives us
     // testable rejection paths for unknown / expired / reused nonces.
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+      supabaseUrl,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
@@ -202,35 +204,93 @@ serve(async (req: Request) => {
     const runAllSyncs = async () => {
       try {
         console.log("🚀 Starting all background syncs for user:", userId);
-        
+
+        // Internal-call headers: service-role bearer + explicit user_id in
+        // each body. Used for the repricer setup steps below instead of the
+        // legacy session-minting approach further down (supabase.auth.admin.
+        // createSession is not a real supabase-js method — it throws, which
+        // was silently aborting this entire function before any sync ran).
+        // Not fixing that pre-existing bug here (separate, larger issue
+        // affecting the FNSKU/shipments/inventory/sales syncs below); these
+        // two new steps just don't depend on it.
+        const internalHeaders = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        };
+
+        // ============================================================
+        // Auto-create repricer assignments (matches AmazonConnect.tsx
+        // Step 3). Without this, a user who closes the tab immediately
+        // after Amazon's OAuth redirect (rather than staying on the connect
+        // wizard page) gets no repricer_assignments rows — the repricer
+        // silently never turns on.
+        // ============================================================
+        const marketplaceCode = marketplaceIdToCode(marketplaceId) || "US";
+        try {
+          console.log(`🤖 Starting auto-assign-bulk for marketplace=${marketplaceCode}...`);
+          const assignResponse = await fetch(`${supabaseUrl}/functions/v1/auto-assign-bulk`, {
+            method: "POST",
+            headers: internalHeaders,
+            body: JSON.stringify({ user_id: userId, marketplace: marketplaceCode }),
+          });
+          const assignResult = await assignResponse.json();
+          console.log("🤖 auto-assign-bulk result:", assignResult);
+        } catch (err) {
+          console.error("🤖 auto-assign-bulk error:", err);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // ============================================================
+        // Detect primary marketplace / home currency (matches
+        // AmazonConnect.tsx Step 3b). This is also what creates a brand-new
+        // user's repricer_settings row in the first place — nothing else
+        // does — so scheduler_enabled picks up its column default (true)
+        // here instead of only when the user later opens Settings. Runs
+        // after auto-assign-bulk so the listing-count fallback (used before
+        // any sales exist) has real repricer_assignments rows to detect from.
+        // ============================================================
+        try {
+          console.log("🌍 Starting repricer-detect-primary-marketplace...");
+          const detectResponse = await fetch(`${supabaseUrl}/functions/v1/repricer-detect-primary-marketplace`, {
+            method: "POST",
+            headers: internalHeaders,
+            body: JSON.stringify({ user_id: userId }),
+          });
+          const detectResult = await detectResponse.json();
+          console.log("🌍 detect-primary-marketplace result:", detectResult);
+        } catch (err) {
+          console.error("🌍 detect-primary-marketplace error:", err);
+        }
+
         // Get a fresh session token for the user to call the sync functions
         const { data: userData } = await supabase.auth.admin.getUserById(userId);
-        
+
         if (!userData?.user) {
           console.error("Could not find user for background syncs");
           return;
         }
-        
+
         // Generate an access token for the user
         const { data: sessionData, error: sessionError } = await (supabase.auth.admin as any).createSession({
           user_id: userId,
         });
-        
+
         if (sessionError) {
           console.error("Failed to create session for syncs:", sessionError);
           return;
         }
-        
+
         if (!sessionData?.access_token) {
           console.error("No access token generated for syncs");
           return;
         }
-        
+
         const authHeaders = {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionData.access_token}`,
         };
-        
+
         // Helper to format date as YYYY-MM-DD
         const formatDate = (d: Date) => d.toISOString().split('T')[0];
         
@@ -343,7 +403,7 @@ serve(async (req: Request) => {
         
         // Delay between syncs
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         // ============================================================
         // 4. Sync 2 Years Sales History (matches AmazonConnect.tsx Step 3)
         // ============================================================
