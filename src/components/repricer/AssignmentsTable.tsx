@@ -6713,6 +6713,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
           </Select>
           </>)}
 
+          {false && (
           <div className="flex items-center gap-1">
             <Input
               type="number"
@@ -6730,6 +6731,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               className="w-[90px] h-8 text-xs"
             />
           </div>
+          )}
           </>)}
         </div>
         {isAdmin && hasActiveFilters && (
