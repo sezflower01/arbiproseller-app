@@ -83,10 +83,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
     duration_minutes: 30,
     rule_id: "" as string,
   });
-  const [autoTurboBatch, setAutoTurboBatch] = useState<any[]>([]);
-  const [autoTurboLastRotation, setAutoTurboLastRotation] = useState<string | null>(null);
-  const [autoTurboPool, setAutoTurboPool] = useState<string[]>([]);
-  const [autoTurboCursor, setAutoTurboCursor] = useState(0);
 
   const [formData, setFormData] = useState({
     scheduler_enabled: true,
@@ -230,10 +226,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
           duration_minutes: (data as any).auto_turbo_duration_minutes ?? 30,
           rule_id: (data as any).auto_turbo_rule_id ?? "",
         });
-        setAutoTurboBatch((data as any).auto_turbo_current_batch || []);
-        setAutoTurboLastRotation((data as any).auto_turbo_last_rotation_at || null);
-        setAutoTurboPool((data as any).auto_turbo_rotation_pool || []);
-        setAutoTurboCursor((data as any).auto_turbo_rotation_cursor || 0);
       }
     } catch (error: any) {
       console.error("Error fetching settings:", error);
@@ -568,73 +560,6 @@ export default function RepricerSettings({ onSettingsChange, isAdmin = false }: 
                 </p>
               </div>
 
-              {/* Current batch status */}
-              {autoTurboBatch.length > 0 && (
-                <div className="p-3 border rounded-lg bg-background/50 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
-                    <span className="text-sm font-medium">Active Turbo Batch ({autoTurboBatch.length}/5)</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {autoTurboBatch.map((item: any, i: number) => (
-                      <Badge key={i} variant="outline" className="font-mono text-xs">
-                        {item.asin}
-                      </Badge>
-                    ))}
-                  </div>
-                  {autoTurboLastRotation && (
-                    <p className="text-[10px] text-muted-foreground">
-                      Last rotation: {new Date(autoTurboLastRotation).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Rotation Pool Info */}
-              <div className="p-3 border rounded-lg bg-background/50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <RotateCw className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-sm font-medium">Rotation Pool</span>
-                  </div>
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {autoTurboPool.length} ASINs
-                  </Badge>
-                </div>
-                {autoTurboPool.length > 0 ? (
-                  <>
-                    <Progress 
-                      value={(autoTurboCursor / autoTurboPool.length) * 100} 
-                      className="h-2" 
-                    />
-                    <p className="text-[10px] text-muted-foreground">
-                      Position: {autoTurboCursor}/{autoTurboPool.length} · 
-                      Full cycle: ~{Math.ceil(autoTurboPool.length / 5)} rotations · 
-                      Est. {Math.ceil(autoTurboPool.length / 5) * autoTurboForm.duration_minutes} min
-                    </p>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                        View all {autoTurboPool.length} ASINs in pool
-                      </summary>
-                      <div className="flex flex-wrap gap-1 mt-2 max-h-32 overflow-y-auto">
-                        {autoTurboPool.map((asin: string, i: number) => (
-                          <Badge 
-                            key={i} 
-                            variant={i >= autoTurboCursor && i < autoTurboCursor + 5 ? "default" : "outline"} 
-                            className="font-mono text-[10px]"
-                          >
-                            {asin}
-                          </Badge>
-                        ))}
-                      </div>
-                    </details>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Pool will auto-populate from BB alerts and in-stock assignments on next rotation.
-                  </p>
-                )}
-              </div>
             </div>
           )}
         </div>
