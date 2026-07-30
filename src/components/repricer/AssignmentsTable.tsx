@@ -7584,7 +7584,13 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                               const liveMinChanged = liveMinText !== undefined && normalizePendingValue(liveMinText === "" ? null : Number(liveMinText)) !== normalizePendingValue(currentMinValue);
                               const liveMaxChanged = liveMaxText !== undefined && normalizePendingValue(liveMaxText === "" ? null : Number(liveMaxText)) !== normalizePendingValue(currentMaxValue);
                               const liveNewPriceChanged = liveNewPriceText !== undefined && liveNewPriceText.trim() !== "";
-                              const hasPendingChanges = pendingChanges.has(item.id) || liveMinChanged || liveMaxChanged || liveNewPriceChanged || (!!snapshot && !hasReturnedToPendingSnapshot(item));
+                              // Deliberately NOT using pendingChanges.has(item.id) here: that flag is
+                              // set on first keystroke and only cleared at blur time, so retyping the
+                              // exact original value while still focused kept the green Save button
+                              // showing until the user clicked away. The live* comparisons below and
+                              // the snapshot check already reactively reflect "is there a real
+                              // difference from the original right now" on every keystroke.
+                              const hasPendingChanges = liveMinChanged || liveMaxChanged || liveNewPriceChanged || (!!snapshot && !hasReturnedToPendingSnapshot(item));
                               const hasNeedsEval = needsEval.has(item.id);
                               const hasMinMax = (item.min_price_override ?? item.inv_min_price) != null || (item.max_price_override ?? item.inv_max_price) != null;
                               const hasNewPrice = pendingNewPrice[item.id] != null;
