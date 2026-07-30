@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     // Get all users with auto_turbo_enabled
     const { data: settings, error: settingsErr } = await sb
       .from("repricer_settings")
-      .select("user_id, auto_turbo_enabled, auto_turbo_duration_minutes, auto_turbo_rule_id, auto_turbo_last_rotation_at, auto_turbo_current_batch, auto_turbo_rotation_pool, auto_turbo_rotation_cursor, safe_mode_active, safe_mode_reason, safe_mode_auto_resume_at, circuit_breaker_error_count, circuit_breaker_window_start")
+      .select("user_id, auto_turbo_enabled, auto_turbo_duration_minutes, auto_turbo_rule_id, auto_turbo_last_rotation_at, auto_turbo_current_batch, auto_turbo_rotation_pool, auto_turbo_rotation_cursor, primary_marketplace, safe_mode_active, safe_mode_reason, safe_mode_auto_resume_at, circuit_breaker_error_count, circuit_breaker_window_start")
       .eq("auto_turbo_enabled", true);
 
     if (settingsErr) throw settingsErr;
@@ -102,6 +102,12 @@ Deno.serve(async (req) => {
 
       const durationMinutes = userSettings.auto_turbo_duration_minutes || 10;
       const turboRuleId = userSettings.auto_turbo_rule_id;
+      // Auto-turbo previously picked whatever enabled assignment existed for
+      // an alerted ASIN regardless of marketplace -- confirmed live: a user
+      // whose primary market is US had 9 of 10 turbo slots filled with BR
+      // assignments. Scope alerts, pool-eligibility, and the actual star
+      // application to the user's primary marketplace only.
+      const primaryMarketplace = userSettings.primary_marketplace || "US";
       const currentBatch: any[] = userSettings.auto_turbo_current_batch || [];
       let rotationPool: string[] = userSettings.auto_turbo_rotation_pool || [];
       let rotationCursor: number = userSettings.auto_turbo_rotation_cursor || 0;
@@ -149,6 +155,7 @@ Deno.serve(async (req) => {
         .from("bb_price_alerts")
         .select("asin, drop_pct")
         .eq("user_id", userId)
+        .eq("marketplace", primaryMarketplace)
         .eq("dismissed", false)
         .eq("acted", false)
         .order("drop_pct", { ascending: false, nullsFirst: false });
@@ -158,11 +165,12 @@ Deno.serve(async (req) => {
       // Pool = ONLY notification ASINs
       rotationPool = alertAsins;
 
-      // Filter to only ASINs that have an enabled assignment
+      // Filter to only ASINs that have an enabled assignment in the primary marketplace
       const { data: allAssignments } = await sb
         .from("repricer_assignments")
         .select("asin, sku, rule_id")
         .eq("user_id", userId)
+        .eq("marketplace", primaryMarketplace)
         .eq("is_enabled", true);
 
       const assignedAsinSet = new Set((allAssignments || []).map((a: any) => a.asin));
@@ -323,6 +331,7 @@ Deno.serve(async (req) => {
           .select("id, rule_id, marketplace")
           .eq("user_id", userId)
           .eq("asin", asin)
+          .eq("marketplace", primaryMarketplace)
           .eq("is_enabled", true)
           .limit(1);
 
