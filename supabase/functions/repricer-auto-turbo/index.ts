@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
         .select("id");
 
       const clearedCount = clearedRows?.length || 0;
-      console.log(`[auto-turbo] User ${userId}: blanket-cleared ${clearedCount} auto stars, preserving ${manualStarCount} manual stars`);
+      console.log(`[auto-turbo] User ${userId}: blanket-cleared ${clearedCount} auto stars, preserving ${manualStars} manual stars`);
 
       // ========== STEP 3: Pick next N from rotation pool using cursor (N = autoSlots) ==========
       // Wrap cursor if past end
