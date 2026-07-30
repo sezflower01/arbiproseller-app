@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/lib/edgeFunctionClient";
 import { triggerAutoOnboard } from "@/lib/autoOnboard";
@@ -1304,7 +1303,6 @@ const _assignmentsFilterCache = {
 
 export default function AssignmentsTable({ rules, marketplace = "US", onMarketplaceChange, isAdmin = false, initialSearchTerm }: AssignmentsTableProps) {
   const { user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
   const { syncState: globalSyncState } = useSalesSync();
   const { effectivePlan, activeListings } = useSubscription();
   const { homeMarketplace } = useHomeMarketplace();
@@ -2492,14 +2490,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   // on load — intentionally not persisted.
   const [showZeroAvailable, setShowZeroAvailable] = useState(false);
 
-  // Manual "Verify {marketplace} listings" admin action — calls verify-intl-listings-existence
-  const [verifyingIntl, setVerifyingIntl] = useState(false);
-  const [intlAuthWarning, setIntlAuthWarning] = useState<null | {
-    marketplace: string;
-    scanned: number;
-    lwaError: number;
-    sampleErrors: string[];
-  }>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportData, setReportData] = useState<null | {
@@ -2572,118 +2562,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     void loadVerificationReport();
   };
 
-  const verifyIntlListingsNow = async () => {
-    if (marketplace === "US") return;
-    if (verifyingIntl) return;
-    setIntlAuthWarning(null);
-    setVerifyingIntl(true);
-    const toastId = toast.loading(`Verifying ${marketplace} listings with Amazon...`, {
-      description: "Step 1/2: discovering missing assignments from inventory…",
-    });
-    try {
-      // Step 1: backfill missing assignments for this marketplace (so newly-stocked
-      // CA/MX/BR ASINs appear in the repricer before we verify them).
-      let discovered = 0;
-      try {
-        const { data: assignData, error: assignErr } = await supabase.functions.invoke(
-          "auto-assign-bulk",
-          { body: { marketplace } },
-        );
-        if (assignErr) {
-          console.warn("[verifyIntlListingsNow] auto-assign-bulk failed (continuing):", assignErr);
-        } else {
-          discovered = Number(assignData?.assigned ?? assignData?.created ?? assignData?.inserted ?? 0);
-          console.log("[verifyIntlListingsNow] auto-assign-bulk result", assignData);
-        }
-      } catch (e) {
-        console.warn("[verifyIntlListingsNow] auto-assign-bulk threw (continuing):", e);
-      }
-
-      toast.loading(`Verifying ${marketplace} listings with Amazon...`, {
-        id: toastId,
-        description: `Step 2/2: checking each listing against SP-API… (discovered ${discovered} new)`,
-      });
-
-      let cursor: string | null = null;
-      let batchNo = 0;
-      const totals: any = { scanned: 0, exists: 0, not_found: 0, suppressed: 0, catalog_missing: 0, removed: 0, inconclusive: 0, breakdown: {}, sample_errors: [], auth_blocked: false };
-      while (batchNo < 30) {
-        batchNo++;
-        toast.loading(`Verifying ${marketplace} listings with Amazon...`, {
-          id: toastId,
-          description: `Step 2/2: SP-API batch ${batchNo}${totals.scanned ? ` · scanned ${totals.scanned} so far` : ""}`,
-        });
-        const { data, error } = await supabase.functions.invoke("verify-intl-listings-existence", {
-          body: { mode: "scoped", marketplace, all_in_marketplace: true, limit: 75, cursor_after: cursor },
-        });
-        if (error) throw error;
-        totals.scanned += Number(data?.scanned ?? 0);
-        totals.exists += Number(data?.exists ?? 0);
-        totals.not_found += Number(data?.not_found ?? 0);
-        totals.suppressed += Number(data?.suppressed ?? 0);
-        totals.catalog_missing += Number(data?.catalog_missing ?? 0);
-        totals.removed += Number(data?.removed ?? 0);
-        totals.inconclusive += Number(data?.inconclusive ?? 0);
-        for (const [key, value] of Object.entries(data?.breakdown || {})) {
-          totals.breakdown[key] = (Number(totals.breakdown[key]) || 0) + Number(value || 0);
-        }
-        if (Array.isArray(data?.sample_errors)) {
-          totals.sample_errors.push(...data.sample_errors.slice(0, Math.max(0, 5 - totals.sample_errors.length)));
-        }
-        console.log(`[verifyIntlListingsNow] diagnostics batch ${batchNo}`, data);
-        if (data?.auth_blocked || (Number(data?.scanned ?? 0) > 0 && Number(data?.breakdown?.lwa_error ?? 0) === Number(data?.scanned ?? 0))) {
-          totals.auth_blocked = true;
-          break;
-        }
-        cursor = data?.next_cursor || null;
-        if (!data?.has_more || !cursor) break;
-      }
-      const scanned = totals.scanned;
-      const exists = totals.exists;
-      const notFound = totals.not_found;
-      const suppressed = totals.suppressed;
-      const catalogMissing = totals.catalog_missing;
-      const removed = totals.removed || (notFound + suppressed + catalogMissing);
-      const inconclusive = totals.inconclusive;
-      const bd = totals.breakdown || {};
-      console.log("[verifyIntlListingsNow] diagnostics totals", totals);
-      const lwaError = Number(bd.lwa_error ?? 0);
-      if (totals.auth_blocked || (scanned > 0 && lwaError === scanned)) {
-        setIntlAuthWarning({ marketplace, scanned, lwaError, sampleErrors: totals.sample_errors || [] });
-        toast.error("Amazon connection needs re-authorization", {
-          id: toastId,
-          description: `${marketplace} verification scanned ${scanned} rows, but every Amazon call failed before listing checks. Rows were left untouched.`,
-          action: {
-            label: "Reconnect",
-            onClick: () => navigate("/tools/amazon-connect"),
-          },
-          duration: 20000,
-        });
-        return;
-      }
-      toast.success(`${marketplace} verification complete`, {
-        id: toastId,
-        description:
-          `Discovered ${discovered} · Scanned ${scanned} · Active ${exists} · Removed ${removed} ` +
-          `(404 ${notFound}, suppressed ${suppressed}, catalog ${catalogMissing})` +
-          (inconclusive > 0
-            ? ` · Inconclusive ${inconclusive} (rate-limit ${bd.rate_limited ?? 0}, auth ${bd.no_auth ?? 0}, LWA ${bd.lwa_error ?? 0}, http ${bd.http_error ?? 0}, network ${bd.network_error ?? 0})`
-            : ""),
-        duration: 14000,
-      });
-      // Refresh table so newly-discovered rows appear and NOT_FOUND rows disappear
-      fetchData();
-    } catch (err: any) {
-      console.error("[verifyIntlListingsNow] failed:", err);
-      toast.error(`Failed to verify ${marketplace} listings`, {
-        id: toastId,
-        description: err?.message ?? "Please try again.",
-      });
-    } finally {
-      setVerifyingIntl(false);
-    }
-  };
-  
   const [sortDir, setSortDir] = useState<SortDir>(_assignmentsFilterCache.sortDir);
   
   // Pagination
@@ -6765,16 +6643,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
               <Button
                 variant="outline"
                 size="sm"
-                onClick={verifyIntlListingsNow}
-                disabled={verifyingIntl}
-                title={`Ask Amazon if each ${marketplace} listing still exists. Dead listings are hidden immediately.`}
-              >
-                {verifyingIntl ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Globe className="h-4 w-4 mr-2" />}
-                Verify {marketplace} listings
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={openVerificationReport}
                 title={`Show ${marketplace} verification report (counts + recently removed)`}
               >
@@ -7049,30 +6917,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             </div>
           )}
         </div>
-
-        {intlAuthWarning && intlAuthWarning.marketplace === marketplace && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 mb-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Amazon connection needs re-authorization</p>
-                  <p className="text-xs text-muted-foreground">
-                    {marketplace} verification scanned {intlAuthWarning.scanned} rows, but every Amazon API call failed at Login with Amazon. No listings were marked removed or inconclusive.
-                  </p>
-                  {intlAuthWarning.sampleErrors.length > 0 && (
-                    <p className="text-xs text-muted-foreground break-all">
-                      {intlAuthWarning.sampleErrors[0]}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <Button size="sm" variant="destructive" onClick={() => navigate("/tools/amazon-connect")}>
-                Reconnect Amazon
-              </Button>
-            </div>
-          </div>
-        )}
 
         {/* ── Alert Filter Intervention Banner ── */}
         {suggestionFilter !== "ALL" && (
