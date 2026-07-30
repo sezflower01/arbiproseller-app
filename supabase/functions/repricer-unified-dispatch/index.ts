@@ -341,18 +341,25 @@ async function processUser(
   const isRecoveryMode = criticallyStarvedHot.length >= 1 || severelyStarvedHot.length >= 3 || staleHot15m.length >= 5;
   const isCriticalRecovery = criticallyStarvedHot.length >= 3 || severelyStarvedHot.length >= 5;
 
-  // ── DYNAMIC BUDGET EXPANSION during recovery ──
-  // Temporarily increase effective dispatch slots by up to 50% during recovery
-  let primarySlots = Math.min(primaryCandidates.length, maxDispatch);
-  let recoveryBudgetBoost = 0;
+  // ── RECOVERY MODE: reallocate the EXISTING budget, don't exceed it ──
+  // Previously this added 25-50% MORE slots on top of maxDispatch (itself
+  // already the sp_api_calls_per_minute_cap-derived ceiling), i.e. recovery
+  // mode deliberately dispatched more items than the configured SP-API budget
+  // allows. Confirmed live: this pushed sp_api_calls_this_window to 137
+  // against a cap of 97. Since every other repricer background job (this
+  // function's own next cycle, and previously repricer-priority-cron) reads
+  // that same counter to decide its own remaining budget, the overshoot then
+  // made subsequent cycles see negative/low headroom and skip or
+  // under-dispatch -- turning "drain the backlog faster" into a bursty
+  // overspend-then-starve pattern instead of steady throughput.
+  // Recovery mode still gets a real lever without exceeding the cap:
+  // effectiveWarmPct below aggressively reallocates the existing budget
+  // toward HOT items (down to 0% WARM in critical recovery).
+  const primarySlots = Math.min(primaryCandidates.length, maxDispatch);
   if (isCriticalRecovery) {
-    recoveryBudgetBoost = Math.ceil(primarySlots * 0.50); // +50% budget
-    primarySlots += recoveryBudgetBoost;
-    console.log(`[unified-dispatch] ${userId}: CRITICAL RECOVERY MODE — budget boosted by ${recoveryBudgetBoost} slots (+50%)`);
+    console.log(`[unified-dispatch] ${userId}: CRITICAL RECOVERY MODE — reallocating budget to HOT (no longer exceeding sp_api_calls_per_minute_cap)`);
   } else if (isRecoveryMode) {
-    recoveryBudgetBoost = Math.ceil(primarySlots * 0.25); // +25% budget
-    primarySlots += recoveryBudgetBoost;
-    console.log(`[unified-dispatch] ${userId}: RECOVERY MODE — budget boosted by ${recoveryBudgetBoost} slots (+25%)`);
+    console.log(`[unified-dispatch] ${userId}: RECOVERY MODE — reallocating budget to HOT (no longer exceeding sp_api_calls_per_minute_cap)`);
   }
 
   // ── ADAPTIVE WARM GUARANTEE ──
