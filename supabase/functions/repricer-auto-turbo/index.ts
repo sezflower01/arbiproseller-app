@@ -107,12 +107,17 @@ Deno.serve(async (req) => {
       let rotationCursor: number = userSettings.auto_turbo_rotation_cursor || 0;
 
       // ========== STEP 0: Count manual stars (protected from auto-rotation) ==========
+      // is_enabled=true excludes orphaned stars on disabled/dead assignments --
+      // confirmed live: 3 stars from weeks ago on now-INACTIVE/zero-stock
+      // listings were silently consuming slots with no way for the user to
+      // see or clear them (invisible in the normal Assignments view).
       const { count: manualStarCount } = await sb
         .from("repricer_assignments")
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .eq("is_manual_priority", true)
-        .eq("is_priority", true);
+        .eq("is_priority", true)
+        .eq("is_enabled", true);
       
       const manualStars = manualStarCount || 0;
       const MAX_TOTAL = resolveStarCap(userId);

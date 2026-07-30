@@ -6457,7 +6457,8 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
         .from('repricer_assignments')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .eq('is_priority', true);
+        .eq('is_priority', true)
+        .eq('is_enabled', true);
       setPriorityCount(count || 0);
     };
     fetchPriorityCount();
