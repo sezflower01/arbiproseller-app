@@ -78,8 +78,6 @@ import {
   AlertTriangle,
   PauseCircle,
   PlayCircle,
-  CloudDownload,
-  Download,
   Star,
   Users,
   Lightbulb,
@@ -1779,9 +1777,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
   
   // Track items being resumed (unpaused)
   const [resumingItem, setResumingItem] = useState<Set<string>>(new Set());
-
-  // Bulk international price fetch state
-  const [fetchingAllPrices, setFetchingAllPrices] = useState(false);
 
   // Cached FX rate for the current marketplace (fetched once on marketplace change)
   const [cachedFxRate, setCachedFxRate] = useState<number>(1);
@@ -7107,160 +7102,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                 : `Expand${hiddenZeroAvailableCount > 0 ? ` (${hiddenZeroAvailableCount})` : ""}`}
             </Button>
           )}
-          {isAdmin && (<>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const rows = items.map(i => ({
-                asin: i.asin,
-                sku: i.sku,
-                title: (i.title || "").replace(/"/g, '""'),
-                rule: rules.find(r => r.id === i.rule_id)?.name || "",
-                min_price: i.inv_min_price ?? i.min_price_override ?? "",
-                max_price: i.inv_max_price ?? i.max_price_override ?? "",
-                my_price: i.my_price ?? "",
-                available: i.available ?? 0,
-                reserved: i.reserved ?? 0,
-                inbound: i.inbound ?? 0,
-                listing_status: i.listing_status || "",
-                enabled: i.is_enabled ? "Yes" : "No",
-              }));
-              const header = Object.keys(rows[0] || {}).join(",");
-              const csv = [header, ...rows.map(r => Object.values(r).map(v => `"${v}"`).join(","))].join("\n");
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `assignments_${marketplace}_${new Date().toISOString().slice(0,10)}.csv`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast.success(`Downloaded ${rows.length} ASINs`);
-            }}
-            title="Download all assignments as CSV"
-          >
-            <Download className="h-4 w-4 mr-1" /> Export All
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const activeItems = items.filter(i => i.listing_status === "ACTIVE" && i.is_enabled);
-              const rows = activeItems.map(i => ({
-                asin: i.asin,
-                sku: i.sku,
-                title: (i.title || "").replace(/"/g, '""'),
-                rule: rules.find(r => r.id === i.rule_id)?.name || "",
-                min_price: i.inv_min_price ?? i.min_price_override ?? "",
-                max_price: i.inv_max_price ?? i.max_price_override ?? "",
-                my_price: i.my_price ?? "",
-                available: i.available ?? 0,
-                reserved: i.reserved ?? 0,
-                inbound: i.inbound ?? 0,
-              }));
-              if (!rows.length) { toast.info("No active ASINs found"); return; }
-              const header = Object.keys(rows[0]).join(",");
-              const csv = [header, ...rows.map(r => Object.values(r).map(v => `"${v}"`).join(","))].join("\n");
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `active_asins_${marketplace}_${new Date().toISOString().slice(0,10)}.csv`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast.success(`Downloaded ${rows.length} active ASINs`);
-            }}
-            title="Download only ACTIVE & enabled assignments"
-          >
-            <Download className="h-4 w-4 mr-1" /> Export Active
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const stockedItems = sortedItems;
-              const rows = stockedItems.map(i => ({
-                asin: i.asin,
-                sku: i.sku,
-                title: (i.title || "").replace(/"/g, '""'),
-                rule: rules.find(r => r.id === i.rule_id)?.name || "",
-                min_price: i.inv_min_price ?? i.min_price_override ?? "",
-                max_price: i.inv_max_price ?? i.max_price_override ?? "",
-                my_price: i.my_price ?? "",
-                available: i.available ?? 0,
-                reserved: i.reserved ?? 0,
-                inbound: i.inbound ?? 0,
-                listing_status: i.listing_status || "",
-                enabled: i.is_enabled ? "Yes" : "No",
-              }));
-              if (!rows.length) { toast.info("No stocked ASINs found"); return; }
-              const header = Object.keys(rows[0]).join(",");
-              const csv = [header, ...rows.map(r => Object.values(r).map(v => `"${v}"`).join(","))].join("\n");
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `stocked_asins_${marketplace}_${new Date().toISOString().slice(0,10)}.csv`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast.success(`Downloaded ${rows.length} stocked ASINs`);
-            }}
-            title="Download ASINs with available, reserved, or inbound stock"
-          >
-             <Download className="h-4 w-4 mr-1" /> Export Stocked
-           </Button>
-          </>)}
-          {isAdmin && (
-            <Button
-              variant="default"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              size="sm"
-              disabled={fetchingAllPrices || marketplace === "US"}
-              title={marketplace === "US" ? "Switch to CA, MX, or BR tab to fetch international prices" : "Fetch prices & quantities for this marketplace"}
-              onClick={async () => {
-                if (marketplace === "US") return;
-                setFetchingAllPrices(true);
-                try {
-                  toast.info(`${marketplace}: Fetching quantities...`);
-                  const { data: qtyData, error: qtyError } = await supabase.functions.invoke("bulk-fetch-international-prices", {
-                    body: { marketplace, phase: "qty" },
-                  });
-                  if (qtyError) throw qtyError;
-                  toast.success(`${marketplace}: ${qtyData.qty_found || 0} items with qty updated`);
-
-                  let offset = 0;
-                  let totalFetched = 0;
-                  let totalCached = 0;
-                  let hasMore = true;
-                  let batchNum = 0;
-
-                  while (hasMore) {
-                    batchNum++;
-                    toast.info(`${marketplace}: Fetching prices batch ${batchNum}...`);
-                    const { data, error } = await supabase.functions.invoke("bulk-fetch-international-prices", {
-                      body: { marketplace, phase: "prices", offset },
-                    });
-                    if (error) throw error;
-                    totalFetched += data.fetched || 0;
-                    totalCached += data.already_cached || 0;
-                    hasMore = data.has_more;
-                    offset += 500;
-                  }
-
-                  toast.success(`${marketplace}: ${totalFetched} prices fetched, ${totalCached} cached`);
-                  fetchData();
-                } catch (err: any) {
-                  toast.error("Failed to fetch prices: " + err.message);
-                } finally {
-                  setFetchingAllPrices(false);
-                }
-              }}
-            >
-              {fetchingAllPrices ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <CloudDownload className="h-4 w-4 mr-1" />}
-              Fetch Prices & Qty
-            </Button>
-          )}
-          
           {selectedIds.size > 0 && (
             <div className="flex gap-2 items-center">
               <span className="text-sm text-muted-foreground">
