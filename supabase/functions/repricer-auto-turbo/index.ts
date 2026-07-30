@@ -96,12 +96,18 @@ Deno.serve(async (req) => {
       console.log(`[auto-turbo] User ${userId}: manual stars=${manualStars}, auto slots=${autoSlots}`);
 
       // ========== STEP 1: Refresh the rotation pool from all unacted alerts ==========
+      // Ordered by drop_pct DESC so the Set-dedup below keeps each ASIN's
+      // largest unacted drop — previously had no ORDER BY at all, so the
+      // pool (and therefore rotation order) was whatever arbitrary order
+      // Postgres returned rows in, contradicting the "highest drop first"
+      // description in the Settings UI.
       const { data: allAlerts } = await sb
         .from("bb_price_alerts")
-        .select("asin")
+        .select("asin, drop_pct")
         .eq("user_id", userId)
         .eq("dismissed", false)
-        .eq("acted", false);
+        .eq("acted", false)
+        .order("drop_pct", { ascending: false, nullsFirst: false });
 
       const alertAsins = [...new Set((allAlerts || []).map((a: any) => a.asin))];
 
