@@ -2015,6 +2015,25 @@ function computeAiWinSalesBoosterPrice(
           intelligenceFactors: intelligence,
           isRaise: true,
         };
+      } else if (maxPrice && currentPrice > maxPrice) {
+        // Current price is ABOVE the ceiling -- e.g. min/max was lowered
+        // after the price was already set, or a stale/unsynced price. The
+        // old code always fell through to SKIP/null here, permanently
+        // leaving an over-ceiling price stuck forever with no corrective
+        // action. Confirmed live: B01JIA5DOK held at $34.31 (max $32) for
+        // 7+ evaluation cycles over an hour, each logging "At ceiling
+        // $32.00" with no actual price change. Actively lower to the
+        // ceiling instead.
+        console.log(`[Monopoly Mode] LOWERING to ceiling: $${currentPrice.toFixed(2)} → $${maxPrice.toFixed(2)} (price was above max)`);
+        return {
+          mode: 'LOWER',
+          newPrice: maxPrice,
+          rawTargetPrice: maxPrice,
+          reason: `Monopoly Mode: Price $${currentPrice.toFixed(2)} was above ceiling — lowering to $${maxPrice.toFixed(2)}`,
+          guardsApplied: ['monopoly_max_price'],
+          intelligenceFactors: intelligence,
+          isRaise: false,
+        };
       } else {
         // Already at max or can't raise further
         return {
