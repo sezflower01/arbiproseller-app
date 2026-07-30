@@ -6547,7 +6547,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
 
              const renderGroup = (label: string, chips: readonly { value: string; label: string; color: string; activeColor: string; icon: React.ReactNode }[]) => (
                <div className="flex items-center gap-1.5">
-                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mr-1">{label}</span>
+                 {label && <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mr-1">{label}</span>}
                  {chips.map(renderChip)}
                </div>
              );
@@ -6556,11 +6556,11 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-2 shadow-sm">
                  {renderGroup("Issues", operationalIssues)}
                  <div className="h-6 w-px bg-border/60" />
-                 {renderGroup("Automation", automationStates)}
+                 {renderGroup("", automationStates)}
                  <div className="h-6 w-px bg-border/60" />
-                 {renderGroup("Analytics", analytics)}
+                 {renderGroup("", analytics)}
                  <div className="h-6 w-px bg-border/60" />
-                 {renderGroup("Advanced", advanced)}
+                 {renderGroup("", advanced)}
                </div>
              );
            })()}
