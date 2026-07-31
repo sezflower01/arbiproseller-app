@@ -144,6 +144,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // loading=false+user=null unless that's actually confirmed. The timeout
     // below is now just a diagnostic log, plus (for the no-token case, where
     // there's nothing to hydrate and no race) the original fast release.
+    //
+    // UPDATE: Supabase's own /auth endpoint has documented intermittent
+    // slowness (the ArbiProSeller Chrome extension's background.js was
+    // already hardened for this — REFRESH_TIMEOUT_MS / STALE_TOKEN_GRACE_MS —
+    // because the exact same freeze was hitting extension panels too). The
+    // web app had no equivalent fallback and would hang on this screen for
+    // however long Supabase took to respond, sometimes minutes, with no
+    // recovery. Mirror the extension's proven pattern here: after a bounded
+    // wait, read the session already sitting in localStorage (Supabase writes
+    // it there itself) and use it immediately if it's not stale beyond a
+    // grace window, instead of waiting on the network indefinitely. The real
+    // getSession() call below keeps running in the background and will
+    // correct this the moment it resolves either way.
+    const STALE_GRACE_MS = 10 * 60 * 1000; // matches the extension's grace window
+    function readStoredSessionStale(): Session | null {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k || !k.startsWith('sb-') || !k.endsWith('-auth-token')) continue;
+          const raw = localStorage.getItem(k);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw);
+          if (parsed?.access_token && parsed?.user) return parsed as Session;
+        }
+      } catch { /* ignore */ }
+      return null;
+    }
+
     let initialResolved = false;
     const hasStoredToken = (() => {
       try {
@@ -162,12 +190,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setLoading(false);
         return;
       }
-      // A token exists but getSession() is still pending — this is only
-      // hydration latency, not a confirmed answer. Keep loading=true (and
-      // thus the SessionCheckingScreen, which already tells the user to
-      // refresh if this persists) instead of guessing "signed out".
-      console.warn('Initial getSession() slow (>12s) — still waiting, not clearing session.');
-    }, hasStoredToken ? 12000 : 1500);
+      // A token exists but getSession() is still pending. Use the cached
+      // session from localStorage as an immediate stale fallback (bounded by
+      // STALE_GRACE_MS past its own expiry) so the user isn't stuck staring
+      // at a spinner during a slow Supabase Auth moment — matching how the
+      // extension already degrades gracefully. The pending getSession() call
+      // will still correct this once it actually resolves.
+      const stale = readStoredSessionStale();
+      const ageMs = stale?.expires_at ? Date.now() - stale.expires_at * 1000 : Infinity;
+      if (stale && ageMs < STALE_GRACE_MS) {
+        console.warn('Initial getSession() slow (>7s) — using cached session as a stale fallback.');
+        const isEmailVerified = Boolean(stale.user?.email_confirmed_at);
+        setSession(isEmailVerified ? stale : null);
+        setUser(isEmailVerified ? stale.user : null);
+        setEmailVerified(isEmailVerified);
+        setLoading(false);
+        return;
+      }
+      console.warn('Initial getSession() slow (>7s) — still waiting, not clearing session.');
+    }, hasStoredToken ? 7000 : 1500);
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       initialResolved = true;
