@@ -1300,23 +1300,25 @@ async function runFullInventorySync(
                 asin: u.asin || prev.asin,
                 sku: u.sku,
                 marketplace: u.marketplace || 'US',
-                reason: 'global_drop_guard_triggered',
                 prior_available: prev.available || 0,
                 prior_reserved: prev.reserved || 0,
                 prior_inbound: prev.inbound || 0,
-                current_available: u.available || 0,
-                current_reserved: u.reserved || 0,
-                current_inbound: u.inbound || 0,
+                reason: `Bulk sync blocked: ${violations.join('; ')}`,
+                detection_source: 'global_drop_guard_triggered',
                 status: 'needs_review',
-                notes: `Bulk sync blocked: ${violations.join('; ')}`,
+                notes: `New report would set available=${u.available ?? 0}, reserved=${u.reserved ?? 0}, inbound=${u.inbound ?? 0} — write blocked, DB preserved.`,
               };
             })
             .filter(Boolean);
 
           if (reviewRows.length > 0) {
+            // Matches the table's real UNIQUE constraint (user_id, asin, sku) —
+            // the previous (user_id, sku) target doesn't exist and made this
+            // upsert fail every time, silently (caught below), so nobody ever
+            // saw why the drop guard blocked a sync.
             const { error: reviewErr } = await supabase
               .from('inventory_missing_review')
-              .upsert(reviewRows, { onConflict: 'user_id,sku' });
+              .upsert(reviewRows, { onConflict: 'user_id,asin,sku' });
             if (reviewErr) {
               console.warn('[FULL_SYNC] Failed to log drop-guard review rows:', reviewErr.message);
             }

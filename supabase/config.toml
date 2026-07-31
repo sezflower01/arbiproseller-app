@@ -427,3 +427,6 @@ verify_jwt = false
 
 [functions.prewarm-pl-resume-sweep]
 verify_jwt = false
+
+[functions.repricer-feed-timeout-sweep]
+verify_jwt = false

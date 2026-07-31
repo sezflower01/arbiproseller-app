@@ -6,13 +6,14 @@
 //
 // Safety:
 //  1. Caller must have role='admin' in user_roles.
-//  2. Refuses to start if `full-inventory-refresh-all` cron lock is held.
-//  3. Refuses to start if the scheduled cron `full-inventory-refresh-2h`
-//     finished less than ADMIN_REFRESH_COOLDOWN_MIN minutes ago (unless
-//     `force: true`).
-//  4. Refuses to start if another admin_refresh_run for the same target_user_id
+//  2. Refuses to start if a full-inventory-refresh-all run is already
+//     in_progress for this user, whether it's the cron/queue path or another
+//     admin trigger (unless `force: true`) — checked against
+//     `full_inventory_refresh_runs`, the live source of truth for that
+//     function post-rewrite.
+//  3. Refuses to start if another admin_refresh_run for the same target_user_id
 //     is still 'running' and < 30 min old.
-//  5. Every attempt — accepted or skipped — is recorded in admin_refresh_runs.
+//  4. Every attempt — accepted or skipped — is recorded in admin_refresh_runs.
 //
 // Body: { target_user_id: uuid, source?: 'manual' | 'self_auto', force?: bool }
 
@@ -25,7 +26,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ADMIN_REFRESH_COOLDOWN_MIN = 10; // wait 10 min after cron finishes
 const RUNNING_RUN_STALE_MIN = 30;
 
 function json(body: unknown, status = 200) {
@@ -173,50 +173,40 @@ Deno.serve(async (req) => {
     }, 409);
   }
 
-  // --- Guard 2: scheduled cron recently completed? ---
+  // --- Guard 2: is a full-inventory-refresh-all run already in progress for
+  // this user (whether cron-driven or another admin trigger)?
+  //
+  // Previously this checked `cron_run_history`/`cron_run_locks` for
+  // job_name='full-inventory-refresh-all' — but neither table has ever had a
+  // row under that name (confirmed live): the cron enqueues via
+  // `enqueue_full_inventory_refresh_all_users()`, a raw DB function call that
+  // doesn't log there, and full-inventory-refresh-all itself doesn't use the
+  // cron_run_locks mechanism. Both guards were dead code, silently never
+  // blocking anything. The real, live-tracked source of truth for "is a run
+  // active" is `full_inventory_refresh_runs` (added when that function was
+  // rewritten as a resumable state machine) — check that instead.
   if (!force) {
-    const cooldownCutoff = new Date(
-      Date.now() - ADMIN_REFRESH_COOLDOWN_MIN * 60_000,
-    ).toISOString();
-    const { data: recentCron } = await admin
-      .from("cron_run_history")
-      .select("started_at, completed_at, status")
-      .eq("job_name", "full-inventory-refresh-all")
-      .gt("started_at", cooldownCutoff)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (recentCron) {
-      await recordRun("skipped_cron_recent", {
-        skipped_reason: `scheduled cron ran at ${recentCron.started_at} (status=${recentCron.status}); cooldown ${ADMIN_REFRESH_COOLDOWN_MIN}min`,
-        detail: { recent_cron: recentCron },
+    const { data: activeRuns } = await admin
+      .from("full_inventory_refresh_runs")
+      .select("id, scope, user_ids, started_at, last_heartbeat_at")
+      .eq("status", "in_progress");
+    const activeForUser = (activeRuns || []).find((r: any) =>
+      r.scope === `single_user:${targetUserId}` ||
+      (r.scope === "all_users" && Array.isArray(r.user_ids) && r.user_ids.includes(targetUserId))
+    );
+    if (activeForUser) {
+      await recordRun("skipped_locked", {
+        skipped_reason: `full-inventory-refresh-all run ${activeForUser.id} already in_progress for this user since ${activeForUser.started_at}`,
+        detail: { active_run: activeForUser },
       });
       return json({
         accepted: false,
-        reason: "cron_recently_ran",
-        cron_started_at: recentCron.started_at,
-        cooldown_min: ADMIN_REFRESH_COOLDOWN_MIN,
-      }, 429);
+        reason: "refresh_already_in_progress",
+        run_id: activeForUser.id,
+        started_at: activeForUser.started_at,
+        last_heartbeat_at: activeForUser.last_heartbeat_at,
+      }, 409);
     }
-  }
-
-  // --- Guard 3: scheduled cron currently holding its lock? ---
-  const { data: lockHeld } = await admin
-    .from("cron_run_locks")
-    .select("job_name, acquired_at, expires_at")
-    .eq("job_name", "full-inventory-refresh-all")
-    .gt("expires_at", new Date().toISOString())
-    .maybeSingle();
-  if (lockHeld) {
-    await recordRun("skipped_locked", {
-      skipped_reason: `cron lock held until ${lockHeld.expires_at}`,
-      detail: { lock: lockHeld },
-    });
-    return json({
-      accepted: false,
-      reason: "cron_lock_held",
-      lock: lockHeld,
-    }, 409);
   }
 
   // --- All clear: record running row, then invoke fan-out ---
