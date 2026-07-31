@@ -836,7 +836,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
 
               {settings.undercut_mode === 'managed' ? (
                 <p className="text-xs text-muted-foreground">
-                  Engine automatically adjusts undercut based on competition, oscillation level, and market pressure
+                  Starts from this profile's recommended undercut. The engine still adjusts the actual amount in real time based on competition, oscillation level, and market pressure — same as Custom mode, just without a number for you to set yourself.
                 </p>
               ) : (
                 <div className="space-y-3 mt-2">
@@ -844,6 +844,9 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                     <Label htmlFor="undercut">Undercut Amount ({homeCurrencySymbol})</Label>
                     <p className="text-xs text-muted-foreground">
                       Used for FBA listings, and for FBM listings too unless you set a different amount below.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      This is your starting point, not a fixed amount — the engine still adjusts the actual undercut in real time based on competition, oscillation level, and market pressure, the same as Managed mode.
                     </p>
                     <Input
                       id="undercut"
