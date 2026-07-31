@@ -112,6 +112,37 @@ async function refreshToken({ allowStaleFallback = true } = {}) {
   finally { refreshPromise = null; }
 }
 
+// Direct email/password sign-in, entirely inside the extension — no web app
+// tab required. Same Supabase Auth endpoint the website's own login form
+// uses under the hood, just called directly with grant_type=password instead
+// of refresh_token. The resulting session is stored and kept alive
+// indefinitely by the existing refreshToken()/ensureFreshSession() machinery
+// above, exactly like a session obtained via the web app handoff — the user
+// stays signed in until they explicitly sign out.
+async function signInWithPassword(email, password) {
+  logAuth("password_signin_started");
+  const res = await fetch(`${CFG.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: CFG.SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) {
+    const msg = data?.error_description || data?.msg || data?.message || "Invalid email or password";
+    logAuth("password_signin_failed", { status: res.status });
+    throw new Error(msg);
+  }
+  const next = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
+  };
+  await setSession(next);
+  logAuth("password_signin_success");
+  return next;
+}
+
 async function ensureFreshSession() {
   let s = await getSession();
   if (!s) throw new Error("Not signed in");
@@ -231,6 +262,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await clearSessionExplicit("popup_signout");
           sendResponse({ ok: true });
           break;
+        case "ARBIPRO_SIGN_IN_PASSWORD": {
+          await signInWithPassword(msg.email, msg.password);
+          sendResponse({ ok: true });
+          break;
+        }
         case "ARBIPRO_EXPLICIT_SIGN_OUT":
           // Broadcast from inventorysprint.com web app — user clicked Log out.
           await clearSessionExplicit("web_app_logout");
