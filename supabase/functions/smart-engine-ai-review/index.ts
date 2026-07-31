@@ -13,7 +13,7 @@ const corsHeaders = {
 //   PRO_MODEL  : deep review for escalated cases
 const FLASH_MODEL = "gemini-flash-latest";
 const PRO_MODEL   = "gemini-pro-latest";
-const PROMPT_VERSION = "v2.0-routed";
+const PROMPT_VERSION = "v2.1-routed";
 
 const SYSTEM_PROMPT = `You are an expert Amazon repricing analyst. You analyze repricer decisions and provide judgment on whether the pricing engine made the right call.
 
@@ -30,6 +30,8 @@ Rules:
 - Not chasing a BB price that's below your profit floor is correct
 - Having no competitor data means monitoring-only hold is correct
 - Price oscillation guards are protective and correct
+- If constraints include "min_floor" or "min_price", or the reason text says something like "blocked by user min floor", the engine wanted to move lower/more-competitive but correctly refused to cross the seller's own configured min price. This is working as designed, not a defect — judge it "optimal" or "contextual_correct". If you suggest anything, frame it as the seller possibly wanting to reconsider their min price on that ASIN, never as the engine needing to "chase" or "be more aggressive" past a floor the seller set.
+- Raising to a price a few percent above the live Buy Box price (while still owning it) is intentional, capped profit-taking, not a bug — even if the Buy Box is lost afterward. Only flag as needs_review if the overshoot is clearly disproportionate (far beyond a small, reasonable margin) or this pattern repeats for the same ASIN without any profit benefit.
 
 Respond with a JSON array of objects with keys: asin, judgment, reasoning, suggestion, confidence.`;
 

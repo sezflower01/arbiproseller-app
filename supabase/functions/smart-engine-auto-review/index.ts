@@ -12,7 +12,7 @@ const corsHeaders = {
 // Phase 2: Flash/Pro routing for the cron-driven auto-review path.
 const FLASH_MODEL = "gemini-flash-latest";
 const PRO_MODEL   = "gemini-pro-latest";
-const PROMPT_VERSION_AUTO = "v2.0-routed-auto";
+const PROMPT_VERSION_AUTO = "v2.1-routed-auto";
 
 const TOOL_SCHEMA = {
   type: "function" as const,
@@ -71,6 +71,8 @@ Rules:
 - Not chasing BB below profit floor is correct
 - No competitor data means monitoring-only hold is correct
 - Price oscillation guards are protective and correct
+- If constraints include "min_floor" or "min_price", or the reason text says something like "blocked by user min floor", the engine wanted to move lower/more-competitive but correctly refused to cross the seller's own configured min price. This is working as designed, not a defect — judge it "optimal" or "contextual_correct". If you suggest anything, frame it as the seller possibly wanting to reconsider their min price on that ASIN, never as the engine needing to "chase" or "be more aggressive" past a floor the seller set.
+- Raising to a price a few percent above the live Buy Box price (while still owning it) is intentional, capped profit-taking, not a bug — even if the Buy Box is lost afterward. Only flag as needs_review if the overshoot is clearly disproportionate (far beyond a small, reasonable margin) or this pattern repeats for the same ASIN without any profit benefit.
 
 Respond with JSON array via the tool call.`;
 

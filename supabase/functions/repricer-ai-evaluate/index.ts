@@ -6093,7 +6093,21 @@ Deno.serve(async (req) => {
           isEligibleLaneFbmOnly: useFbmLaneOnly,
           isInPriceCluster: srIsCluster,
           clusterSellerCount: srClusterCount,
-          maxRaiseAboveBuyboxPercent: isUsMarketplace ? 2 : null,
+          // How far a raise may land above the LIVE Buy Box price before being
+          // capped. Previously a flat 2% for US only (and completely disabled
+          // — null — for CA/MX/BR), regardless of preset, which let raises on
+          // the "aggressive" profile overshoot and lose BB in the US, while
+          // international raises had no BB-anchored ceiling at all. Now scaled
+          // by how aggressive the profile is meant to be, and applied in every
+          // marketplace.
+          maxRaiseAboveBuyboxPercent: (() => {
+            switch (rule.smart_profile || 'CUSTOM') {
+              case 'PROFIT_EXTRACTOR': return 0;
+              case 'VELOCITY_DOMINATOR': return 4;
+              case 'MOMENTUM_BUILDER':
+              default: return 2;
+            }
+          })(),
         };
       })(),
       // Buy Box Owner Protection - default TRUE to preserve margin
