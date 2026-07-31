@@ -705,12 +705,19 @@ async function pollAfterDelay(
         }
         
         console.log(`[repricer-batch-update] Feed ${feedId} final: ${skusSucceeded} succeeded, ${skusFailed} failed`);
-        
-        // Step 7: Verify sample SKUs via GetListingsItem
-        if (data.processingStatus === 'DONE' && originalUpdates.length > 0) {
-          await verifySampleSkus(supabase, userId, feedId, token, marketplaceId, originalUpdates);
-        }
-        
+
+        // Sample-SKU price verification is handled by the separate
+        // repricer-feed-verify-sweep cron instead of running inline here.
+        // Live evidence: running it inline (a further 3-minute wait, plus a
+        // possible second 3-minute retry wait, all within this SAME
+        // continuous execution which had already used ~2 minutes just
+        // polling for feed status) meant the runtime silently killed this
+        // execution before verification could complete in 29 of 30 sampled
+        // real submissions -- the submission still showed "completed" with
+        // no indication verification never ran. A separate, independently
+        // scheduled sweep gets a fresh execution/budget for the
+        // verification step instead of stacking more multi-minute waits
+        // onto an already-long-running one.
         return;
       }
       
@@ -863,213 +870,6 @@ function parseFeedResult(result: any): { succeeded: number; failed: number; fail
   console.warn('[repricer-batch-update] Result sample:', safeStr.slice(0, 2000));
   
   return { succeeded: 0, failed: 0, failedDetails: [] };
-}
-
-/**
- * Verify sample SKUs: pick 3 (head, middle, tail) and check their
- * current price via GetListingsItem to confirm the feed actually applied.
- */
-async function verifySampleSkus(
-  supabase: any, userId: string, feedId: string, accessToken: string,
-  marketplaceId: string, originalUpdates: PriceUpdate[]
-) {
-  try {
-    // Wait 3 minutes before first verification — Amazon needs time to propagate
-    console.log(`[repricer-batch-update] Waiting 3 minutes before verifying sample SKUs...`);
-    await new Promise(r => setTimeout(r, 180_000));
-
-    // Pick 3 sample SKUs: first, middle, last
-    const sampleIndices = [
-      0,
-      Math.floor(originalUpdates.length / 2),
-      originalUpdates.length - 1,
-    ];
-    const uniqueIndices = [...new Set(sampleIndices)];
-    const samples = uniqueIndices.map(i => originalUpdates[i]).filter(Boolean);
-
-    console.log(`[repricer-batch-update] Verifying ${samples.length} sample SKUs after feed ${feedId}`);
-
-    const sellerId = await getSellerIdForUser(supabase, userId);
-    if (!sellerId) {
-      console.warn('[repricer-batch-update] Could not find seller_id for verification');
-      return;
-    }
-
-    // Get fresh token for verification
-    let verifyToken = accessToken;
-    try {
-      const refreshToken = await getRefreshTokenForUser(supabase, userId);
-      if (refreshToken) verifyToken = await getAccessToken(refreshToken);
-    } catch { /* use existing token */ }
-
-    // First pass verification
-    let verificationResults = await checkSkuPrices(samples, sellerId, marketplaceId, verifyToken);
-    
-    // Check for mismatches
-    const mismatches = verificationResults.filter(v => v.match === false);
-    
-    if (mismatches.length > 0) {
-      console.log(`[repricer-batch-update] ${mismatches.length} mismatches found, retrying in 3 minutes...`);
-      await new Promise(r => setTimeout(r, 180_000));
-      
-      // Retry only mismatched SKUs
-      const retryResults = await checkSkuPrices(
-        mismatches.map(m => samples.find(s => s.sku === m.sku)!).filter(Boolean),
-        sellerId, marketplaceId, verifyToken
-      );
-      
-      // Merge retry results
-      for (const retry of retryResults) {
-        const idx = verificationResults.findIndex(v => v.sku === retry.sku);
-        if (idx >= 0) {
-          verificationResults[idx] = { ...retry, retried: true };
-        }
-      }
-    }
-
-    const verifiedCount = verificationResults.filter(v => v.verified).length;
-    const totalChecked = verificationResults.length;
-    console.log(`[repricer-batch-update] Verification complete: ${verifiedCount}/${totalChecked} SKUs confirmed on Amazon`);
-
-    // Update feed submission with verification summary
-    const verificationSummary = {
-      checked_at: new Date().toISOString(),
-      verified: verifiedCount,
-      total: totalChecked,
-      results: verificationResults,
-    };
-
-    // Read current feed_result then merge verification into it
-    const { data: currentSub } = await supabase
-      .from('repricer_feed_submissions')
-      .select('feed_result, status')
-      .eq('feed_id', feedId)
-      .eq('user_id', userId)
-      .single();
-
-    const mergedResult = {
-      ...(currentSub?.feed_result || {}),
-      _verification: verificationSummary,
-    };
-
-    // If status was DONE_NO_REPORT and verification shows all matched, upgrade to completed
-    const newStatus = currentSub?.status === 'DONE_NO_REPORT' && verifiedCount === totalChecked && totalChecked > 0
-      ? 'completed'
-      : currentSub?.status;
-
-    await supabase
-      .from('repricer_feed_submissions')
-      .update({
-        feed_result: mergedResult,
-        status: newStatus,
-        skus_succeeded: newStatus === 'completed' && (currentSub?.status === 'DONE_NO_REPORT')
-          ? originalUpdates.length : undefined,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('feed_id', feedId)
-      .eq('user_id', userId);
-
-    // Store verification in price actions
-    for (const vr of verificationResults) {
-      if (vr.verified !== null) {
-        await supabase
-          .from('repricer_price_actions')
-          .update({
-            intelligence_factors: {
-              verification: {
-                checked_at: new Date().toISOString(),
-                expected: vr.expectedPrice,
-                actual: vr.actualPrice,
-                confirmed: vr.verified,
-              },
-            },
-          })
-          .eq('feed_id', feedId)
-          .eq('sku', vr.sku)
-          .eq('user_id', userId);
-      }
-    }
-
-  } catch (e) {
-    console.error('[repricer-batch-update] Verification step failed:', e);
-  }
-}
-
-// Check prices for a list of SKUs via GetListingsItem
-async function checkSkuPrices(
-  samples: PriceUpdate[], sellerId: string, marketplaceId: string, accessToken: string
-): Promise<any[]> {
-  const results: any[] = [];
-  
-  for (const sample of samples) {
-    try {
-      await new Promise(r => setTimeout(r, 1000)); // Rate limit spacing
-      
-      const listingsUrl = `https://sellingpartnerapi-na.amazon.com/listings/2021-08-01/items/${sellerId}/${encodeURIComponent(sample.sku)}?marketplaceIds=${marketplaceId}&includedData=offers`;
-      const resp = await signedRequest('GET', listingsUrl, '', accessToken);
-      
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.warn(`[repricer-batch-update] Verify SKU ${sample.sku} failed (${resp.status}): ${errText.slice(0, 200)}`);
-        results.push({ sku: sample.sku, asin: sample.asin, expectedPrice: sample.newPrice, verified: false, error: `API ${resp.status}` });
-        continue;
-      }
-
-      const listingData = await resp.json();
-      
-      // Extract current price from listing offers
-      let actualPrice: number | null = null;
-      if (listingData?.offers) {
-        for (const offer of listingData.offers) {
-          if (offer.marketplaceId === marketplaceId || !offer.marketplaceId) {
-            actualPrice = offer.price?.amount 
-              || offer.listingPrice?.amount 
-              || offer.ourPrice?.[0]?.schedule?.[0]?.valueWithTax
-              || null;
-            break;
-          }
-        }
-      }
-
-      const priceMatch = actualPrice !== null && sample.newPrice !== undefined
-        ? Math.abs(actualPrice - sample.newPrice) < 0.01
-        : null;
-
-      results.push({
-        sku: sample.sku,
-        asin: sample.asin,
-        expectedPrice: sample.newPrice,
-        actualPrice,
-        verified: priceMatch === true,
-        match: priceMatch,
-      });
-
-      console.log(`[repricer-batch-update] Verify SKU ${sample.sku}: expected=$${sample.newPrice}, actual=$${actualPrice}, match=${priceMatch}`);
-    } catch (e) {
-      console.error(`[repricer-batch-update] Verify SKU ${sample.sku} error:`, e);
-      results.push({ sku: sample.sku, asin: sample.asin, expectedPrice: sample.newPrice, verified: false, error: String(e) });
-    }
-  }
-  
-  return results;
-}
-
-async function getRefreshTokenForUser(supabase: any, userId: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('seller_authorizations')
-    .select('refresh_token')
-    .eq('user_id', userId)
-    .limit(1);
-  return data?.[0]?.refresh_token || null;
-}
-
-async function getSellerIdForUser(supabase: any, userId: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('seller_authorizations')
-    .select('seller_id')
-    .eq('user_id', userId)
-    .limit(1);
-  return data?.[0]?.seller_id || null;
 }
 
 // Manual poll endpoint
