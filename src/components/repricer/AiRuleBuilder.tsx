@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Sparkles, Zap, TrendingUp, Shield, Info, Star, DollarSign, ArrowUp, Eye, EyeOff, AlertTriangle, Play, Loader2 } from "lucide-react";
+import { Sparkles, Zap, TrendingUp, Shield, Info, Star, DollarSign, ArrowUp, Eye, EyeOff, AlertTriangle, Play, Loader2, Lock } from "lucide-react";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { toast } from "sonner";
 
@@ -337,6 +337,25 @@ export const defaultAiRuleSettings: AiRuleSettings = {
   min_roi_marketplace_overrides: {},
 };
 
+// A setting the active smart_profile controls directly — shown as a locked,
+// read-only value instead of a live control, since editing it while a named
+// preset is active has no effect (the preset silently re-applies its own
+// value on every evaluation). Only visible when smart_profile !== CUSTOM.
+function LockedSetting({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-dashed border-muted-foreground/30">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium flex items-center gap-1.5 text-muted-foreground">
+          <Lock className="h-3 w-3" />
+          {label}
+        </p>
+        {hint && <p className="text-xs text-muted-foreground/70">{hint}</p>}
+      </div>
+      <span className="text-sm font-medium text-muted-foreground">{value}</span>
+    </div>
+  );
+}
+
 export default function AiRuleBuilder({ settings, onChange, hideProfileSelector, ruleId, isCustomRule }: AiRuleBuilderProps) {
   const { homeCurrencySymbol } = useHomeMarketplace();
   // Custom rules start fully expanded — "full control over every setting"
@@ -466,6 +485,12 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
   const isLegacyProfile = ADVANCED_PROFILES.includes(settings.smart_profile) && !showAdvancedStrategies;
 
   const activeProfile = SMART_PROFILES.find(p => p.value === settings.smart_profile) || SMART_PROFILES.find(p => p.value === 'MOMENTUM_BUILDER')!;
+
+  // When a named profile is active, it silently re-applies all of its own
+  // field values on every evaluation (see repricer-ai-evaluate/_presets.ts) —
+  // so these fields are locked/read-only here rather than live-editable.
+  // Only CUSTOM rules (no preset) actually respect manual edits to them.
+  const isPresetActive = settings.smart_profile !== 'CUSTOM';
 
   return (
     <div className="space-y-6">
@@ -1173,17 +1198,23 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="cooldown">Cooldown (minutes)</Label>
-              <Input
-                id="cooldown"
-                type="number"
-                step="1"
-                min="0"
-                value={settings.cooldown_minutes}
-                onChange={(e) =>
-                  updateSetting("cooldown_minutes", parseInt(e.target.value) || 15)
-                }
-              />
+              {isPresetActive ? (
+                <LockedSetting label="Cooldown" value={`${settings.cooldown_minutes} min`} />
+              ) : (
+                <>
+                  <Label htmlFor="cooldown">Cooldown (minutes)</Label>
+                  <Input
+                    id="cooldown"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={settings.cooldown_minutes}
+                    onChange={(e) =>
+                      updateSetting("cooldown_minutes", parseInt(e.target.value) || 15)
+                    }
+                  />
+                </>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1209,6 +1240,20 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {isPresetActive ? (
+            <div className="space-y-3">
+              <LockedSetting label="Don't Lower When You Own Buy Box" value={settings.skip_lower_when_bb_owner ? "ON" : "OFF"} />
+              <LockedSetting label="Smart Raise" value={settings.enable_smart_raise ? "ON" : "OFF"} />
+              {settings.enable_smart_raise && (
+                <>
+                  <LockedSetting label="Raise Trigger" value={`${settings.raise_trigger_percent}%`} hint="Minimum Buy Box price increase to trigger a raise" />
+                  <LockedSetting label="Max Raise Per Step" value={`${homeCurrencySymbol}${settings.max_raise_step_dollars} / ${settings.max_raise_step_percent}%`} />
+                  <LockedSetting label="Only Raise When You Own Buy Box" value={settings.only_raise_when_buybox_owner ? "ON" : "OFF"} />
+                </>
+              )}
+            </div>
+          ) : (
+          <>
           {/* Don't Lower When BB Owner - NEW PRIMARY TOGGLE */}
           <div className="flex items-center justify-between p-3 bg-gradient-to-r from-emerald-500/10 to-green-500/10 rounded-lg border border-emerald-500/20">
             <div>
@@ -1238,7 +1283,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               onCheckedChange={(checked) => updateSetting("enable_smart_raise", checked)}
             />
           </div>
-          
+
           {settings.enable_smart_raise && advancedMode && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1296,7 +1341,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   />
                 </div>
               </div>
-              
+
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                 <div>
                   <p className="font-medium text-sm">Only Raise When You Own Buy Box</p>
@@ -1309,15 +1354,17 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   onCheckedChange={(checked) => updateSetting("only_raise_when_buybox_owner", checked)}
                 />
               </div>
-              
+
               <div className="p-3 border rounded-lg border-emerald-500/30 bg-emerald-500/5">
                 <p className="text-xs text-muted-foreground">
-                  💡 <strong>How it works:</strong> When Buy Box price rises by ≥{settings.raise_trigger_percent}%, 
-                  the repricer raises your price toward the new market level (up to ${settings.max_raise_step_dollars} or {settings.max_raise_step_percent}% per step). 
+                  💡 <strong>How it works:</strong> When Buy Box price rises by ≥{settings.raise_trigger_percent}%,
+                  the repricer raises your price toward the new market level (up to ${settings.max_raise_step_dollars} or {settings.max_raise_step_percent}% per step).
                   This maximizes profit when competitors raise prices or leave the market.
                 </p>
               </div>
             </>
+          )}
+          </>
           )}
         </CardContent>
       </Card>
@@ -1341,6 +1388,9 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {isPresetActive ? (
+            <LockedSetting label="Enable Monopoly Mode" value={settings.enable_monopoly_mode ? "ON" : "OFF"} />
+          ) : (
           <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 rounded-lg border border-yellow-500/20">
             <div>
               <p className="font-medium flex items-center gap-2">
@@ -1356,9 +1406,13 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               onCheckedChange={(checked) => updateSetting("enable_monopoly_mode", checked)}
             />
           </div>
-          
+          )}
+
           {settings.enable_monopoly_mode && advancedMode && (
             <>
+              {isPresetActive ? (
+                <LockedSetting label="Monopoly Strategy" value={settings.monopoly_mode_type === 'aggressive' ? '🚀 Aggressive' : '🐢 Conservative'} />
+              ) : (
               <div className="space-y-2">
                 <Label className="flex items-center gap-1">
                   Monopoly Strategy
@@ -1368,7 +1422,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                         <Info className="h-3 w-3 text-muted-foreground" />
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs">
-                        Conservative: Small, safe steps. Protects sales velocity. 
+                        Conservative: Small, safe steps. Protects sales velocity.
                         Aggressive: Larger steps to find ceiling faster.
                       </TooltipContent>
                     </Tooltip>
@@ -1391,8 +1445,10 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   </SelectContent>
                 </Select>
               </div>
-              
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Raise Step $ / % are not part of any preset — always user-controlled */}
                 <div className="space-y-2">
                   <Label htmlFor="monopoly-raise-dollars" className="flex items-center gap-1">
                     Raise Step ({homeCurrencySymbol})
@@ -1435,41 +1491,47 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="monopoly-cooldown" className="flex items-center gap-1">
-                    Cooldown (minutes)
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <Info className="h-3 w-3 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Wait time between raises (default 60 min = 1 hour)
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </Label>
-                  <Select
-                    value={String(settings.monopoly_cooldown_minutes)}
-                    onValueChange={(v) => updateSetting("monopoly_cooldown_minutes", parseInt(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 minutes</SelectItem>
-                      <SelectItem value="60">1 hour (recommended)</SelectItem>
-                      <SelectItem value="120">2 hours</SelectItem>
-                      <SelectItem value="240">4 hours</SelectItem>
-                      <SelectItem value="360">6 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {isPresetActive ? (
+                    <LockedSetting label="Cooldown" value={`${settings.monopoly_cooldown_minutes} min`} />
+                  ) : (
+                    <>
+                      <Label htmlFor="monopoly-cooldown" className="flex items-center gap-1">
+                        Cooldown (minutes)
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Info className="h-3 w-3 text-muted-foreground" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Wait time between raises (default 60 min = 1 hour)
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <Select
+                        value={String(settings.monopoly_cooldown_minutes)}
+                        onValueChange={(v) => updateSetting("monopoly_cooldown_minutes", parseInt(v))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="30">30 minutes</SelectItem>
+                          <SelectItem value="60">1 hour (recommended)</SelectItem>
+                          <SelectItem value="120">2 hours</SelectItem>
+                          <SelectItem value="240">4 hours</SelectItem>
+                          <SelectItem value="360">6 hours</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
                 </div>
               </div>
-              
+
               <div className="p-3 border rounded-lg border-yellow-500/30 bg-yellow-500/5">
                 <p className="text-xs text-muted-foreground">
-                  💡 <strong>How it works:</strong> When you're the only FBA seller and own the Buy Box, 
-                  the repricer raises your price by ${settings.monopoly_raise_step_dollars} (or {settings.monopoly_raise_step_percent}%) every {settings.monopoly_cooldown_minutes} minutes. 
+                  💡 <strong>How it works:</strong> When you're the only FBA seller and own the Buy Box,
+                  the repricer raises your price by ${settings.monopoly_raise_step_dollars} (or {settings.monopoly_raise_step_percent}%) every {settings.monopoly_cooldown_minutes} minutes.
                   It stops when hitting your Max Price or if you lose the Buy Box/another FBA appears.
                 </p>
               </div>
@@ -1721,6 +1783,13 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {isPresetActive ? (
+            <LockedSetting
+              label="Smart Repricing Engine"
+              value={settings.use_ai_tuning ? "ON" : "OFF"}
+              hint="Analyzes sales velocity, Buy Box win rate, urgency & competition to tune undercut — $0 per evaluation"
+            />
+          ) : (
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
             <div>
               <p className="font-medium">Enable Smart Repricing Engine</p>
@@ -1733,6 +1802,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
               onCheckedChange={(checked) => updateSetting("use_ai_tuning", checked)}
             />
           </div>
+          )}
         </CardContent>
       </Card>
       )}
