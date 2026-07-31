@@ -11,17 +11,27 @@ function SessionCheckingScreen() {
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 2000);
     const t2 = setTimeout(() => setPhase(2), 5000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const t3 = setTimeout(() => setPhase(3), 25000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
   const messages = [
     'Checking your secure session…',
     'Almost there — finishing sign-in…',
     'Still working — if this persists, try refreshing the page.',
+    'Still working — this is taking longer than usual.',
   ];
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#0f1c3f] text-white">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
       <p className="text-sm text-white/70 transition-opacity">{messages[phase]}</p>
+      {phase >= 3 && (
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-2 rounded-md border border-white/20 px-4 py-2 text-sm text-white/90 hover:bg-white/10 transition-colors"
+        >
+          Retry now
+        </button>
+      )}
     </div>
   );
 }
