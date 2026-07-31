@@ -41,7 +41,11 @@ async function refresh() {
 }
 
 $("pop-signin").addEventListener("click", () => {
-  chrome.tabs.create({ url: `${CFG.APP_URL}/tools/ext-handoff?ext=1` });
+  // The web app broadcasts the session on every signed-in page load now
+  // (AuthContext.tsx), so opening the site itself is enough — no dedicated
+  // "connect" tab/page needed. If already signed in on another tab, this new
+  // tab picks up the session invisibly within a second or two.
+  chrome.tabs.create({ url: CFG.APP_URL });
 });
 $("pop-signout").addEventListener("click", async () => {
   await bg("ARBIPRO_SIGN_OUT");

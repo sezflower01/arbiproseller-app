@@ -45,6 +45,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [emailVerified, setEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Silently hand the session to the ArbiProSeller Chrome extension. Its
+  // content script (handoff.js) already listens for this on every page of
+  // the site — previously only /tools/ext-handoff ever sent it, which meant
+  // "connecting" the extension required visiting a dedicated tab and staring
+  // at a status page. Broadcasting it here means simply being signed in on
+  // any page is enough; the extension picks it up invisibly in the
+  // background, no separate connect step required.
+  useEffect(() => {
+    if (!session?.access_token || !session?.refresh_token || !emailVerified) return;
+    try {
+      window.postMessage(
+        {
+          type: 'ARBIPRO_EXT_SESSION',
+          session: {
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            expires_at: session.expires_at,
+          },
+        },
+        window.location.origin,
+      );
+    } catch (_) { /* ignore */ }
+  }, [session?.access_token, session?.refresh_token, session?.expires_at, emailVerified]);
+
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
