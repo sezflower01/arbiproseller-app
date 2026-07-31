@@ -7902,14 +7902,21 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           </TableCell>
 
                           {/* Set Price - manual price input. Read-only by default (the AI is
-                              actively deciding this price every cooldown cycle) — it only
-                              unlocks for manual entry while the AI has frozen itself in an
-                              oscillation cooldown, since that's the one window where it isn't
-                              acting. A manual Lock always takes precedence over that unlock. */}
+                              actively deciding this price every evaluation cycle) — it only
+                              unlocks while a "cooling down" banner is showing (SmartSuggestionBanner's
+                              own copy already promises "type your desired price and push it now" for
+                              all three of its cooldown variants, so this mirrors all three):
+                              oscillation cooldown by live timestamp, oscillation guard by reason-text
+                              fallback (older rows without the timestamp populated), and the routine
+                              between-moves cooldown. A manual Lock always takes precedence. */}
                           <TableCell className="text-right">
                             {(() => {
-                              const oscillationCooldownActive = !!(item.oscillation_cooldown_until && new Date(item.oscillation_cooldown_until) > new Date());
-                              const setPriceDisabled = syncingMinMax.has(item.id) || isItemLocked(item) || !oscillationCooldownActive;
+                              const reasonText = String(item.last_recommendation_reason || "").toLowerCase();
+                              const oscillationTimestampActive = !!(item.oscillation_cooldown_until && new Date(item.oscillation_cooldown_until) > new Date());
+                              const oscillationReasonFallback = reasonText.includes("guard:") && reasonText.includes("oscillation");
+                              const routineCooldown = reasonText.includes("cooldown");
+                              const cooldownBannerActive = oscillationTimestampActive || oscillationReasonFallback || routineCooldown;
+                              const setPriceDisabled = syncingMinMax.has(item.id) || isItemLocked(item) || !cooldownBannerActive;
                               return (
                             <div className="flex flex-col items-end gap-0.5">
                               <Input
@@ -7931,9 +7938,9 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 title={
                                   isItemLocked(item)
                                     ? "Locked — click the lock icon to unlock"
-                                    : !oscillationCooldownActive
-                                    ? "AI-managed — unlocks for manual entry only during an oscillation cooldown"
-                                    : "AI has paused on an oscillation cooldown — you may set a price manually"
+                                    : !cooldownBannerActive
+                                    ? "AI-managed — unlocks for manual entry while a cooldown banner is showing"
+                                    : "AI has paused (cooldown) — you may set a price manually"
                                 }
                                 value={editingNewPrice[item.id] ?? ""}
                                 onChange={e => {
@@ -7994,7 +8001,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 }
                                 return null;
                               })()}
-                              {oscillationCooldownActive && !isItemLocked(item) && (
+                              {cooldownBannerActive && !isItemLocked(item) && (
                                 <span className="text-[9px] text-amber-500">⏳ Cooldown — you may intervene</span>
                               )}
                             </div>
