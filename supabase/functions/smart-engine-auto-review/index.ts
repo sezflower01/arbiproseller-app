@@ -231,6 +231,44 @@ serve(async (req) => {
             .order("created_at", { ascending: false })
             .limit(500);
           actions = data ?? [];
+
+          // `repricer_price_actions.old_min_price/old_max_price` are almost
+          // always null in practice, which used to make the case-builder below
+          // fall back to the single US-scoped `inventory.min_price/max_price`
+          // row for EVERY marketplace — silently comparing e.g. an MXN price
+          // against a USD max price (an ~18-20x mismatch) and generating false
+          // "price is 18x over max" alarms for Gemini on every non-US action.
+          // repricer_ai_decisions.min_price_used/max_price_used already store
+          // the correct per-(asin, marketplace) bound at decision time, so
+          // backfill from there instead of ever crossing marketplaces.
+          if (actions.length > 0) {
+            const pairs = Array.from(new Set(actions.map((a: any) => `${a.asin}::${a.marketplace}`)));
+            const asinsForBackfill = Array.from(new Set(actions.map((a: any) => a.asin)));
+            const { data: recentDecisions } = await supabase
+              .from("repricer_ai_decisions")
+              .select("asin, marketplace, min_price_used, max_price_used, created_at")
+              .eq("user_id", user_id)
+              .in("asin", asinsForBackfill)
+              .order("created_at", { ascending: false })
+              .limit(2000);
+
+            const boundsByPair = new Map<string, { min: number | null; max: number | null }>();
+            for (const d of recentDecisions ?? []) {
+              const key = `${d.asin}::${d.marketplace}`;
+              if (!pairs.includes(key) || boundsByPair.has(key)) continue;
+              boundsByPair.set(key, { min: d.min_price_used, max: d.max_price_used });
+            }
+
+            actions = actions.map((a: any) => {
+              if (a.old_min_price != null && a.old_max_price != null) return a;
+              const bounds = boundsByPair.get(`${a.asin}::${a.marketplace}`);
+              return {
+                ...a,
+                old_min_price: a.old_min_price ?? bounds?.min ?? null,
+                old_max_price: a.old_max_price ?? bounds?.max ?? null,
+              };
+            });
+          }
         }
 
         if (!actions || actions.length === 0) continue;
@@ -347,7 +385,12 @@ serve(async (req) => {
 
         // 5. Build cases for AI
         const cases = selected.map(s => {
-          const inv = invData?.find(i => i.asin === s.asin) || {} as any;
+          // `inventory` has no marketplace column — it's a single US-scoped
+          // row per ASIN. Only use it as a bounds/price fallback for the US
+          // marketplace itself; for any other marketplace an empty bound is
+          // safer than silently comparing against the wrong currency.
+          const isUsMarketplace = (s.marketplace || "US") === "US";
+          const inv = (isUsMarketplace ? invData?.find(i => i.asin === s.asin) : null) || {} as any;
           const intel = (s.intelligence_factors as Record<string, any>) || {};
           const trace = intel?.price_trace || {};
           const posProof = intel?.position_proof || {};
@@ -371,7 +414,7 @@ serve(async (req) => {
             action_type: s.action_type,
             decision_label: judgmentReason,
             tuning_signal: tuningSignal,
-            current_price: s.new_price ?? inv.my_price,
+            current_price: s.new_price ?? s.old_price ?? inv.my_price,
             target_price: s.intended_price,
             buy_box_price: trace.buybox_price,
             lowest_fba_price: trace.lowest_fba,
