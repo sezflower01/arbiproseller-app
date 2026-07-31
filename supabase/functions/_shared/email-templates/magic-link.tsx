@@ -24,12 +24,12 @@ export const MagicLinkEmail = ({
 }: MagicLinkEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Your login link for ArbiPro Repricer</Preview>
+    <Preview>Your login link for InventorySprint</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Your login link</Heading>
         <Text style={text}>
-          Click the button below to log in to ArbiPro Repricer. This link will expire
+          Click the button below to log in to InventorySprint. This link will expire
           shortly.
         </Text>
         <Button style={button} href={confirmationUrl}>

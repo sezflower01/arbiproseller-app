@@ -29,10 +29,10 @@ export const SignupEmail = ({
 }: SignupEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Welcome to ArbiPro Repricer – Confirm your email</Preview>
+    <Preview>Welcome to InventorySprint – Confirm your email</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Welcome to ArbiPro Repricer!</Heading>
+        <Heading style={h1}>Welcome to InventorySprint!</Heading>
         <Text style={text}>
           Thanks for signing up! You're just one step away from your{' '}
           <strong>60-day free trial</strong>.

@@ -27,14 +27,14 @@ export const InviteEmail = ({
 }: InviteEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>You've been invited to join ArbiPro Repricer</Preview>
+    <Preview>You've been invited to join InventorySprint</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>You've been invited</Heading>
         <Text style={text}>
           You've been invited to join{' '}
           <Link href={siteUrl} style={link}>
-            <strong>ArbiPro Repricer</strong>
+            <strong>InventorySprint</strong>
           </Link>
           . Click the button below to accept the invitation and create your
           account.

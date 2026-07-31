@@ -19,7 +19,7 @@ interface ReauthenticationEmailProps {
 export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Your verification code for ArbiPro Repricer</Preview>
+    <Preview>Your verification code for InventorySprint</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Confirm reauthentication</Heading>
