@@ -351,15 +351,6 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
     try { return localStorage.getItem('repricer_advanced_strategies') === 'true'; } catch { return false; }
   });
   const [showAdvancedWarning, setShowAdvancedWarning] = useState(false);
-  // Whether the FBM-specific undercut override is expanded. Derived from
-  // whether this rule already has one set, so existing overrides stay
-  // visible; defaults collapsed for everyone else since leaving it blank
-  // (reusing the shared Undercut Amount) is the common case.
-  const [showFbmOverride, setShowFbmOverride] = useState(() => settings.fbm_undercut_amount != null);
-  useEffect(() => {
-    setShowFbmOverride(settings.fbm_undercut_amount != null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ruleId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -800,7 +791,7 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
         </CardContent>
       </Card>
 
-      {/* Undercut — Managed vs Custom for all profiles */}
+      {/* Undercut — fully AI-managed for all profiles; no manual number to set. */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Undercut</CardTitle>
@@ -808,127 +799,11 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
         <CardContent>
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>Undercut Mode</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={settings.undercut_mode === 'managed' ? 'default' : 'outline'}
-                  onClick={() => updateSetting('undercut_mode', 'managed')}
-                  className="gap-1.5"
-                >
-                  🤖 Managed
-                  {settings.undercut_mode === 'managed' && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">Recommended</Badge>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={settings.undercut_mode === 'custom' ? 'default' : 'outline'}
-                  onClick={() => updateSetting('undercut_mode', 'custom')}
-                  className="gap-1.5"
-                >
-                  ✏️ Custom
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-1 opacity-60">Advanced</Badge>
-                </Button>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                🤖 Starts from this profile's recommended undercut. The engine adjusts the actual amount in real time based on competition, oscillation level, and market pressure — there's no fixed number to set.
+              </p>
 
-              {settings.undercut_mode === 'managed' ? (
-                <p className="text-xs text-muted-foreground">
-                  Starts from this profile's recommended undercut. The engine still adjusts the actual amount in real time based on competition, oscillation level, and market pressure — same as Custom mode, just without a number for you to set yourself.
-                </p>
-              ) : (
-                <div className="space-y-3 mt-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="undercut">Undercut Amount ({homeCurrencySymbol})</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Used for FBA listings, and for FBM listings too unless you set a different amount below.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      This is your starting point, not a fixed amount — the engine still adjusts the actual undercut in real time based on competition, oscillation level, and market pressure, the same as Managed mode.
-                    </p>
-                    <Input
-                      id="undercut"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={settings.undercut_amount}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        updateSetting("undercut_amount", isNaN(v) ? 0 : v);
-                      }}
-                      className={settings.undercut_amount > 0.05 ? "border-yellow-500/50" : settings.undercut_amount > 0.10 ? "border-red-500/50" : ""}
-                    />
-                    {settings.undercut_amount > 0.10 && (
-                      <p className="text-xs text-red-400 flex items-center gap-1">
-                        ⚠️ High undercut — significant risk of price wars and margin erosion
-                      </p>
-                    )}
-                    {settings.undercut_amount > 0.05 && settings.undercut_amount <= 0.10 && (
-                      <p className="text-xs text-yellow-400 flex items-center gap-1">
-                        ⚠️ Aggressive undercut — monitor margins closely
-                      </p>
-                    )}
-                  </div>
-
-                  {/* "Set a different amount for FBM listings" only makes sense when FBM
-                      competition is actually turned on somewhere (FBA Seller: Compete Against
-                      FBM, or FBM Seller: Compete Against All) — if both are off, FBM offers
-                      aren't being competed against at all, so an FBM-specific undercut has
-                      nothing to apply to. */}
-                  {((settings as any).fbm_competition_mode
-                    ?? (settings.ignore_fbm_unless_buybox_owner ? "fba_priority" : "all_sellers")) !== "fba_priority" && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="fbm-undercut-toggle"
-                          checked={showFbmOverride}
-                          onCheckedChange={(checked) => {
-                            const wantsOverride = checked === true;
-                            setShowFbmOverride(wantsOverride);
-                            if (!wantsOverride) {
-                              updateSetting("fbm_undercut_amount" as any, null as any);
-                            }
-                          }}
-                        />
-                        <Label htmlFor="fbm-undercut-toggle" className="text-xs font-normal text-muted-foreground cursor-pointer">
-                          Set a different amount for FBM listings
-                        </Label>
-                      </div>
-
-                      {showFbmOverride && (
-                        <div className="space-y-2">
-                          <Label htmlFor="fbm-undercut">FBM Undercut Amount ({homeCurrencySymbol})</Label>
-                          <p className="text-xs text-muted-foreground">
-                            Applied only when your listing is <strong>FBM</strong> and competing against the lowest FBM seller. Enter <code>0.00</code> to match exactly.
-                          </p>
-                          <Input
-                            id="fbm-undercut"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="1"
-                            value={settings.fbm_undercut_amount == null ? "" : settings.fbm_undercut_amount}
-                            onChange={(e) => {
-                              if (e.target.value === "") {
-                                updateSetting("fbm_undercut_amount" as any, null as any);
-                                return;
-                              }
-                              const v = parseFloat(e.target.value);
-                              updateSetting("fbm_undercut_amount" as any, (isNaN(v) ? null : Math.max(0, v)) as any);
-                            }}
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                </div>
-              )}
-
-              {/* Suppressed Buy Box Undercut — ALWAYS visible (managed or custom) */}
+              {/* Suppressed Buy Box Undercut — the one undercut value that's still manual, since there's no sensible default */}
               <div className="space-y-2 mt-4 p-4 rounded-lg border-2 border-blue-500/40 bg-blue-950/30">
                 <Label htmlFor="suppressed-bb-undercut-main" className="text-sm font-bold flex items-center gap-2">
                   🚫 Suppressed Buy Box Undercut ({homeCurrencySymbol}) <span className="text-xs font-normal text-amber-400">— required</span>
