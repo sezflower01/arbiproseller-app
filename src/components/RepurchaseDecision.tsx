@@ -58,14 +58,14 @@ const RepurchaseDecision = () => {
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                   <DialogTrigger asChild>
                     <img 
-                      src="/lovable-uploads/710f6a23-783a-4e0e-93e5-eda9dd0c3421.png" 
+                      src="/uploads/710f6a23-783a-4e0e-93e5-eda9dd0c3421.png" 
                       alt="Inventory S.P.R.I.N.T. main application interface showing dashboard and product management features"
                       className="w-full h-auto rounded cursor-zoom-in"
                     />
                   </DialogTrigger>
                   <DialogContent className="max-w-[90vw] w-full p-0 bg-transparent border-none">
                     <img 
-                      src="/lovable-uploads/710f6a23-783a-4e0e-93e5-eda9dd0c3421.png" 
+                      src="/uploads/710f6a23-783a-4e0e-93e5-eda9dd0c3421.png" 
                       alt="Inventory S.P.R.I.N.T. main application interface (Zoomed)"
                       className="w-full h-auto max-h-[95vh] object-contain"
                     />

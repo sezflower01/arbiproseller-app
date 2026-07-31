@@ -84,7 +84,7 @@ const InsertFormSection = () => {
             <Card className="bg-white shadow-xl border border-brand-100/50 overflow-hidden sticky top-24">
               <CardContent className="p-4">
                 <img 
-                  src="/lovable-uploads/326793f9-1859-421d-8053-a791844a844c.png" 
+                  src="/uploads/326793f9-1859-421d-8053-a791844a844c.png" 
                   alt="Inventory S.P.R.I.N.T. Insert Form Interface"
                   className="w-full h-auto rounded"
                 />

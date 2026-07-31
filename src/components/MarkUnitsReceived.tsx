@@ -73,14 +73,14 @@ const MarkUnitsReceived = () => {
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                   <DialogTrigger asChild>
                     <img 
-                      src="/lovable-uploads/941747d9-e58f-481a-9685-cee9e4868431.png" 
+                      src="/uploads/941747d9-e58f-481a-9685-cee9e4868431.png" 
                       alt="Inventory S.P.R.I.N.T. Mark Units Received Feature Interface"
                       className="w-full h-auto rounded cursor-zoom-in"
                     />
                   </DialogTrigger>
                   <DialogContent className="max-w-[90vw] w-full p-0 bg-transparent border-none">
                     <img 
-                      src="/lovable-uploads/941747d9-e58f-481a-9685-cee9e4868431.png" 
+                      src="/uploads/941747d9-e58f-481a-9685-cee9e4868431.png" 
                       alt="Inventory S.P.R.I.N.T. Mark Units Received Feature Interface (Zoomed)"
                       className="w-full h-auto max-h-[95vh] object-contain"
                     />

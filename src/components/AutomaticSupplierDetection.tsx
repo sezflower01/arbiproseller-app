@@ -72,7 +72,7 @@ const AutomaticSupplierDetection = () => {
                 <CardContent className="p-2">
                   <AspectRatio ratio={16/9} className="w-full">
                     <img 
-                      src="/lovable-uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
+                      src="/uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
                       alt="Automatic Supplier Name Detection in Inventory S.P.R.I.N.T."
                       className="w-full h-full object-contain rounded"
                     />
@@ -83,7 +83,7 @@ const AutomaticSupplierDetection = () => {
             <DialogContent className="max-w-4xl">
               <AspectRatio ratio={16/9} className="w-full">
                 <img 
-                  src="/lovable-uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
+                  src="/uploads/81b750ac-8f16-4a83-a3e2-8575a2a2c3d9.png"
                   alt="Automatic Supplier Name Detection in Inventory S.P.R.I.N.T."
                   className="w-full h-full object-contain rounded"
                 />

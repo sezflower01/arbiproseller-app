@@ -67,7 +67,7 @@ const DraftHistory = () => {
                   <DialogTrigger asChild>
                     <div className="relative group cursor-pointer">
                       <img 
-                        src="/lovable-uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
+                        src="/uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
                         alt="Inventory S.P.R.I.N.T. Draft Management Interface"
                         className="w-full h-auto rounded group-hover:opacity-80 transition-opacity"
                       />
@@ -81,7 +81,7 @@ const DraftHistory = () => {
                       <h2>Enlarged Draft Management Interface</h2>
                     </DialogHeader>
                     <img 
-                      src="/lovable-uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
+                      src="/uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
                       alt="Enlarged Inventory S.P.R.I.N.T. Draft Management Interface"
                       className="w-full h-auto rounded"
                     />

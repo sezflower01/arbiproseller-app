@@ -64,7 +64,7 @@ const IndexPageLayout = ({ children, metaTitle, metaDescription }: IndexPageLayo
               "@type": "Organization",
               "name": "InventorySprint"
             },
-            "screenshot": "https://arbiproseller.com/lovable-uploads/b8ba423b-b572-442e-9aea-856f91ca576d.png"
+            "screenshot": "https://inventorysprint.com/uploads/b8ba423b-b572-442e-9aea-856f91ca576d.png"
           }
         `}</script>
       </Helmet>
