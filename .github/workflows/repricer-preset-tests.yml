@@ -24,12 +24,12 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v1
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: Run preset snapshot tests (identity + uniqueness)
         run: deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/presets_snapshot_test.ts
 
-      - name: Run 24 behavioral scenario tests
+      - name: Run behavioral scenario tests
         run: deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/scenarios_test.ts
 
       - name: Run underpriced-recovery + anomaly + fast-lane cooldown tests
