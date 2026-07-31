@@ -824,9 +824,11 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
         <CardContent>
           <div className="space-y-3">
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                🤖 Starts from this profile's recommended undercut. The engine adjusts the actual amount in real time based on competition, oscillation level, and market pressure — there's no fixed number to set.
-              </p>
+              <LockedSetting
+                label="Undercut"
+                value="AI-Managed"
+                hint="The engine adjusts the actual amount in real time based on competition, oscillation level, and market pressure — there's no fixed number to set."
+              />
 
               {/* Suppressed Buy Box Undercut — the one undercut value that's still manual, since there's no sensible default */}
               <div className="space-y-2 mt-4 p-4 rounded-lg border-2 border-blue-500/40 bg-blue-950/30">

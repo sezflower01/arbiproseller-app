@@ -7901,14 +7901,22 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             })()}
                           </TableCell>
 
-                          {/* Set Price - manual price input */}
+                          {/* Set Price - manual price input. Read-only by default (the AI is
+                              actively deciding this price every cooldown cycle) — it only
+                              unlocks for manual entry while the AI has frozen itself in an
+                              oscillation cooldown, since that's the one window where it isn't
+                              acting. A manual Lock always takes precedence over that unlock. */}
                           <TableCell className="text-right">
+                            {(() => {
+                              const oscillationCooldownActive = !!(item.oscillation_cooldown_until && new Date(item.oscillation_cooldown_until) > new Date());
+                              const setPriceDisabled = syncingMinMax.has(item.id) || isItemLocked(item) || !oscillationCooldownActive;
+                              return (
                             <div className="flex flex-col items-end gap-0.5">
                               <Input
                                 type="number"
                                 step="0.01"
                                 className={`h-7 w-[80px] text-xs text-right bg-shipment-control text-white border-white/20 placeholder:text-white/40 focus:ring-2 focus:ring-primary ${
-                                  (syncingMinMax.has(item.id) || isItemLocked(item)) ? "opacity-50 cursor-not-allowed " : ""
+                                  setPriceDisabled ? "opacity-50 cursor-not-allowed " : ""
                                 }${
                                   (() => {
                                     const newP = pendingNewPrice[item.id];
@@ -7919,7 +7927,14 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                     return "";
                                   })()
                                 }`}
-                                disabled={syncingMinMax.has(item.id) || isItemLocked(item)}
+                                disabled={setPriceDisabled}
+                                title={
+                                  isItemLocked(item)
+                                    ? "Locked — click the lock icon to unlock"
+                                    : !oscillationCooldownActive
+                                    ? "AI-managed — unlocks for manual entry only during an oscillation cooldown"
+                                    : "AI has paused on an oscillation cooldown — you may set a price manually"
+                                }
                                 value={editingNewPrice[item.id] ?? ""}
                                 onChange={e => {
                                   capturePendingSnapshot(item);
@@ -7979,7 +7994,12 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 }
                                 return null;
                               })()}
+                              {oscillationCooldownActive && !isItemLocked(item) && (
+                                <span className="text-[9px] text-amber-500">⏳ Cooldown — you may intervene</span>
+                              )}
                             </div>
+                              );
+                            })()}
                           </TableCell>
 
                           {/* Rule */}
