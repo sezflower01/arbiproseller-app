@@ -45,8 +45,17 @@ const STALE_HOURS = 24;
 const MONTHS_BACK = 12;
 const PER_MONTH_TIMEOUT_MS = 5 * 60_000;
 const INTER_CALL_DELAY_MS = 800;
-// Self-invoke before hitting Supabase's ~400s Edge Function wall-clock ceiling.
-const WALL_CLOCK_BUDGET_MS = 300_000;
+// Absolute ceiling on the initial (synchronous) fetch-profit-loss call —
+// without this, a slow or hung call blocks the whole invocation with no
+// escape hatch, silently blowing through the real runtime ceiling exactly
+// like the polling loop could before it got a budget check.
+const FETCH_CALL_TIMEOUT_MS = 60_000;
+// Self-invoke before hitting the Edge Runtime's real ~150s wall-clock ceiling
+// for waitUntil-continued executions (confirmed via live-captured stalls
+// elsewhere in this codebase — NOT the ~400s previously assumed here).
+const WALL_CLOCK_BUDGET_MS = 100_000;
+const CONTINUE_RETRY_ATTEMPTS = 3;
+const CONTINUE_RETRY_BACKOFF_MS = 1500;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -80,14 +89,75 @@ interface ChainCtx {
   totals: { usersProcessed: number; monthsRefreshed: number; usersErrored: number };
 }
 
+// Retries the self-continuation POST with backoff so a single transient
+// network hiccup doesn't orphan the rest of the chain (the exact failure
+// mode observed once with sync-fnsku-report's one-shot fire-and-forget).
+async function selfContinue(ctx: ChainCtx, offset: number) {
+  for (let attempt = 1; attempt <= CONTINUE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const resp = await fetch(`${ctx.supabaseUrl}/functions/v1/prewarm-profit-loss-all`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ctx.serviceKey}`,
+          apikey: ctx.serviceKey,
+        },
+        body: JSON.stringify({
+          offset,
+          run_id: ctx.runId,
+          cron_run_id: ctx.cronRunId,
+          user_ids: ctx.userIds,
+        }),
+      });
+      if (resp.ok || resp.status === 202) return;
+      console.warn(`[prewarm-pl] selfContinue attempt=${attempt} status=${resp.status}`);
+    } catch (e) {
+      console.warn(`[prewarm-pl] selfContinue attempt=${attempt} error:`, (e as Error).message);
+    }
+    if (attempt < CONTINUE_RETRY_ATTEMPTS) await sleep(CONTINUE_RETRY_BACKOFF_MS * attempt);
+  }
+  console.error(`[prewarm-pl] selfContinue exhausted retries offset=${offset} run_id=${ctx.runId}`);
+}
+
 async function processChunk(ctx: ChainCtx, startOffset: number) {
   const admin = createClient(ctx.supabaseUrl, ctx.serviceKey);
   const chunkStarted = Date.now();
   let i = startOffset;
 
+  // Persists totals and hands off to a continuation at the given user offset.
+  // Reusable for both a clean user-boundary handoff and a mid-user bail-out —
+  // in the latter case `offset` stays on the SAME user, and the next
+  // invocation's fresh `pl_month_summary` staleness check naturally skips
+  // whatever months already got a fresh `computed_at` in this chunk, so no
+  // separate month-level cursor needs to be persisted.
+  async function handoff(offset: number) {
+    await admin
+      .from("prewarm_pl_runs")
+      .update({
+        users_processed: ctx.totals.usersProcessed,
+        months_refreshed: ctx.totals.monthsRefreshed,
+        users_errored: ctx.totals.usersErrored,
+        offset_idx: offset,
+        last_heartbeat_at: new Date().toISOString(),
+      })
+      .eq("id", ctx.runId);
+
+    console.log(
+      `[prewarm-pl] chunk_handoff offset=${offset} of ${ctx.userIds.length} elapsed_ms=${Date.now() - chunkStarted}`,
+    );
+    try {
+      await admin.rpc("try_acquire_cron_lock", {
+        p_job_name: JOB_NAME,
+        p_ttl_seconds: LOCK_TTL_SECONDS,
+      });
+    } catch {}
+    await selfContinue(ctx, offset);
+  }
+
   for (; i < ctx.userIds.length; i++) {
     const userId = ctx.userIds[i];
     let userErrored = false;
+    let budgetExceeded = false;
     try {
       const { data: summaryRows } = await admin
         .from("pl_month_summary")
@@ -150,6 +220,23 @@ async function processChunk(ctx: ChainCtx, startOffset: number) {
           }
         }
 
+        if (Date.now() - chunkStarted > WALL_CLOCK_BUDGET_MS) {
+          budgetExceeded = true;
+          break;
+        }
+
+        // Touch the heartbeat right before starting real work on this month
+        // (which can legitimately take up to FETCH_CALL_TIMEOUT_MS/PER_MONTH_TIMEOUT_MS)
+        // — otherwise the external resume-sweep can mistake genuine
+        // in-flight work for a stall and fire a duplicate resume mid-month
+        // (live-observed: it restarted the current month's fetch a second
+        // time while the first was still legitimately paginating).
+        await admin.from("prewarm_pl_runs").update({ last_heartbeat_at: new Date().toISOString() }).eq("id", ctx.runId);
+
+        const remainingBudget = WALL_CLOCK_BUDGET_MS - (Date.now() - chunkStarted);
+        const fetchTimeoutMs = Math.max(5000, Math.min(FETCH_CALL_TIMEOUT_MS, remainingBudget));
+        const abortController = new AbortController();
+        const abortTimer = setTimeout(() => abortController.abort(), fetchTimeoutMs);
         try {
           const resp = await fetch(`${ctx.supabaseUrl}/functions/v1/fetch-profit-loss`, {
             method: "POST",
@@ -164,6 +251,7 @@ async function processChunk(ctx: ChainCtx, startOffset: number) {
               endDate: `${end}T23:59:59.999Z`,
               forceRefresh: isCurrentMonth,
             }),
+            signal: abortController.signal,
           });
           const body = await resp.text();
           try {
@@ -177,18 +265,39 @@ async function processChunk(ctx: ChainCtx, startOffset: number) {
             continue;
           }
         } catch (e) {
+          if ((e as Error).name === "AbortError") {
+            // The call itself blew through our remaining budget — don't
+            // count this as a permanent per-item error, hand off instead so
+            // a fresh invocation (with a full budget) can retry this month.
+            console.warn(`[prewarm-pl] user=${userId} month=${mkey} fetch_call_timeout`);
+            budgetExceeded = true;
+            break;
+          }
           console.warn(
             `[prewarm-pl] user=${userId} month=${mkey} fetch_error:`,
             (e as Error).message,
           );
           userErrored = true;
           continue;
+        } finally {
+          clearTimeout(abortTimer);
         }
 
         if (progressId) {
-          const deadline = Date.now() + PER_MONTH_TIMEOUT_MS;
-          while (Date.now() < deadline) {
+          const perMonthDeadline = Date.now() + PER_MONTH_TIMEOUT_MS;
+          while (Date.now() < perMonthDeadline) {
+            // Guard against the *overall* chunk budget too — the per-month
+            // 5-minute allowance is meaningless if the real Edge Runtime
+            // ceiling (~150s) kills the whole invocation first. Bail out of
+            // the wait early and hand off rather than risk a silent kill
+            // mid-poll (the exact failure mode found in sync-fnsku-report
+            // and full-inventory-refresh-all).
+            if (Date.now() - chunkStarted > WALL_CLOCK_BUDGET_MS) {
+              budgetExceeded = true;
+              break;
+            }
             await sleep(4000);
+            await admin.from("prewarm_pl_runs").update({ last_heartbeat_at: new Date().toISOString() }).eq("id", ctx.runId);
             const { data: pr } = await admin
               .from("pl_sync_progress")
               .select("status")
@@ -199,16 +308,32 @@ async function processChunk(ctx: ChainCtx, startOffset: number) {
           }
         }
 
+        if (budgetExceeded) break; // don't count this month yet; re-check freshness on resume
+
         ctx.totals.monthsRefreshed++;
         console.log(
           `[prewarm-pl] user=${userId} month=${mkey} elapsed_ms=${Date.now() - perMonthStarted}`,
         );
 
         await sleep(INTER_CALL_DELAY_MS);
+
+        if (Date.now() - chunkStarted > WALL_CLOCK_BUDGET_MS) {
+          budgetExceeded = true;
+          break;
+        }
       }
     } catch (e) {
       console.warn(`[prewarm-pl] user=${userId} error:`, (e as Error).message);
       userErrored = true;
+    }
+
+    if (budgetExceeded) {
+      // Hand off at the SAME user index — this user's remaining (or
+      // in-flight) months will be recomputed as stale on the continuation
+      // and picked back up; months already refreshed in this chunk now have
+      // a fresh computed_at and will correctly be skipped.
+      await handoff(i);
+      return;
     }
 
     ctx.totals.usersProcessed++;
@@ -221,43 +346,16 @@ async function processChunk(ctx: ChainCtx, startOffset: number) {
         users_processed: ctx.totals.usersProcessed,
         months_refreshed: ctx.totals.monthsRefreshed,
         users_errored: ctx.totals.usersErrored,
+        offset_idx: i + 1,
+        last_heartbeat_at: new Date().toISOString(),
       })
       .eq("id", ctx.runId);
 
     // Continuation gate: if we're close to the wall-clock ceiling AND there
     // are users left, self-invoke and hand off.
     const nextOffset = i + 1;
-    if (
-      nextOffset < ctx.userIds.length &&
-      Date.now() - chunkStarted > WALL_CLOCK_BUDGET_MS
-    ) {
-      console.log(
-        `[prewarm-pl] chunk_handoff offset=${nextOffset} of ${ctx.userIds.length} elapsed_ms=${Date.now() - chunkStarted}`,
-      );
-      // Re-acquire the lock to bump its TTL — the same holder can re-acquire
-      // safely (idempotent) and continuations extend it without releasing.
-      try {
-        await admin.rpc("try_acquire_cron_lock", {
-          p_job_name: JOB_NAME,
-          p_ttl_seconds: LOCK_TTL_SECONDS,
-        });
-      } catch {}
-      // Fire-and-forget the continuation; do NOT await, and do NOT wrap in
-      // waitUntil here — the caller's waitUntil owns the outer worker lifetime.
-      fetch(`${ctx.supabaseUrl}/functions/v1/prewarm-profit-loss-all`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${ctx.serviceKey}`,
-          apikey: ctx.serviceKey,
-        },
-        body: JSON.stringify({
-          offset: nextOffset,
-          run_id: ctx.runId,
-          cron_run_id: ctx.cronRunId,
-          user_ids: ctx.userIds,
-        }),
-      }).catch((e) => console.warn("[prewarm-pl] continuation invoke failed:", e?.message));
+    if (nextOffset < ctx.userIds.length && Date.now() - chunkStarted > WALL_CLOCK_BUDGET_MS) {
+      await handoff(nextOffset);
       return; // Do NOT finalize — the continuation will.
     }
   }
@@ -308,14 +406,26 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {}
-  const offset: number = Number(body?.offset) || 0;
-  const isContinuation = offset > 0 && !!body?.run_id;
+  const bodyOffset: number = Number(body?.offset) || 0;
+  // Two ways to trigger a continuation:
+  //  - in-band (offset>0 + run_id): the fast path, called by this same
+  //    execution right after a handoff.
+  //  - external resume (resume:true + run_id, no offset/user_ids needed):
+  //    used by an INDEPENDENT execution/trace (a sweep cron) to recover a
+  //    stalled run — live-discovered that in-band self-continuation shares
+  //    the same execution's outbound-call quota as the work that tripped
+  //    it, so it reliably fails right when it's needed most. An external
+  //    caller re-derives user_ids/offset from the durable run row instead of
+  //    needing them handed in.
+  const isInBandContinuation = bodyOffset > 0 && !!body?.run_id;
+  const isExternalResume = body?.resume === true && !!body?.run_id;
+  const isContinuation = isInBandContinuation || isExternalResume;
 
   // ---------- Continuation path: skip init, just resume ----------
   if (isContinuation) {
     const { data: runRow } = await admin
       .from("prewarm_pl_runs")
-      .select("id, users_processed, months_refreshed, users_errored")
+      .select("id, users_processed, months_refreshed, users_errored, user_ids, offset_idx")
       .eq("id", body.run_id)
       .maybeSingle();
     if (!runRow) {
@@ -325,13 +435,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    const userIds: string[] = Array.isArray(body.user_ids) ? body.user_ids : [];
+    const userIds: string[] = Array.isArray(body.user_ids)
+      ? body.user_ids
+      : Array.isArray((runRow as any).user_ids)
+        ? (runRow as any).user_ids
+        : [];
     if (userIds.length === 0) {
       return new Response(JSON.stringify({ error: "user_ids missing" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const offset = isInBandContinuation ? bodyOffset : Number((runRow as any).offset_idx) || 0;
 
     const monthKeys = lastNMonthKeys(MONTHS_BACK);
     const ctx: ChainCtx = {
@@ -448,6 +563,13 @@ Deno.serve(async (req) => {
   ).filter(Boolean) as string[];
 
   console.log(`[prewarm-pl] START run_id=${runId} users=${userIds.length}`);
+
+  // Persist user_ids + an initial heartbeat so an external sweep can resume
+  // this run later without needing anything handed to it in-band.
+  await admin
+    .from("prewarm_pl_runs")
+    .update({ user_ids: userIds, last_heartbeat_at: new Date().toISOString() })
+    .eq("id", runId);
 
   const monthKeys = lastNMonthKeys(MONTHS_BACK);
   const ctx: ChainCtx = {

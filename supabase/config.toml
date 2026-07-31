@@ -418,3 +418,12 @@ verify_jwt = false
 
 [functions.auto-assign-bulk-intl-sweep]
 verify_jwt = false
+
+[functions.fnsku-sync-timeout-sweep]
+verify_jwt = false
+
+[functions.full-inv-refresh-timeout-sweep]
+verify_jwt = false
+
+[functions.prewarm-pl-resume-sweep]
+verify_jwt = false
