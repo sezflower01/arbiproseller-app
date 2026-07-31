@@ -7,6 +7,11 @@ import {
   computeUnderpricedRecovery,
   computeFastLaneCooldown,
 } from './_recovery.ts';
+import {
+  PROFILE_KEY_TO_LABEL,
+  PROFILE_PRESETS,
+  USER_CONTROLLED_FIELDS,
+} from './_presets.ts';
 import { scoreMarketVolatility, wasMoveProductive } from '../_shared/marketVolatility.ts';
 import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
 import { isInternalCaller } from '../_shared/require-internal.ts';
@@ -5726,81 +5731,17 @@ Deno.serve(async (req) => {
     // has since customized. It is therefore always excluded from the preset
     // override below, regardless of what the rule's current value is.
     const smartProfile = rule.smart_profile || 'CUSTOM';
-    // Canonical profile key → UI label mapping (outer scope for strategy visibility)
-    const PROFILE_KEY_TO_LABEL: Record<string, string> = {
-      VELOCITY_DOMINATOR: 'Aggressive Capture',
-      MOMENTUM_BUILDER: 'Momentum Builder',
-      PROFIT_EXTRACTOR: 'Profit Extractor',
-    };
+    // Canonical profile key → UI label mapping, preset definitions, and the
+    // user-controlled-fields set all live in ./_presets.ts (imported above)
+    // — the single source of truth, snapshot-tested to prevent drift.
     if (smartProfile !== 'CUSTOM') {
-
-      const profilePresets: Record<string, Record<string, any>> = {
-        VELOCITY_DOMINATOR: {
-          undercut_amount: 0.02,
-          enable_smart_raise: true,        // Limited raise to recover margin after winning
-          // Matches Momentum Builder — Smart Price Protection is now uniform
-          // across all profiles (frontend preset was updated for this in an
-          // earlier step this session; this backend copy had drifted).
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'conservative',
-          monopoly_cooldown_minutes: 60,
-          use_ai_tuning: true,
-          cooldown_minutes: 5,
-          skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: true,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: true,
-          raise_trigger_percent: 3,        // Modest raise trigger
-          max_raise_step_dollars: 0.30,    // Small raise caps
-          max_raise_step_percent: 2,
-        },
-        MOMENTUM_BUILDER: {
-          // 0.00, not 0.01 — matches the frontend preset (AiRuleBuilder.tsx).
-          // This is a separate, independent copy of the profile presets that
-          // the engine applies at eval time; it had drifted from the
-          // frontend's already-fixed value.
-          undercut_amount: 0.00,
-          enable_smart_raise: true,
-          raise_trigger_percent: 1.5,
-          max_raise_step_dollars: 1.00,
-          max_raise_step_percent: 5,
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'conservative',
-          monopoly_cooldown_minutes: 60,
-          use_ai_tuning: true,
-          cooldown_minutes: 15,
-          skip_lower_when_bb_owner: true,
-          stock_overlay_enabled: true,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: true,
-        },
-        PROFIT_EXTRACTOR: {
-          undercut_amount: 0,
-          enable_smart_raise: true,
-          raise_trigger_percent: 1,
-          max_raise_step_dollars: 1.50,
-          max_raise_step_percent: 6,
-          enable_monopoly_mode: true,
-          monopoly_mode_type: 'aggressive',
-          monopoly_cooldown_minutes: 45,
-          use_ai_tuning: true,
-          cooldown_minutes: 20,
-          skip_lower_when_bb_owner: true,
-          // Matches frontend preset (was false — drifted backend copy).
-          stock_overlay_enabled: true,
-          only_raise_when_buybox_owner: true,
-          ignore_fbm_unless_buybox_owner: true,
-        },
-      };
-      
-      const preset = profilePresets[smartProfile];
+      const preset = PROFILE_PRESETS[smartProfile];
       if (preset) {
         // Override rule fields with preset values, BUT preserve user-controlled
         // settings. undercut_amount is ALWAYS user-controlled now — the preset
         // is only a template at rule creation, never a runtime override.
-        const userControlledFields = ['ignore_fbm_unless_buybox_owner', 'undercut_amount'];
         for (const [key, value] of Object.entries(preset)) {
-          if (!userControlledFields.includes(key)) {
+          if (!USER_CONTROLLED_FIELDS.has(key)) {
             (rule as any)[key] = value;
           }
         }

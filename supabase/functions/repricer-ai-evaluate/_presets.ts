@@ -1,6 +1,9 @@
-// Canonical preset definitions — extracted for snapshot testing.
-// MUST stay in sync with the inline `profilePresets` block in index.ts.
-// If you change one, change the other (a snapshot test will fail otherwise).
+// Canonical preset definitions — index.ts imports these directly (no inline
+// copy) so there is exactly one source of truth. This file previously held
+// values that had drifted from index.ts's own inline copy for weeks
+// (undercut_amount, monopoly settings, stock_overlay_enabled) with nothing
+// catching it, because index.ts never actually imported this file and the
+// snapshot test that should have caught the divergence was never written.
 //
 // ⚠ PROFIT GUARD REMOVED (manual-min-only policy).
 // No preset may declare `enable_profit_guard` or `profit_guard_mode`.
@@ -18,12 +21,12 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
   VELOCITY_DOMINATOR: {
     undercut_amount: 0.02,
     enable_smart_raise: true,
-    enable_monopoly_mode: false,
-    monopoly_mode_type: "aggressive",
+    enable_monopoly_mode: true,
+    monopoly_mode_type: "conservative",
     monopoly_cooldown_minutes: 60,
     use_ai_tuning: true,
     cooldown_minutes: 5,
-    skip_lower_when_bb_owner: false,
+    skip_lower_when_bb_owner: true,
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: true,
@@ -32,7 +35,7 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
     max_raise_step_percent: 2,
   },
   MOMENTUM_BUILDER: {
-    undercut_amount: 0.01,
+    undercut_amount: 0.00,
     enable_smart_raise: true,
     raise_trigger_percent: 1.5,
     max_raise_step_dollars: 1.00,
@@ -59,7 +62,7 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
     use_ai_tuning: true,
     cooldown_minutes: 20,
     skip_lower_when_bb_owner: true,
-    stock_overlay_enabled: false,
+    stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: true,
   },
@@ -109,7 +112,10 @@ export function deriveSignatureBehavior(rule: Record<string, any>): SignatureBeh
 }
 
 // Apply preset to a base rule the same way the engine does (preserving user-controlled fields).
-const USER_CONTROLLED_FIELDS = new Set(["ignore_fbm_unless_buybox_owner"]);
+// undercut_amount is user-controlled too — the preset is only a template at
+// rule creation, never a runtime override (it must never re-clobber a value
+// the user has since customized).
+export const USER_CONTROLLED_FIELDS = new Set(["ignore_fbm_unless_buybox_owner", "undercut_amount"]);
 
 export function applyPreset(baseRule: Record<string, any>, profileKey: string): Record<string, any> {
   const preset = PROFILE_PRESETS[profileKey];

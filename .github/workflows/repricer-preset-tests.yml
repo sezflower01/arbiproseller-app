@@ -10,10 +10,11 @@ on:
       - 'supabase/functions/repricer-ai-evaluate/**'
       - '.github/workflows/repricer-preset-tests.yml'
 
-# Behavior-lock guard: these tests prove that the 6 repricer presets remain
-# semantically distinct (snapshot suite) and behave correctly under realistic
-# market conditions (24 scenario suite). Failure here means a preset has
-# silently drifted — block the merge.
+# Behavior-lock guard: these tests prove that the 3 repricer presets (Aggressive
+# Capture / Momentum Builder / Profit Extractor) remain semantically distinct
+# (snapshot + uniqueness suite) and behave correctly under realistic market
+# conditions (scenario suite + underpriced-recovery/anomaly/fast-lane-cooldown
+# suite). Failure here means a preset has silently drifted — block the merge.
 jobs:
   preset-behavior-lock:
     runs-on: ubuntu-latest
