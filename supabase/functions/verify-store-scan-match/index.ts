@@ -36,7 +36,7 @@ const corsHeaders = {
 //      invoked when the engine returns `needs_ai_fallback=true`.
 const VERIFICATION_VERSION = 12;
 const PROMPT_VERSION = 9;
-const MODEL = "google/gemini-3-flash-preview";
+const MODEL = "gemini-3-flash-preview";
 
 // Confidence ceilings — AI-only reasoning cannot reach 100%. Only hard evidence can.
 const AI_REASONING_CONFIDENCE_CAP = 80;       // ai_base_product_reasoning ceiling
@@ -870,7 +870,7 @@ async function callAI(
     "Reminder: MISSING info on either side is uncertainty, NOT a conflict. Only state a CONFLICT when both sides report values that clearly differ.",
   ].join("\n");
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -1065,11 +1065,11 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
+    if (!GEMINI_API_KEY) {
       return new Response(
-        JSON.stringify({ error: "LOVABLE_API_KEY not configured" }),
+        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -1270,8 +1270,8 @@ Deno.serve(async (req) => {
         const supplierImg = supDetails?.image_url ?? it.source_image_url ?? null;
         const amazonImg = amzDetails?.image_url ?? it.amz_image_url ?? null;
         const [aiVerdict, imgCompare] = await Promise.all([
-          callAI(it, LOVABLE_API_KEY, amzDetails, supDetails),
-          compareImages(supplierImg, amazonImg, LOVABLE_API_KEY).catch((e) => {
+          callAI(it, GEMINI_API_KEY, amzDetails, supDetails),
+          compareImages(supplierImg, amazonImg, GEMINI_API_KEY).catch((e) => {
             console.warn("[verify] image compare failed:", e instanceof Error ? (e as Error).message : String(e));
             return null as ImageCompareResult | null;
           }),

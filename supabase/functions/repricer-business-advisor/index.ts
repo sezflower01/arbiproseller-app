@@ -1,4 +1,4 @@
-// AI Business Advisor — generates weekly strategic insights using Lovable AI gateway.
+// AI Business Advisor — generates weekly strategic insights using the Gemini API.
 // Reads aggregate intelligence (BB quality, marketplace personality, outcomes,
 // inventory aging) and produces 4-8 plain-language insights stored in
 // repricer_strategic_insights for the UI advisor card.
@@ -13,7 +13,7 @@ const corsHeaders = {
 };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
+const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
 
 async function buildContext(
   admin: ReturnType<typeof createClient>,
@@ -117,7 +117,7 @@ function countByPair<T>(
 }
 
 async function generateInsights(context: any): Promise<any[]> {
-  if (!LOVABLE_KEY) {
+  if (!GEMINI_KEY) {
     // Deterministic fallback when no AI key
     return ruleBasedInsights(context);
   }
@@ -130,14 +130,14 @@ DATA:
 ${JSON.stringify(context).slice(0, 8000)}`;
 
   try {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_KEY}`,
+        Authorization: `Bearer ${GEMINI_KEY}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gemini-flash-latest",
         messages: [
           {
             role: "system",

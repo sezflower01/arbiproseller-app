@@ -3,7 +3,7 @@ project_id = "mstibdszibcheodvnprm"
 [auth.hook.send_email]
 enabled = true
 uri = "https://mstibdszibcheodvnprm.supabase.co/functions/v1/auth-email-hook"
-secrets = "env(LOVABLE_API_KEY)"
+secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 [functions.send-email]
 verify_jwt = true

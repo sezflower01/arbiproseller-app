@@ -11,8 +11,8 @@ const corsHeaders = {
 // Phase 2: Flash/Pro routing.
 //   FLASH_MODEL: cheap bulk path
 //   PRO_MODEL  : deep review for escalated cases
-const FLASH_MODEL = "google/gemini-2.5-flash";
-const PRO_MODEL   = "google/gemini-2.5-pro";
+const FLASH_MODEL = "gemini-flash-latest";
+const PRO_MODEL   = "gemini-pro-latest";
 const PROMPT_VERSION = "v2.0-routed";
 
 const SYSTEM_PROMPT = `You are an expert Amazon repricing analyst. You analyze repricer decisions and provide judgment on whether the pricing engine made the right call.
@@ -83,7 +83,7 @@ async function callTier(
 ): Promise<{ analyses: any[]; error?: string }> {
   if (cases.length === 0) return { analyses: [] };
   const summaries = buildCaseSummaries(cases);
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -126,8 +126,8 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) throw new Error("LOVABLE_API_KEY not configured");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) throw new Error("GEMINI_API_KEY not configured");
 
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -178,8 +178,8 @@ serve(async (req) => {
 
     // ---- Call both tiers in parallel ----
     const [proResult, flashResult] = await Promise.all([
-      callTier(PRO_MODEL,   proCases,   lovableApiKey),
-      callTier(FLASH_MODEL, flashCases, lovableApiKey),
+      callTier(PRO_MODEL,   proCases,   geminiApiKey),
+      callTier(FLASH_MODEL, flashCases, geminiApiKey),
     ]);
 
     // Bubble up hard failures (402/429 surface friendlier messages)

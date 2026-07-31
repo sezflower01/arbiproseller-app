@@ -10,8 +10,8 @@ const corsHeaders = {
 };
 
 // Phase 2: Flash/Pro routing for the cron-driven auto-review path.
-const FLASH_MODEL = "google/gemini-2.5-flash";
-const PRO_MODEL   = "google/gemini-2.5-pro";
+const FLASH_MODEL = "gemini-flash-latest";
+const PRO_MODEL   = "gemini-pro-latest";
 const PROMPT_VERSION_AUTO = "v2.0-routed-auto";
 
 const TOOL_SCHEMA = {
@@ -81,7 +81,7 @@ async function callTier(
 ): Promise<any[]> {
   if (cases.length === 0) return [];
   const summaries = buildSummaries(cases);
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -117,8 +117,8 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) throw new Error("LOVABLE_API_KEY not configured");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) throw new Error("GEMINI_API_KEY not configured");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -409,8 +409,8 @@ serve(async (req) => {
 
         // 6b. Call both LLM tiers in parallel
         const [proAnalyses, flashAnalyses] = await Promise.all([
-          callTier(PRO_MODEL,   proCases,   lovableApiKey),
-          callTier(FLASH_MODEL, flashCases, lovableApiKey),
+          callTier(PRO_MODEL,   proCases,   geminiApiKey),
+          callTier(FLASH_MODEL, flashCases, geminiApiKey),
         ]);
 
         const analyses: any[] = [

@@ -124,7 +124,7 @@ serve(async (req) => {
       logStep("Trial usage check", { hasUsedTrial, priorSubs: allSubs.data.length });
     }
 
-    const origin = req.headers.get("origin") || "https://quick-start-genesis.lovable.app";
+    const origin = req.headers.get("origin") || "https://inventorysprint.com";
 
     // Product Library Premium has no free trial (allowlist declared above)
     const isProductLibrary = PRODUCT_LIBRARY_PRICE_IDS.includes(priceId);

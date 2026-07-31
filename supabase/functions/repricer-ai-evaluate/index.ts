@@ -4801,7 +4801,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body: AiEvaluateRequest & { user_id?: string; internal?: boolean; dry_run?: boolean; sp_api_data?: any; stock_gated_maximize?: boolean; restock_reentry?: boolean } = await req.json();

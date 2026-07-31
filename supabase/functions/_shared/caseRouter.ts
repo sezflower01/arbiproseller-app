@@ -3,8 +3,8 @@
 // Given a batch of repricer "cases" (one per ASIN decision under review), this
 // module decides which model tier each case should be sent to:
 //
-//     pro    → deep LLM (google/gemini-2.5-pro)        — bounded by daily cap
-//     flash  → cheap LLM (google/gemini-2.5-flash)     — bulk path
+//     pro    → deep LLM (gemini-2.5-pro)        — bounded by daily cap
+//     flash  → cheap LLM (gemini-2.5-flash)     — bulk path
 //     skip   → no LLM, deterministic rule-based note   — when AI adds no value
 //
 // Routing policy (Balanced, per stakeholder decision):

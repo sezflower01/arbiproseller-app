@@ -10,8 +10,8 @@
 // Designed to be a SUPPORTING signal: callers should boost / demote confidence
 // but NEVER drive the final verdict on image alone.
 
-const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const VISION_MODEL = "google/gemini-3-flash-preview";
+const GEMINI_AI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const VISION_MODEL = "gemini-3-flash-preview";
 
 // In-memory cache (per-isolate) — one entry per (urlA, urlB) pair, ~30min TTL.
 const compareCache = new Map<string, { at: number; data: ImageCompareResult }>();
@@ -185,7 +185,7 @@ async function aiVisionCompare(
   apiKey: string,
 ): Promise<{ verdict: "same_product" | "same_franchise_diff_item" | "different_product"; confidence: number; reason: string } | null> {
   try {
-    const resp = await fetch(LOVABLE_AI_URL, {
+    const resp = await fetch(GEMINI_AI_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -261,7 +261,7 @@ async function aiVisionCompare(
  *
  * @param supplierUrl  Direct URL to the supplier product image.
  * @param amazonUrl    Direct URL to the Amazon main image.
- * @param apiKey       LOVABLE_API_KEY (used only when AI fallback fires).
+ * @param apiKey       GEMINI_API_KEY (used only when AI fallback fires).
  * @param opts.useAi   When true (default), run the AI fallback for borderline
  *                     pHash scores. Set false to limit to free pHash only.
  */

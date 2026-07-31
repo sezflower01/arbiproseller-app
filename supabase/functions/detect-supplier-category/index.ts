@@ -24,7 +24,7 @@ interface DetectionResult {
 
 const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
 const SCRAPINGBEE_API_KEY = Deno.env.get("SCRAPINGBEE_API_KEY");
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 async function fetchHtml(url: string): Promise<string | null> {
   // Prefer Firecrawl for clean HTML
@@ -223,7 +223,7 @@ function extractFromUrl(productUrl: string): DetectionResult | null {
 
 // ---------- Layer 4: AI fallback ----------
 async function inferWithAI(html: string, productUrl: string): Promise<DetectionResult | null> {
-  if (!LOVABLE_API_KEY) return null;
+  if (!GEMINI_API_KEY) return null;
   // Compact the HTML: title + h1 + first meaningful paragraphs
   const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim().slice(0, 300);
   const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "").replace(/<[^>]+>/g, "").trim().slice(0, 300);
@@ -241,14 +241,14 @@ Respond with strict JSON: {"name": "<short category name>", "path": "<Top > Mid 
 Use English. Path can be just the leaf if hierarchy is unclear.`;
 
   try {
-    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${GEMINI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gemini-flash-latest",
         messages: [
           { role: "system", content: "You are a product taxonomy classifier. Output only valid JSON." },
           { role: "user", content: prompt },
