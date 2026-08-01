@@ -46,16 +46,6 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
   border-bottom: 1px solid var(--line); cursor: move; user-select: none;
 }
 .apx-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-family: var(--font-display); }
-.apx-live-proof {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: #f59e0b;
-  color: #111827;
-  font-weight: 800;
-  font-size: 12px;
-}
 .apx-logo { width: 18px; height: 18px; border-radius: 4px; vertical-align: middle; }
 .apx-actions button {
   background: transparent; color: var(--fg); border: 0; padding: 4px 8px;
