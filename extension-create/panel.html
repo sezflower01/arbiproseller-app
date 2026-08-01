@@ -27,8 +27,13 @@
 
     <main id="apx-body">
       <div id="apx-signin" class="apx-card hidden">
-        <p>You're signed out of InventorySprint. Reconnect to create or fetch listings.</p>
-        <button id="apx-signin-btn" class="apx-primary">Reconnect to InventorySprint</button>
+        <p>You're signed out of InventorySprint. Sign in to create or fetch listings.</p>
+        <form id="apx-signin-form" class="apx-signin-form">
+          <input id="apx-signin-email" type="email" placeholder="Email" autocomplete="username" required />
+          <input id="apx-signin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+          <div id="apx-signin-error" class="apx-signin-error"></div>
+          <button id="apx-signin-btn" type="submit" class="apx-primary">Sign in</button>
+        </form>
       </div>
 
       <div id="apx-content" class="hidden">

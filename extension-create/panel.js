@@ -301,8 +301,29 @@ async function checkAuth() {
     setTimeout(() => $("apx-fetch")?.click(), 150);
   }
 }
-$("apx-signin-btn").addEventListener("click", () => {
-  window.open(`${APP_URL}/tools/ext-handoff?ext=1`, "_blank");
+// Direct email/password sign-in, right here in the panel — no website tab.
+// Content scripts can't reliably open the extension's own toolbar popup, so
+// this mirrors it inline instead of sending the user off to a "connect" page.
+$("apx-signin-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("apx-signin-email").value.trim();
+  const password = $("apx-signin-password").value;
+  const btn = $("apx-signin-btn");
+  const errEl = $("apx-signin-error");
+  errEl.textContent = "";
+  btn.disabled = true;
+  btn.textContent = "Signing in…";
+  try {
+    const r = await bg("ARBIPRO_SIGN_IN_PASSWORD", { email, password });
+    if (!r?.ok) throw new Error(r?.error || "Sign in failed");
+    $("apx-signin-password").value = "";
+    await checkAuth();
+  } catch (err) {
+    errEl.textContent = String(err?.message || err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sign in";
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

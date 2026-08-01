@@ -8,15 +8,30 @@
     body { width: 280px; padding: 14px; }
     .pop-row { display: flex; flex-direction: column; gap: 8px; }
     .pop-status { font-size: 12px; color: var(--muted); }
+    .pop-error { font-size: 11px; color: #DC2626; min-height: 14px; }
+    .pop-field {
+      width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 12px;
+      border: 1px solid var(--line, #E5E7EB); border-radius: 8px; background: #fff;
+    }
+    .pop-field:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .pop-link { font-size: 11px; color: #4F46E5; text-decoration: none; }
   </style>
 </head>
 <body>
   <div class="pop-row">
     <div class="apx-brand"><span class="apx-logo">📝</span><strong>InventorySprint — Create Listing</strong></div>
     <div class="pop-status" id="pop-status">Checking session…</div>
-    <button id="pop-signin" class="apx-primary">Sign in</button>
+
+    <form id="pop-signin-form" class="pop-row hidden">
+      <input id="pop-email" class="pop-field" type="email" placeholder="Email" autocomplete="username" required />
+      <input id="pop-password" class="pop-field" type="password" placeholder="Password" autocomplete="current-password" required />
+      <div class="pop-error" id="pop-error"></div>
+      <button id="pop-signin-submit" type="submit" class="apx-primary">Sign in</button>
+      <a id="pop-forgot" class="pop-link" target="_blank">Forgot password?</a>
+    </form>
+
     <button id="pop-signout" class="apx-primary hidden" style="background:#374151">Sign out</button>
-    <a id="pop-open" class="pop-status" target="_blank">Open Create Listing →</a>
+    <a id="pop-open" class="pop-status hidden" target="_blank">Open Create Listing →</a>
   </div>
   <script src="config.js"></script>
   <script src="popup.js"></script>
