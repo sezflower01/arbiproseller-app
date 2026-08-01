@@ -428,7 +428,17 @@ export const SalesSyncProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (ordersError) {
-        throw new Error(`Failed to fetch orders: ${ordersError.message}`);
+        // supabase-js's FunctionsHttpError.message is always the generic
+        // "Edge Function returned a non-2xx status code" string — the actual
+        // reason is in the response body, reachable via error.context.
+        let detail = ordersError.message;
+        try {
+          const body = await (ordersError as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {
+          // Body already consumed or not JSON — fall back to the generic message.
+        }
+        throw new Error(`Failed to fetch orders: ${detail}`);
       }
 
       const ordersCount = ordersData?.orders?.length || 0;
