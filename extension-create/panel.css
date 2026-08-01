@@ -45,7 +45,7 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
   border-bottom: 1px solid var(--line); cursor: move; user-select: none;
 }
 .apx-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-family: var(--font-display); }
-.apx-logo { width: 18px; height: 18px; border-radius: 4px; vertical-align: middle; }
+.apx-logo { width: 28px; height: 28px; border-radius: 6px; vertical-align: middle; }
 .apx-actions button {
   background: transparent; color: var(--fg); border: 0; padding: 4px 8px;
   font-size: 16px; cursor: pointer; border-radius: 6px;
