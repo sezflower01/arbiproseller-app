@@ -17,7 +17,7 @@
       <div class="apx-brand">
         <span class="apx-logo">⚡</span>
         <span class="apx-live-proof">Analyzer Compact UI v2</span>
-        <span class="apx-version" title="Extension version">v1.3.5</span>
+        <span class="apx-version" title="Extension version">v1.4.0</span>
       </div>
       <div class="apx-actions">
         <button id="apx-refresh" title="Refresh">↻</button>
@@ -29,8 +29,13 @@
 
     <main id="apx-body">
       <div id="apx-signin" class="apx-card hidden">
-        <p>You're signed out of InventorySprint. Reconnect to load product data.</p>
-        <button id="apx-signin-btn" class="apx-primary">Reconnect to InventorySprint</button>
+        <p>You're signed out of InventorySprint. Sign in to load product data.</p>
+        <form id="apx-signin-form" class="apx-signin-form">
+          <input id="apx-signin-email" type="email" placeholder="Email" autocomplete="username" required />
+          <input id="apx-signin-password" type="password" placeholder="Password" autocomplete="current-password" required />
+          <div id="apx-signin-error" class="apx-signin-error"></div>
+          <button id="apx-signin-btn" type="submit" class="apx-primary">Sign in</button>
+        </form>
       </div>
 
       <div id="apx-content" class="hidden">

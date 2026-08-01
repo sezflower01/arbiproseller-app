@@ -2427,8 +2427,28 @@
     const handle = $("apx-drag");
     if (handle) handle.style.cursor = "default";
   })();
-  $("apx-signin-btn").addEventListener("click", () => {
-    window.open(`${CFG.APP_URL}/tools/ext-handoff?ext=1`, "_blank");
+  // Direct email/password sign-in, right here in the panel — no website tab.
+  // Content scripts can't reliably open the extension's own toolbar popup, so
+  // this mirrors it inline instead of sending the user off to a "connect" page.
+  $("apx-signin-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = $("apx-signin-email").value.trim();
+    const password = $("apx-signin-password").value;
+    const btn = $("apx-signin-btn");
+    const errEl = $("apx-signin-error");
+    errEl.textContent = "";
+    btn.disabled = true;
+    btn.textContent = "Signing in…";
+    try {
+      await bg("ARBIPRO_SIGN_IN_PASSWORD", { email, password }, { timeoutMs: 12000 });
+      $("apx-signin-password").value = "";
+      await checkSession();
+    } catch (err) {
+      errEl.textContent = String(err?.message || err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Sign in";
+    }
   });
 
   // ── Debug: copy the raw final-decision payload (inputs + verdict + compliance) ──

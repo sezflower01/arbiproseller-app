@@ -112,6 +112,14 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
 .apx-card .apx-k { font-size: 11px; }
 .apx-card .apx-v { font-size: 14px; font-weight: 600; margin-top: 4px; }
 
+.apx-signin-form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.apx-signin-form input {
+  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); color: inherit;
+}
+.apx-signin-form input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.apx-signin-error { font-size: 11px; color: #DC2626; min-height: 14px; }
+
 .apx-roi { margin-top: 14px; }
 .apx-roi h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-family: var(--font-display); }
 .apx-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
