@@ -2442,7 +2442,10 @@
     try {
       await bg("ARBIPRO_SIGN_IN_PASSWORD", { email, password }, { timeoutMs: 12000 });
       $("apx-signin-password").value = "";
-      await checkSession();
+      // No explicit refresh here — the chrome.storage.onChanged listener
+      // below already calls checkSession() the moment setSession() writes
+      // the new session, so an explicit call here was just a redundant
+      // second refresh racing the same one.
     } catch (err) {
       errEl.textContent = String(err?.message || err);
     } finally {

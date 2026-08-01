@@ -317,7 +317,10 @@ $("apx-signin-form").addEventListener("submit", async (e) => {
     const r = await bg("ARBIPRO_SIGN_IN_PASSWORD", { email, password });
     if (!r?.ok) throw new Error(r?.error || "Sign in failed");
     $("apx-signin-password").value = "";
-    await checkAuth();
+    // No explicit refresh here — the chrome.storage.onChanged listener below
+    // already calls checkAuth() the moment setSession() writes the new
+    // session, so an explicit call here was just a redundant second refresh
+    // racing the same one.
   } catch (err) {
     errEl.textContent = String(err?.message || err);
   } finally {
