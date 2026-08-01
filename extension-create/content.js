@@ -127,11 +127,18 @@
     launcher.id = "arbipro-create-launcher";
     launcher.type = "button";
     launcher.title = "Open Create Listing (Alt+A)";
-    launcher.textContent = "📝";
+    const launcherIcon = document.createElement("img");
+    launcherIcon.src = chrome.runtime.getURL("icons/icon48.png");
+    launcherIcon.alt = "";
+    launcherIcon.style.width = "28px";
+    launcherIcon.style.height = "28px";
+    launcherIcon.style.pointerEvents = "none";
+    launcher.appendChild(launcherIcon);
     Object.assign(launcher.style, {
       position: "fixed", right: "16px", bottom: "70px", zIndex: "2147483647",
       width: "44px", height: "44px", borderRadius: "999px", border: "none",
-      background: "#2563eb", color: "#fff", fontSize: "20px", cursor: "pointer",
+      background: "#2563eb", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
       boxShadow: "0 6px 20px rgba(0,0,0,0.35)",
     });
     launcher.addEventListener("click", () => {

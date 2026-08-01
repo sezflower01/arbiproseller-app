@@ -56,7 +56,7 @@ body { background: linear-gradient(180deg, #F5F6FA 0%, #EAF2FC 100%); color: var
   font-weight: 800;
   font-size: 12px;
 }
-.apx-logo { font-size: 16px; }
+.apx-logo { width: 18px; height: 18px; border-radius: 4px; vertical-align: middle; }
 .apx-actions button {
   background: transparent; color: var(--fg); border: 0; padding: 4px 8px;
   font-size: 16px; cursor: pointer; border-radius: 6px;
