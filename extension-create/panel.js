@@ -189,11 +189,23 @@ window.addEventListener("mouseup", () => post({ type: "DRAG_END" }));
 $("apx-close").addEventListener("click", () => post({ type: "CLOSE" }));
 $("apx-reset").addEventListener("click", () => post({ type: "RESET_POS" }));
 let collapsed = false;
-$("apx-collapse").addEventListener("click", () => { collapsed = !collapsed; post({ type: "COLLAPSE_TOGGLE", collapsed }); });
+function applyCollapsed(next) {
+  collapsed = !!next;
+  $("apx-body").classList.toggle("hidden", collapsed);
+  $("apx-collapse").textContent = collapsed ? "+" : "–";
+  post({ type: "COLLAPSE_TOGGLE", collapsed });
+}
+$("apx-collapse").addEventListener("click", () => applyCollapsed(!collapsed));
 
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || d.source !== "arbipro-host") return;
+  if (d.type === "RESTORE_STATE") {
+    collapsed = !!d.collapsed;
+    $("apx-body").classList.toggle("hidden", collapsed);
+    $("apx-collapse").textContent = collapsed ? "+" : "–";
+    return;
+  }
   if (d.type === "ASIN_CHANGED") {
     state.marketplace = d.marketplace || "US";
     $("apx-mkt").textContent = `${MARKETPLACES[state.marketplace]?.flag || ""} ${state.marketplace}`;
