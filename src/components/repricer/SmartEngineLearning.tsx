@@ -417,12 +417,25 @@ export default function SmartEngineLearning() {
   }, [user?.id, loadData]);
 
   const updateRecStatus = useCallback(async (id: string, status: string) => {
+    const now = new Date().toISOString();
+    const updates: Record<string, any> = { status, updated_at: now };
+    if (status === "approved") {
+      // Keep the audit-trail columns honest — this is the moment the
+      // recommendation actually starts being read by repricer-ai-evaluate's
+      // learning-override path, so record it as applied right here instead
+      // of leaving admin_approved/was_applied permanently false.
+      updates.admin_approved = true;
+      updates.admin_approved_by = user?.id ?? null;
+      updates.admin_approved_at = now;
+      updates.was_applied = true;
+      updates.applied_at = now;
+    }
     await supabase.from("smart_engine_tuning_recommendations")
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq("id", id);
     toast.success(`Recommendation ${status}`);
     loadData();
-  }, [loadData]);
+  }, [loadData, user?.id]);
 
   const launchExperiment = useCallback(async (id: string) => {
     const t = toast.loading("Launching experiment…");
