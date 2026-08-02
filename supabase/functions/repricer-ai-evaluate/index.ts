@@ -5823,6 +5823,13 @@ Deno.serve(async (req) => {
           if (override.parameter_key === 'cooldown_minutes') {
             (rule as any).cooldown_minutes = clamped;
           } else if (override.parameter_key === 'undercut_amount') {
+            // Never override a rule deliberately set to match-exactly (0) —
+            // undercut_amount is the sole source of truth for that behavior,
+            // and this learning override has no per-rule scoping otherwise.
+            if (Number(rule.undercut_amount) === 0) {
+              console.log(`[LEARNING_OVERRIDE] ${targetAsin}: skipping undercut_amount override — rule "${rule.name}" is match-exactly (0)`);
+              continue;
+            }
             (rule as any).undercut_amount = clamped;
           }
           // aggression and recapture_sensitivity are applied via intelligence multiplier below
