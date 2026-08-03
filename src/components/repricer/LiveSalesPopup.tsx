@@ -102,23 +102,46 @@ const isReliablePriceSource = (priceSource: string | null | undefined): boolean 
   return RELIABLE_PRICE_SOURCES.has(priceSource);
 };
 
+// estimated_price is stored in USD (unlike sold_price/total_sale_amount/
+// locked_est_price, which are the native-currency Amazon order amount).
+// Convert it back to native currency here so it can flow through the same
+// toUsd() conversion the caller applies to every other signal — otherwise
+// an already-USD estimate gets divided by the FX rate a second time,
+// shrinking non-US estimates by the FX factor (e.g. ~17x for MXN).
+const estimatedPriceToNative = (
+  estimatedUsd: number,
+  marketplace: string | null | undefined,
+  fxRates: Record<string, number>,
+) => {
+  const currency = MARKETPLACE_CURRENCY[String(marketplace || "US").trim()] || "USD";
+  if (currency === "USD") return estimatedUsd;
+  const rate = fxRates?.[currency];
+  return rate && rate > 0 ? estimatedUsd * rate : estimatedUsd;
+};
+
 const getLineRevenue = (row: {
   quantity?: number | null;
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
+  locked_est_price?: number | null;
   promotion_discount?: number | null;
   promotion_discount_currency?: string | null;
   marketplace?: string | null;
-}) => {
+}, fxRates: Record<string, number>) => {
   const qty = Math.max(1, Number(row.quantity || 0));
   const soldPrice = Number(row.sold_price || 0);
   const totalSale = Number(row.total_sale_amount || 0);
-  const estimated = Number(row.estimated_price || 0);
+  // locked_est_price is a frozen, native-currency snapshot (e.g. a real
+  // pricing-API hint) — prefer it over the weaker estimated_price fallback
+  // when both exist, since it more often reflects the actual order price.
+  const lockedEst = Number(row.locked_est_price || 0);
+  const estimatedUsd = Number(row.estimated_price || 0);
   let gross = 0;
   if (totalSale > 0) gross = totalSale;
   else if (soldPrice > 0) gross = soldPrice * qty;
-  else if (estimated > 0) gross = estimated * qty;
+  else if (lockedEst > 0) gross = lockedEst * qty;
+  else if (estimatedUsd > 0) gross = estimatedPriceToNative(estimatedUsd, row.marketplace, fxRates) * qty;
   if (gross <= 0) return 0;
   // Net Amazon-funded coupon (USD-safe; non-US handled via FEC promo path)
   return Math.max(0, gross - getOrderPromoUsd(row));
@@ -129,14 +152,18 @@ const getUnitPriceForAverage = (row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
-}) => {
+  locked_est_price?: number | null;
+  marketplace?: string | null;
+}, fxRates: Record<string, number>) => {
   const qty = Math.max(1, Number(row.quantity || 0));
   const soldPrice = Number(row.sold_price || 0);
   const totalSale = Number(row.total_sale_amount || 0);
-  const estimated = Number(row.estimated_price || 0);
+  const lockedEst = Number(row.locked_est_price || 0);
+  const estimatedUsd = Number(row.estimated_price || 0);
   if (totalSale > 0) return totalSale / qty;
   if (soldPrice > 0) return soldPrice;
-  if (estimated > 0) return estimated;
+  if (lockedEst > 0) return lockedEst;
+  if (estimatedUsd > 0) return estimatedPriceToNative(estimatedUsd, row.marketplace, fxRates);
   return 0;
 };
 
@@ -253,7 +280,7 @@ const LiveSalesPopup = ({ open, onOpenChange, marketplace: initialMarketplace = 
         let pageQuery = supabase
           .from("sales_orders")
           .select(
-            "order_id, asin, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, order_date, purchase_timestamp_utc, is_cancelled, order_status, order_type, marketplace, price_source, promotion_discount, promotion_discount_currency",
+            "order_id, asin, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, order_date, purchase_timestamp_utc, is_cancelled, order_status, order_type, marketplace, price_source, promotion_discount, promotion_discount_currency",
           )
           .eq("user_id", user.id)
           .gte("order_date", cutoffDate)
@@ -313,7 +340,7 @@ const LiveSalesPopup = ({ open, onOpenChange, marketplace: initialMarketplace = 
         });
 
       const pricesForAvg = dedupedRows
-        .map((r: any) => getUnitPriceForAverage(r))
+        .map((r: any) => getUnitPriceForAverage(r, fxRates))
         .filter((p: number) => p > 0);
       const avgUnitPrice =
         pricesForAvg.length > 0 ? pricesForAvg.reduce((s, p) => s + p, 0) / pricesForAvg.length : 0;
@@ -346,7 +373,7 @@ const LiveSalesPopup = ({ open, onOpenChange, marketplace: initialMarketplace = 
         if (!asin) continue;
 
         const qty = Math.max(1, Number(row.quantity || 0));
-        const explicit = getLineRevenue(row);
+        const explicit = getLineRevenue(row, fxRates);
         const rawRevenue = explicit > 0 ? explicit : avgUnitPrice > 0 ? avgUnitPrice * qty : 0;
         const lineRevenue = toUsd(rawRevenue, (row as any).marketplace);
 
@@ -384,7 +411,7 @@ const LiveSalesPopup = ({ open, onOpenChange, marketplace: initialMarketplace = 
           );
           if (!dateStr || dateStr.length < 10) continue;
           const qty = Math.max(1, Number(row.quantity || 0));
-          const explicit = getLineRevenue(row);
+          const explicit = getLineRevenue(row, fxRates);
           const rawRev = explicit > 0 ? explicit : avgUnitPrice > 0 ? avgUnitPrice * qty : 0;
           const lineRev = toUsd(rawRev, (row as any).marketplace);
           const entry = dayMap.get(dateStr) || { units: 0, revenue: 0 };
