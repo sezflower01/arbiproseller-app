@@ -854,15 +854,51 @@ Deno.serve(async (req) => {
             return { marketplace: mp.id, marketplaceId: mp.marketplaceId, name: mp.name, flag: mp.flag, status: 'APPROVED', reasons: ['Amazon returned no listing restrictions for New condition.'] };
           }
           
+          // Seller-account verified-approval override — mirrors
+          // check-fba-listing-eligibility's sellerVerifiedApproved logic,
+          // which this function was entirely missing. Amazon's brand-level
+          // APPROVAL_REQUIRED restriction can lag well behind reality: if the
+          // user already has an active listing/inventory row for this ASIN,
+          // or a repricer assignment in THIS marketplace, Amazon has already
+          // let them sell it — a stale APPROVAL_REQUIRED must not keep
+          // showing "needs approval" after that. Hard NOT_ELIGIBLE blocks
+          // still apply regardless (those mean Amazon revoked eligibility).
+          let sellerVerifiedApproved = false;
+          try {
+            const [{ data: invRows }, { data: clRows }, { data: raRows }] = await Promise.all([
+              supabaseAdmin.from('inventory').select('listing_status').eq('user_id', user.id).eq('asin', asin),
+              supabaseAdmin.from('created_listings').select('validation_status').eq('user_id', user.id).eq('asin', asin),
+              supabaseAdmin.from('repricer_assignments').select('id').eq('user_id', user.id).eq('asin', asin).eq('marketplace', mp.id).limit(1),
+            ]);
+            const hasActiveInventory = (invRows || []).some((r: any) => {
+              const s = String(r.listing_status || '').toUpperCase();
+              return s !== 'NOT_IN_CATALOG' && s !== 'DELETED';
+            });
+            const hasActiveCreatedListing = (clRows || []).some((r: any) => {
+              const s = String(r.validation_status || 'ACTIVE').toUpperCase();
+              return s === 'ACTIVE' || s === 'PENDING_VALIDATION';
+            });
+            const hasRepricerAssignment = Array.isArray(raRows) && raRows.length > 0;
+            sellerVerifiedApproved = hasActiveInventory || hasActiveCreatedListing || hasRepricerAssignment;
+          } catch (_) {
+            // Non-fatal — fall back to the raw restriction status.
+          }
+
           let hasActionableRestriction = false;
           let status = 'APPROVED';
           const reasons: string[] = [];
-          
+
           for (const restriction of restrictions) {
             const reasonList = restriction?.reasons || [];
             for (const reason of reasonList) {
               const message = reason.message || reason.reasonCode || 'Unknown restriction';
               const reasonCode = String(reason.reasonCode || '').toUpperCase();
+
+              if (reasonCode === 'APPROVAL_REQUIRED' && sellerVerifiedApproved) {
+                reasons.push(`Amazon returned "${message}" but you already have an active listing for this ASIN in ${mp.id} — approval is verified at the seller-account level.`);
+                console.log(`[${mp.id}] APPROVAL_REQUIRED overridden — seller already has an active listing for ${asin}`);
+                continue;
+              }
 
               if (reasonCode === 'APPROVAL_REQUIRED' || reasonCode === 'NOT_ELIGIBLE') {
                 hasActionableRestriction = true;
