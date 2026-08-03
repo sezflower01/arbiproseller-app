@@ -231,6 +231,12 @@ a.apx-seller-name:hover { text-decoration: underline; color: #4F46E5; }
 .apx-seller-tag.self { background: rgba(79,70,229,0.25); color: #4F46E5; }
 .apx-seller-price { font-weight: 600; }
 .apx-sellers-empty { padding: 8px; text-align: center; }
+.apx-inline-retry {
+  background: var(--primary); color: white; border: 0;
+  padding: 3px 10px; border-radius: 6px; font-weight: 600; font-size: 11px;
+  cursor: pointer; margin-left: 4px;
+}
+.apx-inline-retry:hover { background: var(--primary-2); }
 
 /* What-if simulator */
 .apx-sim { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }

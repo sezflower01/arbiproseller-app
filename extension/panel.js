@@ -936,9 +936,10 @@
     list.innerHTML = "";
     if (!offers.length) {
       let emptyMsg;
+      const showRetry = rState === "failed";
       switch (rState) {
         case "failed":
-          emptyMsg = `Live retrieval failed (timeout or SP-API throttled). Click Refresh to retry.`;
+          emptyMsg = `Live retrieval failed (timeout or SP-API throttled).`;
           break;
         case "no_offers":
           emptyMsg = `No active marketplace offers detected for this ASIN.`;
@@ -946,7 +947,13 @@
         default:
           emptyMsg = `No live offers`;
       }
-      list.innerHTML = `<div class="apx-sellers-empty apx-k">${emptyMsg}</div>`;
+      list.innerHTML = `<div class="apx-sellers-empty apx-k">${emptyMsg}${
+        showRetry ? ` <button id="apx-sellers-retry" type="button" class="apx-inline-retry">Retry</button>` : ""
+      }</div>`;
+      if (showRetry) {
+        const retryBtn = $("apx-sellers-retry");
+        if (retryBtn) retryBtn.addEventListener("click", () => loadData(true));
+      }
       return;
     }
 
