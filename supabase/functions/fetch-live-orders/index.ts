@@ -3423,13 +3423,23 @@ Deno.serve(async (req) => {
           }
         }
         
-        // Determine currency and FX rate for non-US orders
+        // Determine currency and FX rate. inventory.price (and any
+        // inventory-derived value, including the low-confidence-hint
+        // override above) is ALWAYS stored in USD regardless of marketplace
+        // — only genuinely native-currency Amazon signals (pricing_api /
+        // orders_api) should be tagged with the marketplace's native
+        // currency. Tagging an inventory-sourced USD value as native
+        // currency caused downstream consumers (asin_price_history, the
+        // snapshot-backfill path in getExactOrderSnapshotEstimate) to divide
+        // an already-USD value by the FX rate, silently corrupting the
+        // result by the FX factor.
         const marketplace = o.marketplace || 'US';
         const marketplaceToCurrency: Record<string, string> = {
           'US': 'USD', 'CA': 'CAD', 'MX': 'MXN', 'BR': 'BRL'
         };
-        currencyCode = marketplaceToCurrency[marketplace] || 'USD';
-        
+        const isNativeCurrencySource = snapshotSource === 'pricing_api' || snapshotSource === 'orders_api';
+        currencyCode = isNativeCurrencySource ? (marketplaceToCurrency[marketplace] || 'USD') : 'USD';
+
         // If non-US and we have FX rates, record the rate used
         if (currencyCode !== 'USD' && fxRates && fxRates[currencyCode]) {
           fxRateUsed = fxRates[currencyCode];
