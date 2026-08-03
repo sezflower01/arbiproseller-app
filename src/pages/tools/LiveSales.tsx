@@ -182,6 +182,7 @@ const getEstimatedPendingRevenueNative = (row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
+  locked_est_price?: number | null;
   is_cancelled?: boolean | null;
   order_status?: string | null;
 }) => {
@@ -191,6 +192,13 @@ const getEstimatedPendingRevenueNative = (row: {
   if (Number(row.total_sale_amount || 0) > 0) return 0;
   if (Number(row.sold_price || 0) > 0) return 0;
   const qty = Math.max(1, Number(row.quantity || 0));
+  // locked_est_price is a frozen, reliably native-currency snapshot — prefer
+  // it over estimated_price, which is native for most price-estimation tiers
+  // but genuinely USD when sourced from an inventory-derived snapshot (a
+  // historical bug in fetch-live-orders' snapshot-backfill path). Matches
+  // getRevenueUsdWithFallback's locked_est_price preference above.
+  const locked = Number(row.locked_est_price || 0);
+  if (locked > 0) return locked * qty;
   const estimated = Number(row.estimated_price || 0);
   return estimated > 0 ? estimated * qty : 0;
 };
@@ -200,13 +208,16 @@ const getUnitPriceForAverage = (row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
+  locked_est_price?: number | null;
 }) => {
   const qty = Math.max(1, Number(row.quantity || 0));
   const soldPrice = Number(row.sold_price || 0);
   const totalSale = Number(row.total_sale_amount || 0);
+  const locked = Number(row.locked_est_price || 0);
   const estimated = Number(row.estimated_price || 0);
   if (totalSale > 0) return totalSale / qty;
   if (soldPrice > 0) return soldPrice;
+  if (locked > 0) return locked;
   if (estimated > 0) return estimated;
   return 0;
 };
@@ -265,13 +276,19 @@ const getUnitPriceForAverageStrict = (row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
+  locked_est_price?: number | null;
 }) => {
   const qty = Math.max(1, Number(row.quantity || 0));
   const soldPrice = Number(row.sold_price || 0);
   const totalSale = Number(row.total_sale_amount || 0);
+  // locked_est_price is a frozen, reliably native-currency snapshot — prefer
+  // it over estimated_price, which is native for most tiers but genuinely
+  // USD when sourced from an inventory-derived snapshot.
+  const locked = Number(row.locked_est_price || 0);
   const estimated = Number(row.estimated_price || 0);
   if (totalSale > 0) return totalSale / qty;
   if (soldPrice > 0) return soldPrice;
+  if (locked > 0) return locked;
   if (estimated > 0) return estimated;
   return 0;
 };

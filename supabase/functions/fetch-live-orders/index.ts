@@ -938,6 +938,7 @@ async function captureMissingBbEstimateForOrders(
   userId: string,
   startDate: string,
   endDate: string,
+  fxRates: Record<string, number>,
 ): Promise<number> {
   const { data: rawOrders, error } = await supabase
     .from('sales_orders')
@@ -1065,7 +1066,7 @@ async function captureMissingBbEstimateForOrders(
       const currentConfidence = order.price_confidence;
       const currentSource = String(order.price_source || '').toLowerCase();
       const currentEst = Number(order.estimated_price || 0);
-      const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, userId, order.order_id, order.asin);
+      const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, userId, order.order_id, order.asin, order.marketplace || 'US', fxRates);
       if (
         exactSnapshotEstimate !== null &&
         currentSoldPrice === 0 &&
@@ -1073,6 +1074,7 @@ async function captureMissingBbEstimateForOrders(
         Math.abs(currentEst - exactSnapshotEstimate) > 0.001
       ) {
         updatePayload.estimated_price = exactSnapshotEstimate;
+        updatePayload.locked_est_price = exactSnapshotEstimate;
         updatePayload.price_source = 'seller_derived:snapshot';
         updatePayload.price_confidence = 'HIGH_CONFIDENCE_PENDING';
         updatePayload.needs_price_enrich = true;
@@ -1118,11 +1120,13 @@ async function getExactOrderSnapshotEstimate(
   userId: string,
   orderId: string,
   asin: string,
+  marketplace: string,
+  fxRates: Record<string, number>,
 ): Promise<number | null> {
   if (!userId || !orderId || !asin || asin === 'UNKNOWN' || asin === 'PENDING') return null;
   const { data, error } = await supabase
     .from('order_price_snapshots')
-    .select('snapshot_item_price, snapshot_price')
+    .select('snapshot_item_price, snapshot_price, snapshot_source, currency_code, currency')
     .eq('user_id', userId)
     .eq('order_id', orderId)
     .eq('asin', asin)
@@ -1137,7 +1141,22 @@ async function getExactOrderSnapshotEstimate(
   }
 
   const snapshotPrice = Number(data?.snapshot_item_price || data?.snapshot_price || 0);
-  return snapshotPrice > 0 ? Math.round(snapshotPrice * 100) / 100 : null;
+  if (snapshotPrice <= 0) return null;
+
+  // estimated_price/locked_est_price contract is NATIVE marketplace currency
+  // for non-US (see architecture-audit.md "Sold price (pending)"). Snapshots
+  // recorded from inventory are always USD (see SNAPSHOT_CAPTURE_CURRENCY_FIX
+  // comment near snapshot-capture) and must be converted to native before use
+  // here — this is the read side of that same currency fix.
+  const marketplaceToCurrency: Record<string, string> = { 'US': 'USD', 'CA': 'CAD', 'MX': 'MXN', 'BR': 'BRL' };
+  const nativeCurrency = marketplaceToCurrency[marketplace] || 'USD';
+  const snapshotCurrency = data?.currency_code || data?.currency ||
+    (data?.snapshot_source === 'pricing_api' || data?.snapshot_source === 'orders_api' ? nativeCurrency : 'USD');
+  const nativePrice = snapshotCurrency === 'USD' && nativeCurrency !== 'USD' && fxRates?.[nativeCurrency]
+    ? snapshotPrice * fxRates[nativeCurrency]
+    : snapshotPrice;
+
+  return Math.round(nativePrice * 100) / 100;
 }
 
 Deno.serve(async (req) => {
@@ -2268,7 +2287,7 @@ Deno.serve(async (req) => {
               if (!estimatedPrice) {
                 const { data: snapRow } = await supabase
                   .from('order_price_snapshots')
-                  .select('snapshot_item_price')
+                  .select('snapshot_item_price, snapshot_source, currency_code, currency')
                   .eq('user_id', user.id)
                   .eq('order_id', orderId)
                   .eq('asin', asin)
@@ -2277,7 +2296,17 @@ Deno.serve(async (req) => {
                   .limit(1)
                   .maybeSingle();
                 if (snapRow?.snapshot_item_price && Number(snapRow.snapshot_item_price) > 0) {
-                  estimatedPrice = Number(snapRow.snapshot_item_price);
+                  const snapRawPrice = Number(snapRow.snapshot_item_price);
+                  // CONTRACT: estimated_price is NATIVE marketplace currency for
+                  // non-US. Inventory-sourced snapshots are always USD — convert
+                  // before use (read side of SNAPSHOT_CAPTURE_CURRENCY_FIX).
+                  const snapMpToCurrency: Record<string, string> = { 'US': 'USD', 'CA': 'CAD', 'MX': 'MXN', 'BR': 'BRL' };
+                  const snapNativeCurrency = snapMpToCurrency[marketplace || 'US'] || 'USD';
+                  const snapCurrency = snapRow.currency_code || snapRow.currency ||
+                    (snapRow.snapshot_source === 'pricing_api' || snapRow.snapshot_source === 'orders_api' ? snapNativeCurrency : 'USD');
+                  estimatedPrice = snapCurrency === 'USD' && snapNativeCurrency !== 'USD' && fxRates?.[snapNativeCurrency]
+                    ? snapRawPrice * fxRates[snapNativeCurrency]
+                    : snapRawPrice;
                   priceSource = 'seller_derived:snapshot';
                   priceCalcMode = 'seller_derived_snapshot';
                   roiSource = 'estimated';
@@ -2829,7 +2858,7 @@ Deno.serve(async (req) => {
               Object.assign(orderDataWithItems, bbFields);
               const localSrc = String(priceSource || '').toLowerCase();
               const localEst = Number(finalEstimatedPrice || 0);
-              const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin);
+              const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
               if (exactSnapshotEstimate !== null && Math.abs(localEst - exactSnapshotEstimate) > 0.001) {
                 orderDataWithItems.estimated_price = exactSnapshotEstimate;
                 orderDataWithItems.locked_est_price = exactSnapshotEstimate;
@@ -3222,7 +3251,7 @@ Deno.serve(async (req) => {
             ((globalThis as any).__bbSellerIdCache ||= makeSellerIdCache()),
           );
           Object.assign(updateData, bbFields);
-          const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin);
+          const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
           if (
             exactSnapshotEstimate !== null &&
             Math.abs(Number(updateData.estimated_price ?? estimatedPrice ?? existingDbOrder?.estimated_price ?? 0) - exactSnapshotEstimate) > 0.001
@@ -3678,6 +3707,7 @@ Deno.serve(async (req) => {
         user.id,
         queryStartDate,
         queryEndDate,
+        fxRates,
       );
     } catch (bbCaptureError: any) {
       console.warn('[LIVE_ORDERS] BB_CAPTURE_BACKFILL_FAILED:', bbCaptureError?.message || bbCaptureError);
