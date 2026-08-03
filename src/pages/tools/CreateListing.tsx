@@ -246,7 +246,7 @@ const CreateListing = () => {
       if (!session) throw new Error("Not authenticated");
 
       const { data, error } = await supabase.functions.invoke(
-        'personalhour-product-data',
+        'fetch-listing-snapshot',
         {
           body: { asin: asin.toUpperCase() },
           headers: { Authorization: `Bearer ${session.access_token}` }

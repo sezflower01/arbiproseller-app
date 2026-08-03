@@ -276,7 +276,7 @@ Deno.serve(async (req) => {
     }
 
     // Per-user, per-marketplace SP-API auth. Mirrors the working web Create
-    // Listing path (personalhour-product-data + check-fba-listing-eligibility).
+    // Listing path (fetch-listing-snapshot + check-fba-listing-eligibility).
     // Falls back to env-var seller only when the user has NO authorization row
     // for this marketplace at all.
     const { data: userAuth } = await supabase

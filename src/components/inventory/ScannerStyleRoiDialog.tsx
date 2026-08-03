@@ -172,7 +172,7 @@ export function ScannerStyleRoiDialog({
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("No session");
-        const { data, error } = await supabase.functions.invoke("personalhour-product-data", {
+        const { data, error } = await supabase.functions.invoke("fetch-listing-snapshot", {
           body: { asin: A },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
@@ -223,7 +223,7 @@ export function ScannerStyleRoiDialog({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("No session");
-      const { data } = await supabase.functions.invoke("personalhour-product-data", {
+      const { data } = await supabase.functions.invoke("fetch-listing-snapshot", {
         body: { asin: asin.toUpperCase() },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });

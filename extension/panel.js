@@ -42,7 +42,7 @@
 
   // Marketplace → default currency. Used to set state.currency immediately on
   // tab switch so the Total-cost USD→local conversion fires without waiting
-  // for personalhour-product-data to come back.
+  // for fetch-listing-snapshot to come back.
   const MARKETPLACE_CURRENCY = {
     US: "USD", CA: "CAD", MX: "MXN", BR: "BRL",
     GB: "GBP", UK: "GBP",
@@ -55,7 +55,7 @@
     return MARKETPLACE_CURRENCY[String(mkt || "US").toUpperCase()] || "USD";
   }
 
-  // Marketplace → SP-API MarketplaceId. Forwarded to personalhour-product-data
+  // Marketplace → SP-API MarketplaceId. Forwarded to fetch-listing-snapshot
   // so SP-API returns fees for the SAME marketplace the user is browsing
   // (CA must use CA referral % + CA FBA fulfillment fee in CAD). Without
   // this, fees default to US and under-count CA/MX/BR FBA fulfillment,
@@ -192,7 +192,7 @@
     if (feeRetryTimer) clearTimeout(feeRetryTimer);
     feeRetryTimer = setTimeout(async () => {
       try {
-        const prod = await bg("ARBIPRO_INVOKE", { fn: "personalhour-product-data", body: { asin, marketplaceId: marketplaceIdFor(marketplace) } }).then(r => r?.data ?? null);
+        const prod = await bg("ARBIPRO_INVOKE", { fn: "fetch-listing-snapshot", body: { asin, marketplaceId: marketplaceIdFor(marketplace) } }).then(r => r?.data ?? null);
         if (state.asin !== asin || state.marketplace !== marketplace) return;
         const hasFees = getActualFeeTotal(prod?.fees) != null;
         if (hasFees) {
@@ -213,13 +213,13 @@
   }
 
   // Gating (Eligibility/Status + FBA Compliance) comes from a LIVE Amazon
-  // SP-API restrictions check every single time personalhour-product-data
+  // SP-API restrictions check every single time fetch-listing-snapshot
   // runs — there's no server-side cache to bypass, so pressing "Recheck"
   // doesn't do anything a plain re-fetch wouldn't. The reason it "fixes"
   // things is purely TIMING: Amazon's restrictions API has its own
   // eventual-consistency lag right after a real approval, and our own
   // seller-account override (checked against inventory/created_listings/
-  // repricer_assignments — see personalhour-product-data/index.ts) can miss
+  // repricer_assignments — see fetch-listing-snapshot/index.ts) can miss
   // a just-created row by a few seconds. The Create Listing tool calls this
   // exact same endpoint — it only LOOKS more "in sync" because it happens to
   // be checked a little later. This auto-retry closes that gap without
@@ -237,7 +237,7 @@
     if (gatingRetryTimer) clearTimeout(gatingRetryTimer);
     gatingRetryTimer = setTimeout(async () => {
       try {
-        const prod = await bg("ARBIPRO_INVOKE", { fn: "personalhour-product-data", body: { asin, marketplaceId: marketplaceIdFor(marketplace) } }).then(r => r?.data ?? null);
+        const prod = await bg("ARBIPRO_INVOKE", { fn: "fetch-listing-snapshot", body: { asin, marketplaceId: marketplaceIdFor(marketplace) } }).then(r => r?.data ?? null);
         if (state.asin !== asin || state.marketplace !== marketplace) return;
         if (prod) {
           // Same clear-then-apply pattern as the main fetch (loadData) so a
@@ -646,7 +646,7 @@
     el.className = "apx-pill apx-elig-badge";
     renderMarketplaceGatingChips();
 
-    // SOURCE OF TRUTH: per-marketplace gating from `personalhour-product-data`
+    // SOURCE OF TRUTH: per-marketplace gating from `fetch-listing-snapshot`
     // (same source the web Create Listing tool uses). The legacy
     // `state.eligibility` value (from `check-product-eligibility` with global
     // env-var seller) is intentionally NOT used here — it answered for the
@@ -970,7 +970,7 @@
     const fbaFee = totalFees == null ? 0 : (Number(f?.fbaFee) || 0);
     const closing = totalFees == null ? 0 : (Number(f?.variableClosingFee) || 0) + (Number(f?.otherFees) || 0);
     // Reference price the SP-API fees were estimated against. Prefer the
-    // price returned by `personalhour-product-data` (same SP-API snapshot as
+    // price returned by `fetch-listing-snapshot` (same SP-API snapshot as
     // the fees) so the derived referral RATE matches what Amazon actually
     // billed for those fees. Fall back to the panel's BB only if missing
     // (legacy cached snapshots).
@@ -1060,7 +1060,7 @@
       const cached = await readCache(a, m, r);
       if (cached) {
         // Strip any legacy cached gating — gating must always come from a
-        // fresh personalhour-product-data call so an APPROVED flip on
+        // fresh fetch-listing-snapshot call so an APPROVED flip on
         // Amazon's side is reflected immediately (matches Create extension).
         if (cached.product) {
           delete cached.product.marketplaceGating;
@@ -1126,7 +1126,7 @@
     state.fbaComplianceError = null;
     renderFbaCompliance();
     const tasks = [
-      safeInvoke("personalhour-product-data", { asin: a, marketplaceId: marketplaceIdFor(m) }, 20000).then((prod) => {
+      safeInvoke("fetch-listing-snapshot", { asin: a, marketplaceId: marketplaceIdFor(m) }, 20000).then((prod) => {
         if (!stillCurrent()) return;
         if (prod) {
           const hasFees = getActualFeeTotal(prod.fees) != null;
@@ -1158,7 +1158,7 @@
         if (prod?.imageUrl) state.product.image = prod.imageUrl;
         renderMeta(); renderEligibility(); renderFbaEligibility(); renderFbaCompliance(); renderRoiAndSignal();
         // Not approved yet on this first check? Amazon's restrictions API and
-        // our own seller-account override (see personalhour-product-data)
+        // our own seller-account override (see fetch-listing-snapshot)
         // both have a brief eventual-consistency window right after a real
         // approval — auto-retry instead of leaving the user stuck showing a
         // stale gate until they notice and press Recheck themselves.
@@ -1229,7 +1229,7 @@
     state.cached = false;
     state.fetched_at = new Date().toISOString();
     // Persist a sanitized product copy WITHOUT gating — gating must always
-    // come from a live personalhour-product-data fetch.
+    // come from a live fetch-listing-snapshot fetch.
     const productForCache = state.product ? { ...state.product } : null;
     if (productForCache) {
       delete productForCache.marketplaceGating;
@@ -2585,7 +2585,7 @@
       state.asin = d.asin;
       state.marketplace = d.marketplace || "US";
       // Set currency from marketplace IMMEDIATELY so USD→local cost conversion
-      // works even before personalhour-product-data returns. product-data may
+      // works even before fetch-listing-snapshot returns. product-data may
       // override later if it returns a more specific `currency` field.
       state.currency = currencyForMarketplace(state.marketplace);
       state._url = d.url || null;

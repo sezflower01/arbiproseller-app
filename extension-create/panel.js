@@ -406,7 +406,7 @@ $("apx-fetch").addEventListener("click", async () => {
   if (!/^[A-Z0-9]{10}$/.test(asin)) { setStatus("apx-fetch-status", "Enter a valid 10-char ASIN", "err"); return; }
   state.asin = asin;
   setStatus("apx-fetch-status", "Fetching…");
-  const r = await bg("ARBIPRO_INVOKE", { fn: "personalhour-product-data", body: { asin } });
+  const r = await bg("ARBIPRO_INVOKE", { fn: "fetch-listing-snapshot", body: { asin } });
   if (!r?.ok) { setStatus("apx-fetch-status", r?.error || "Failed", "err"); return; }
   state.product = r.data || {};
   setStatus("apx-fetch-status", "");

@@ -193,7 +193,7 @@ export default function MobileScan() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
-      const { data, error } = await supabase.functions.invoke('personalhour-product-data', {
+      const { data, error } = await supabase.functions.invoke('fetch-listing-snapshot', {
         body: { asin: asin.toUpperCase() },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -228,9 +228,9 @@ export default function MobileScan() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
-      // Use the SAME endpoint as Create Listing (personalhour-product-data)
+      // Use the SAME endpoint as Create Listing (fetch-listing-snapshot)
       const { data, error } = await supabase.functions.invoke(
-        'personalhour-product-data',
+        'fetch-listing-snapshot',
         {
           body: { asin: row.asin.toUpperCase() },
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -702,7 +702,7 @@ export default function MobileScan() {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const { data: prod } = await supabase.functions.invoke(
-              'personalhour-product-data',
+              'fetch-listing-snapshot',
               {
                 body: { asin: asin.toUpperCase() },
                 headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,

@@ -727,9 +727,9 @@ export default function Inventory() {
       let spApiData: any = null;
 
       if (needsSpApi) {
-        console.log('✅ Calling personalhour-product-data (missing data from created_listings)...');
+        console.log('✅ Calling fetch-listing-snapshot (missing data from created_listings)...');
         const { data, error } = await supabase.functions.invoke(
-          'personalhour-product-data',
+          'fetch-listing-snapshot',
           {
             body: { 
               asin: item.asin,

@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
     );
     const access = await checkModuleAccess(adminClient, user.id, 'personalhour', 'view');
     if (!access.allowed) {
-      console.warn(`[personalhour-product-data] BLOCKED user=${user.id} reason=${access.reason}`);
+      console.warn(`[fetch-listing-snapshot] BLOCKED user=${user.id} reason=${access.reason}`);
       return new Response(
         JSON.stringify({ error: access.reason || 'Forbidden' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

@@ -1099,7 +1099,7 @@ export default function SyncedInventory() {
         setImageProgress({ done: i + 1, total: totalAsins });
 
         try {
-          const { data, error } = await supabase.functions.invoke('personalhour-product-data', {
+          const { data, error } = await supabase.functions.invoke('fetch-listing-snapshot', {
             body: { asin, marketplaceId: 'ATVPDKIKX0DER' },
             headers: { Authorization: `Bearer ${session.access_token}` },
           });

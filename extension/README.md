@@ -13,7 +13,7 @@ Amazon PDP → content.js (detects ASIN + marketplace)
            → panel.html (iframe UI)
            → background.js (auth + token refresh)
            → Supabase Edge Functions:
-               personalhour-product-data
+               fetch-listing-snapshot
                check-product-eligibility
                mobile-scan-price-stability
                mobile-scan-price-history

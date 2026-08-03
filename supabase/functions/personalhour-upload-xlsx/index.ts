@@ -110,7 +110,7 @@ serve(async (req) => {
         // Fetch product data from SP-API
         console.log(`Fetching product data for ASIN: ${asin}`);
         const { data: productData, error: productError } = await supabase.functions.invoke(
-          'personalhour-product-data',
+          'fetch-listing-snapshot',
           {
             body: { asin },
             headers: { Authorization: authHeader }

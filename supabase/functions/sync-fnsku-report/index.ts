@@ -912,7 +912,7 @@ async function phaseOuterEnrich(ctx: Ctx, deadline: number, row: any): Promise<P
         const isComplete = item.image_url && item.price && item.price > 0 && item.unit_cost && item.unit_cost > 0;
         if (isComplete) continue;
 
-        const { data: productData, error: productError } = await ctx.supabase.functions.invoke('personalhour-product-data', { body: { asin: item.asin } });
+        const { data: productData, error: productError } = await ctx.supabase.functions.invoke('fetch-listing-snapshot', { body: { asin: item.asin } });
         if (productError) {
           const errorMsg = productError?.message || JSON.stringify(productError);
           if (errorMsg.includes('Unauthorized') || errorMsg.includes('NOT_FOUND')) continue;

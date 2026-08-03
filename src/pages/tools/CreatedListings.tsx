@@ -2690,8 +2690,8 @@ export default function CreatedListings() {
                   try {
                     const { data: { session } } = await supabase.auth.getSession();
                     if (!session) throw new Error("Not authenticated");
-                    // Use personalhour-product-data — same as CreateListing for accurate fees
-                    const { data, error } = await supabase.functions.invoke('personalhour-product-data', {
+                    // Use fetch-listing-snapshot — same as CreateListing for accurate fees
+                    const { data, error } = await supabase.functions.invoke('fetch-listing-snapshot', {
                       body: { asin: item.asin },
                       headers: { Authorization: `Bearer ${session.access_token}` }
                     });

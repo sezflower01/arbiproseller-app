@@ -259,7 +259,7 @@ const PersonalHour = () => {
       // Call edge function to get product data
       // Pass existing price as priceOverride so fee calculation works even if Amazon returns NoBuyableOffers
       const { data: productData, error: apiError } = await supabase.functions.invoke(
-        'personalhour-product-data',
+        'fetch-listing-snapshot',
         {
           body: { asin: order.asin, priceOverride: order.price || 0 },
           headers: { Authorization: `Bearer ${session.access_token}` }
@@ -462,7 +462,7 @@ const PersonalHour = () => {
       if (!session) throw new Error("Not authenticated");
 
       const { data: productData, error: apiError } = await supabase.functions.invoke(
-        'personalhour-product-data',
+        'fetch-listing-snapshot',
         {
           body: { asin: newOrderAsin.toUpperCase() },
           headers: { Authorization: `Bearer ${session.access_token}` }

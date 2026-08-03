@@ -2654,7 +2654,7 @@ export default function ShipmentBuilder() {
   };
 
   // Fired the moment a row is Saved — checks Amazon's LIVE Listings
-  // Restrictions API for this ASIN (via personalhour-product-data, the same
+  // Restrictions API for this ASIN (via fetch-listing-snapshot, the same
   // gating check the analyzer/extension use) so a restricted-brand ASIN is
   // flagged here in Step 2 instead of failing later at shipment-plan
   // submission. Non-blocking: the save itself already happened, this only
@@ -2662,7 +2662,7 @@ export default function ShipmentBuilder() {
   const checkAsinGating = async (itemId: string, asin: string) => {
     setItemGating(itemId, { gatingStatus: "checking", gatingReason: null });
     try {
-      const { data, error } = await supabase.functions.invoke("personalhour-product-data", {
+      const { data, error } = await supabase.functions.invoke("fetch-listing-snapshot", {
         body: { asin: asin.toUpperCase(), marketplaceId: "ATVPDKIKX0DER" },
       });
       if (error || !data) {

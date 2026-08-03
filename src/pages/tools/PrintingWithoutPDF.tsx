@@ -109,7 +109,7 @@ const PrintingWithoutPDF = () => {
       if (!session) throw new Error("Not authenticated");
 
       const { data: productData, error: apiError } = await supabase.functions.invoke(
-        'personalhour-product-data',
+        'fetch-listing-snapshot',
         {
           body: { asin: asin.toUpperCase(), simple: true },
           headers: { Authorization: `Bearer ${session.access_token}` }

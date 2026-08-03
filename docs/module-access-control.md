@@ -25,7 +25,7 @@ enforcement can never disagree.
 
 | Edge function | Check |
 | --- | --- |
-| `personalhour-product-data` | `personalhour:view` |
+| `fetch-listing-snapshot` | `personalhour:view` |
 | `discover-source-candidates` | `supplier_discovery:run` |
 | `auto-extract-top-candidates` | `supplier_discovery:run` (against run owner) |
 | `extract-product-price` | `supplier_discovery:run` |
@@ -143,7 +143,7 @@ SELECT public.has_module_access('<user_id>', 'personalhour'::app_module, 'view':
 ## Regression test checklist
 
 - [ ] No-grant user → cannot reach `/PersonalHour` (redirected to `/tools` with toast).
-- [ ] No-grant user → `personalhour-product-data` returns `403 MODULE_ACCESS_DENIED`.
+- [ ] No-grant user → `fetch-listing-snapshot` returns `403 MODULE_ACCESS_DENIED`.
 - [ ] User with `repricer:view` only → cannot call `repricer-batch-update` (403).
 - [ ] User with `repricer:run` → can submit batch updates.
 - [ ] Admin → every check passes regardless of `user_module_access` rows.

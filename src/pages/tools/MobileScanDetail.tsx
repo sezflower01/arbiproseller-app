@@ -304,7 +304,7 @@ export default function MobileScanDetail() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
-        const { data, error } = await supabase.functions.invoke('personalhour-product-data', {
+        const { data, error } = await supabase.functions.invoke('fetch-listing-snapshot', {
           body: { asin },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
@@ -352,7 +352,7 @@ export default function MobileScanDetail() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
-      const { data, error } = await supabase.functions.invoke('personalhour-product-data', {
+      const { data, error } = await supabase.functions.invoke('fetch-listing-snapshot', {
         body: { asin: scan.asin.toUpperCase() },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
