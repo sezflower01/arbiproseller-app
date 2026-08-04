@@ -599,6 +599,16 @@ input[type="number"] { -moz-appearance: textfield; }
   text-align: right;
   display: inline-block;
 }
+/* Small "ⓘ" hint next to each decision-table label — hover to see the
+   plain-English reason behind that row's score, same idea as the detailed
+   diagnostics grid below but discoverable without expanding it. */
+.apx-info-dot {
+  cursor: help;
+  opacity: 0.5;
+  font-size: 10px;
+  margin-left: 1px;
+}
+.apx-info-dot:hover { opacity: 1; }
 
 .apx-strip-money {
   grid-template-columns: repeat(4, minmax(0,1fr));

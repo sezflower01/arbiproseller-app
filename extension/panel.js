@@ -1487,6 +1487,14 @@
     // Don't fake ROI when Amazon Fees API didn't return real fees.
 
     const elig = classifyEligibility();
+    const eligInfo = elig.level === "good"
+      ? "Amazon's SP-API restrictions check found no blocks for your seller account in this marketplace — you're clear to list."
+      : elig.level === "bad"
+      ? "Amazon's SP-API restrictions check found a hard block for your seller account in this marketplace — listing isn't currently possible."
+      : elig.level === "caution"
+      ? "Amazon requires brand/category approval before you can list this ASIN under your seller account. Apply for approval, or check an existing application, before sourcing this."
+      : "Eligibility hasn't been checked yet for this marketplace.";
+    { const _el = $("apx-sa-eligible-info"); if (_el) _el.title = eligInfo; }
     setChip($("apx-sa-eligible"), elig.level, elig.text);
     // Reconciled seller count from actual offer list (single source of truth
     // shared with the competitor table below).
@@ -1526,6 +1534,10 @@
       ? "Not enough historical data yet to determine Private-Label Risk reliably."
       : plResult.text;
     setChip($("apx-sa-pl"), plRowLevel, plDisplayText);
+    // Human-readable "why" for every possible state (High/Medium/Low risk,
+    // limited history, or insufficient data) — plCaption/plResult.text is
+    // always populated by computePrivateLabelRisk(), never blank.
+    { const _el = $("apx-sa-pl-info"); if (_el) _el.title = plCaption; }
 
     const bsr = intel.bsr_current;
     $("apx-sa-bsr").textContent = bsr ? "#" + bsr.toLocaleString() : "—";
@@ -1592,7 +1604,14 @@
     const flagged = diag.filter(d => d.level === "caution" || d.level === "bad");
     const aBadge = $("apx-sa-alerts");
     aBadge.textContent = flagged.length ? flagged.map(d => d.k).join(", ") : "None";
-    aBadge.title = flagged.length ? flagged.map(d => `${d.k}: ${d.tip || d.text}`).join(" • ") : "";
+    // "each alert: its own plain-English reason" (same tip text the
+    // detailed diagnostics grid shows) — including the "no alerts" case,
+    // which used to leave the tooltip empty.
+    const alertsInfo = flagged.length
+      ? flagged.map(d => `${d.k}: ${d.tip || d.text}`).join(" • ")
+      : "No risk factors flagged — Eligibility, Private-Label Risk, and every other check below came back clean.";
+    aBadge.title = alertsInfo;
+    { const _el = $("apx-sa-alerts-info"); if (_el) _el.title = alertsInfo; }
     // Red should mean "real problem" (at least one "bad" item, e.g. Hazmat
     // blocked, Ineligible, Insufficient PL data). A caution-only mix (e.g.
     // just a Medium Private-Label Risk) is a milder heads-up, not an
