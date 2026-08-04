@@ -107,6 +107,9 @@ verify_jwt = true
 [functions.debug-sales-day]
 verify_jwt = true
 
+[functions.brand-history-lookup]
+verify_jwt = true
+
 [functions.fetch-profit-loss]
 verify_jwt = false
 

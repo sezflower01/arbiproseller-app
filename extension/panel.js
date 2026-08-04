@@ -119,6 +119,9 @@
   // 10-min dedup keyed by asin+marketplace; one decisionId per scan window.
   const DM_DEDUP_MS = 10 * 60 * 1000;
   let dmState = { decisionId: null, key: null, lastLogAt: 0, pending: false, recorded: null };
+  // Dedup key for the last brand-history lookup fired — avoids re-querying
+  // on every re-render of the same scan.
+  let brandHistoryState = { key: null };
 
   // Pick the price an FBA seller (or FBM seller) would realistically sell at.
   // Default mode FBA: never anchor to an FBM-held Buy Box — that competition
@@ -1459,6 +1462,11 @@
     if (why) why.textContent = "";
     const scoreEl = $("apx-sa-verdict-score");
     if (scoreEl) scoreEl.textContent = "";
+    // Don't let the previous product's brand-history summary linger while
+    // the new scan is still loading.
+    const bh = $("apx-brand-history");
+    if (bh) { bh.hidden = true; bh.innerHTML = ""; bh.className = "apx-brand-history"; }
+    brandHistoryState.key = null;
   }
 
   let __saMounted = false;
@@ -1697,13 +1705,20 @@
     // Compat shape for classifyCompetitionRisk() / the debug-JSON export,
     // which still speak this file's "good"/"caution"/"bad" vocabulary.
     const plCompat = { level: plRowLevel, text: plDisplayText };
+    // Clean categorical label for analyzer_decision_log.pl_risk — a short,
+    // groupable value (unlike plDisplayText's "45% — Medium Risk", which is
+    // fine for the UI but awkward to aggregate in SQL for brand history).
+    const plRiskLabel = plResult.state === "insufficient" ? "Insufficient Data"
+      : plResult.state === "limited_history" ? "Limited History"
+      : plResult.level; // "Low" | "Medium" | "High"
     renderDecisionMatrix({
       roi, profit, elig, amz, pl: plCompat, intel,
       totalSellers, bsr, sales, scorePct: pct,
       sellerCountSource, offerCountFba, offerCountFbm,
       compliance, buyBoxPrice, simActive,
       costMissing: totalCost <= 0,
-      plCaption,
+      plCaption, plRiskLabel,
+      plRiskPct: plResult.state === "scored" ? plResult.normalizedScore : null,
     });
   }
 
@@ -1991,8 +2006,64 @@
 
     // Fire-and-forget: persist this scan into analyzer_decision_log.
     try { logAnalyzerDecisionFromCtx(ctx, final, profit, trend, comp); } catch (e) { console.warn("[DM] log failed", e); }
+
+    // Fire-and-forget: look up what the community has seen scanning OTHER
+    // ASINs from this same brand — see brand-history-lookup edge function.
+    try {
+      const brand = state.stability?.intel?.brand || state.product?.brand || null;
+      fetchBrandHistory(brand, state.asin);
+    } catch (e) { console.warn("[BrandHistory] fetch failed", e); }
   }
 
+  // ── Brand History: "other ASINs from this brand" pooled across every
+  // extension user's scans (analyzer_decision_log), not just this one ASIN.
+  function renderBrandHistory(data) {
+    const el = $("apx-brand-history");
+    if (!el) return;
+    if (!data) { el.hidden = true; el.innerHTML = ""; el.className = "apx-brand-history"; return; }
+    el.hidden = false;
+    if (data.loading) {
+      el.className = "apx-brand-history";
+      el.innerHTML = `<div class="apx-brand-history-head">🏷 Brand History</div>Checking other scans for this brand…`;
+      return;
+    }
+    if (!data.hasEnoughData) {
+      el.className = "apx-brand-history";
+      el.innerHTML = `<div class="apx-brand-history-head">🏷 Brand History</div>Not enough shared data yet for this brand — you're one of the first to scan it here.`;
+      return;
+    }
+    const plCounts = data.plRiskCounts || {};
+    const riskyCount = (plCounts["Medium"] || 0) + (plCounts["High"] || 0);
+    const avoidCount = (data.decisionCounts || {})["AVOID"] || 0;
+    const plParts = Object.entries(plCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([level, n]) => `${n} ${level}`)
+      .join(" · ");
+    const isRisky = (riskyCount / data.distinctAsins) >= 0.4 || (avoidCount / data.distinctAsins) >= 0.3;
+    el.className = "apx-brand-history" + (isRisky ? " caution" : "");
+    const n = data.distinctAsins;
+    el.innerHTML = `<div class="apx-brand-history-head">🏷 Brand History (${n} other ASIN${n === 1 ? "" : "s"} scanned)</div>`
+      + `Private-Label Risk: ${plParts || "—"}${avoidCount ? ` · ${avoidCount} previously marked AVOID` : ""}`;
+  }
+
+  function fetchBrandHistory(brand, asin) {
+    const b = String(brand || "").trim();
+    const a = String(asin || "").trim().toUpperCase();
+    if (!b) { brandHistoryState.key = null; renderBrandHistory(null); return; }
+    const key = `${b}::${a}`;
+    if (brandHistoryState.key === key) return; // already fetched/fetching for this exact scan
+    brandHistoryState.key = key;
+    renderBrandHistory({ loading: true });
+    chrome.runtime.sendMessage({ type: "ARBIPRO_INVOKE", fn: "brand-history-lookup", body: { brand: b, asin: a } }, (r) => {
+      if (brandHistoryState.key !== key) return; // stale response — ASIN changed since this fired
+      if (r?.ok && r.data && !r.data.error) {
+        renderBrandHistory(r.data);
+      } else {
+        console.warn("[BrandHistory] lookup failed", r?.error || r?.data?.error);
+        renderBrandHistory(null);
+      }
+    });
+  }
 
   // ── Decision Memory: capture every analyzer scan + Buy/Skip/Watch ──
   function logAnalyzerDecisionFromCtx(ctx, final, profit, trend, comp) {
@@ -2043,6 +2114,11 @@
       swing_1y: state.range === "365" ? (state.stability?.swing_pct ?? null) : null,
       eligibility: ctx.elig?.text || null,
       competition_level: comp?.text || null,
+      // Was defined in the schema but never actually populated — this is
+      // the data collection this row now exists to feed: brand-level
+      // history aggregated across every user's scans (see
+      // brand-history-lookup edge function).
+      pl_risk: ctx.plRiskLabel || null,
       final_decision: final?.action || null,
       confidence,
       ai_reasoning: ($("apx-dm-why")?.textContent || "").slice(0, 1000) || null,
@@ -2054,6 +2130,7 @@
         eligibility: approvalStatus,
         stability_verdict: state.stability?.verdict || null,
         range: state.range,
+        plRiskPct: ctx.plRiskPct ?? null,
       },
       // Lightweight metadata for future pattern mining.
       category: state.stability?.intel?.category || state.product?.category || null,

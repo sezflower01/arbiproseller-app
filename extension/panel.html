@@ -169,6 +169,11 @@
             <div class="apx-fd-score" id="apx-sa-verdict-score" hidden style="display:none"></div>
             <span id="apx-sa-verdict-emoji" hidden></span>
             <span id="apx-sa-verdict-label" hidden></span>
+            <!-- Brand History — pooled across ALL extension users' scans
+                 (analyzer_decision_log via brand-history-lookup), not just
+                 this one ASIN. Hidden until a brand is resolved and the
+                 lookup returns something to show. -->
+            <div class="apx-brand-history" id="apx-brand-history" hidden></div>
             <button type="button" class="apx-dm-export-btn" id="apx-fd-copy-debug" title="Copy the full decision engine payload (inputs + verdict + compliance flags) to clipboard" style="margin-top:8px;width:100%;">🐞 Copy decision JSON (debug)</button>
           </div>
 
