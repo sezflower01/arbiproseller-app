@@ -1052,9 +1052,10 @@ const MobileLiveSales = () => {
   // it derives from the same row set (linear projection in the render layer).
   const cacheKeyForPeriod = useCallback((p: Period): string => {
     const info = getPeriodRange(p);
-    // v18: invalidate cached rows that could have displayed current repricer
-    // price before the frozen order price lock.
-    const V = `v18-${marketplaceFilter}-${salesMode}`;
+    // v19: invalidate cached rows computed before the snapshot
+    // currency-tagging fix (USD-tagged inventory snapshots were previously
+    // read as native currency and double-FX-converted, e.g. MX$19 -> $1.09).
+    const V = `v19-${marketplaceFilter}-${salesMode}`;
 
     if (p === "today") return `${info.start}-${V}`;
     if (p === "yesterday") return `yesterday-${info.start}-${V}`;
