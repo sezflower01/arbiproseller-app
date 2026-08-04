@@ -1750,22 +1750,28 @@
     return { level: "caution", text: "Mixed", reason: `${rangeLbl} swing ${swing != null ? swing.toFixed(0)+"%" : "?"}${slope != null ? ` · slope ${slope.toFixed(0)}%` : ""}` };
   }
 
-  function classifyCompetitionRisk({ amz, pl, totalSellers, intel }) {
+  function classifyCompetitionRisk({ amz, pl, totalSellers, intel, sellerCountSource }) {
     const reasons = [];
     let score = 0; // 0 = low risk, higher = more risk
     if (amz.level === "bad")     { score += 3; reasons.push("Amazon dominates listing"); }
     else if (amz.level === "caution") { score += 1; reasons.push("Amazon present"); }
     if (pl.level === "bad")      { score += 2; reasons.push("Private-label risk"); }
     else if (pl.level === "caution") { score += 1; reasons.push("Possible PL"); }
-    if (totalSellers >= 15)      { score += 2; reasons.push(`${totalSellers} sellers`); }
-    else if (totalSellers >= 8)  { score += 1; reasons.push(`${totalSellers} sellers`); }
+    const sellerSuffix = sellerCountSource === "offers_list" ? " sellers from offer list" : " sellers";
+    if (totalSellers >= 15)      { score += 2; reasons.push(`${totalSellers}${sellerSuffix}`); }
+    else if (totalSellers >= 8)  { score += 1; reasons.push(`${totalSellers}${sellerSuffix}`); }
     const bsr = intel?.bsr_current;
     if (bsr != null && bsr > 500000) { score += 1; reasons.push(`Slow BSR #${bsr.toLocaleString()}`); }
     let level, text;
     if (score >= 4) { level = "bad";     text = "High"; }
     else if (score >= 2) { level = "caution"; text = "Medium"; }
     else { level = "good"; text = "Low"; }
-    return { level, text, reason: reasons.slice(0, 2).join(" · ") || "Clean competitive landscape" };
+    // Keep all contributing reasons (not just the top 2) — a Medium/High
+    // score driven partly by Private-Label Risk must say so; silently
+    // dropping it here was the actual bug (see buildHumanExplanation()
+    // below, which used to reconstruct its own seller-count-only summary
+    // instead of reading this field at all).
+    return { level, text, reason: reasons.join(" · ") || "Clean competitive landscape" };
   }
 
   // Final action combines all signals into one of:
@@ -1876,9 +1882,12 @@
     if (ctx.sales) detail.push(`~${ctx.sales.toLocaleString()} sales/mo`);
     if (trend.reason) detail.push(trend.text + " market (" + trend.reason + ")");
     if (comp.text && comp.text !== "Low") {
-      const suffix = ctx.sellerCountSource === "offers_list" && ctx.totalSellers > 0
-        ? ` (${ctx.totalSellers} sellers from offer list)` : "";
-      detail.push(comp.text + " competition" + suffix);
+      // comp.reason lists every factor that actually drove the score
+      // (Amazon presence, Private-Label Risk, seller count, slow BSR) —
+      // showing it here, instead of a seller-count-only summary, is what
+      // makes "Medium/High competition" traceable back to Private-Label
+      // Risk when that's part of why.
+      detail.push(comp.text + " competition (" + comp.reason + ")");
     }
     if (ctx.elig?.text && ctx.elig.level !== "good") detail.push(ctx.elig.text);
     if (detail.length) parts.push(detail.join(" · "));
