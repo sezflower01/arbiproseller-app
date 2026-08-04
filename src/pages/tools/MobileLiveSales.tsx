@@ -344,13 +344,16 @@ const getSalesReportUnitPriceForAverage = (row: {
   sold_price?: number | null;
   total_sale_amount?: number | null;
   estimated_price?: number | null;
+  locked_est_price?: number | null;
 }) => {
   const qty = Math.max(1, Number(row.quantity || 0));
   const soldPrice = Number(row.sold_price || 0);
   const totalSale = Number(row.total_sale_amount || 0);
+  const lockedEst = Number(row.locked_est_price || 0);
   const estimated = Number(row.estimated_price || 0);
   if (totalSale > 0) return totalSale / qty;
   if (soldPrice > 0) return soldPrice;
+  if (lockedEst > 0) return lockedEst;
   if (estimated > 0) return estimated;
   return 0;
 };
@@ -1339,7 +1342,7 @@ const MobileLiveSales = () => {
         const historyStart = addDaysISO(rangeStart, -90);
         const { data: historyRows } = await supabase
           .from("sales_orders")
-            .select("asin, quantity, sold_price, total_sale_amount, estimated_price, marketplace, price_source, price_calc_mode, price_confidence, order_date, updated_at, promotion_discount, promotion_discount_currency")
+            .select("asin, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, marketplace, price_source, price_calc_mode, price_confidence, order_date, updated_at, promotion_discount, promotion_discount_currency")
           .eq("user_id", user.id)
           .in("asin", Array.from(asinSet))
           .gte("order_date", historyStart)
@@ -1422,9 +1425,14 @@ const MobileLiveSales = () => {
 
       const snapshotNativeUnitByOrder = new Map<string, number>();
       if (deduped.length > 0) {
-        const orderIdsForSnapshots = Array.from(
-          new Set(deduped.map((r: any) => normalizeOrderId(r.order_id)).filter(Boolean)),
-        );
+        const orderMarketplaceMap = new Map<string, string>();
+        for (const r of deduped as any[]) {
+          const oid = normalizeOrderId(r.order_id);
+          if (oid && !orderMarketplaceMap.has(oid)) {
+            orderMarketplaceMap.set(oid, String(r.marketplace || "US").trim().toUpperCase() || "US");
+          }
+        }
+        const orderIdsForSnapshots = Array.from(orderMarketplaceMap.keys());
         for (let i = 0; i < orderIdsForSnapshots.length; i += 200) {
           const chunk = orderIdsForSnapshots.slice(i, i + 200);
           const { data: snapshotRows } = await supabase
@@ -1441,19 +1449,22 @@ const MobileLiveSales = () => {
             const key = `${orderId}::${asin}`;
             if (snapshotNativeUnitByOrder.has(key)) continue;
             const snapshotPrice = Number(snap.snapshot_item_price || 0);
-            const snapshotStoredCurrency = String(snap.currency || "").trim().toUpperCase();
-            const snapshotMarketCurrency = String(snap.currency_code || "").trim().toUpperCase();
+            const snapshotMarketCurrency = String(snap.currency_code || snap.currency || "").trim().toUpperCase();
             if (snapshotPrice <= 0) continue;
-            // Only treat as native when the value was actually stored in the
-            // marketplace's native currency. Some writers stamp `currency='USD'`
-            // (already-converted value) while `currency_code` is the marketplace
-            // currency — those rows would otherwise be FX-double-converted and
-            // show 1/17 of true MX revenue, etc.
-            if (
-              !snapshotMarketCurrency ||
-              snapshotMarketCurrency === "USD" ||
-              snapshotStoredCurrency === snapshotMarketCurrency
-            ) {
+            const mp = orderMarketplaceMap.get(orderId) || "US";
+            // currency_code is the ACTUAL currency the stored number is in
+            // (accurate as of the snapshot-capture currency fix — see
+            // fetch-live-orders/index.ts SNAPSHOT_CAPTURE_CURRENCY_FIX).
+            // Only treat snapshotPrice as native when that currency really is
+            // the marketplace's native currency. A 'USD'-tagged snapshot for
+            // a non-US marketplace is an inventory-sourced value, NOT a
+            // native price — storing it here as "native" caused it to be
+            // divided by the FX rate a second time downstream (e.g. MX$19
+            // read as native MXN -> $1.09 instead of $19). Skip those and
+            // let the locked_est_price/estimated_price fallback chain in
+            // getMarketplaceNativeEstimate() handle them instead.
+            const isUsdTaggedNonUs = snapshotMarketCurrency === "USD" && mp !== "US";
+            if (!isUsdTaggedNonUs) {
               snapshotNativeUnitByOrder.set(key, snapshotPrice);
             }
           }
