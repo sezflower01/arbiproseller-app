@@ -365,6 +365,10 @@ a.apx-seller-name:hover { text-decoration: underline; color: #4F46E5; }
 .apx-dm-action.watch { background: rgba(245,158,11,0.25); color: #B45309; }
 .apx-dm-action.avoid { background: rgba(239,68,68,0.25); color: #DC2626; }
 .apx-dm-why { font-size: 11px; color: var(--muted); line-height: 1.4; padding-top: 4px; border-top: 1px dashed var(--line); }
+/* Set only when the sentence mentions "Possible PL"/"Private-label risk" —
+   hover to see the underlying Private-Label Risk reasoning (same text as
+   the summary row above), instead of leaving the abbreviation unexplained. */
+.apx-dm-why.apx-help-cursor { cursor: help; }
 .apx-sa-unknown { background: rgba(15,23,42,0.05); color: var(--muted) !important; }
 
 .apx-sa-sales-bar {

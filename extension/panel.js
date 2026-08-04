@@ -1703,6 +1703,7 @@
       sellerCountSource, offerCountFba, offerCountFbm,
       compliance, buyBoxPrice, simActive,
       costMissing: totalCost <= 0,
+      plCaption,
     });
   }
 
@@ -1951,7 +1952,16 @@
     if (scoreEl) scoreEl.textContent = ctx.scorePct != null ? `${Math.round(ctx.scorePct)}/100` : "";
 
     const why = $("apx-dm-why");
-    if (why) why.textContent = buildHumanExplanation(final, ctx, profit, trend, comp);
+    if (why) {
+      why.textContent = buildHumanExplanation(final, ctx, profit, trend, comp);
+      // "Possible PL" / "Private-label risk" in the competition breakdown
+      // is a compact label, not an explanation — hover the whole sentence
+      // to see the same Private-Label Risk reasoning shown on the summary
+      // row above (ctx.plCaption, from computePrivateLabelRisk()).
+      const plMentioned = /Possible PL|Private-label risk/.test(comp.reason || "");
+      why.title = plMentioned && ctx.plCaption ? `"Possible PL" means: ${ctx.plCaption}` : "";
+      why.classList.toggle("apx-help-cursor", !!why.title);
+    }
 
     console.log("[InventorySprint] Final Decision", {
       action: final.action, confidence: conf?.textContent,
