@@ -22,7 +22,7 @@ import {
 } from "@/lib/sales/learnedFeeMultipliers";
 import { getOrderPromoUsd } from "@/lib/salesCalculations";
 import { getConfirmedSalesOrderRevenueUsd, getConfirmedSalesOrderUnitRevenueUsd } from "@/lib/sales/currencyConversion";
-import { Loader2, RefreshCw, RefreshCcw, RotateCw, ShoppingCart, ArrowLeft, AlertTriangle, Package, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Truck, Star } from "lucide-react";
+import { Loader2, RefreshCw, RefreshCcw, RotateCw, ShoppingCart, ArrowLeft, AlertTriangle, Package, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Truck, Star, History } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import FbmLabelCostDialog from "@/components/sales/FbmLabelCostDialog";
 import { Button } from "@/components/ui/button";
@@ -120,8 +120,30 @@ const roundCents = (value: number) => Math.round((Number(value) || 0) * 100) / 1
 const buildSideTotalsKey = (start: string, end: string, marketplace: string) =>
   `${start}|${end}|${marketplace || "ALL"}`;
 
-const getPeriodRange = (period: Period): { start: string; end: string; label: string } => {
+// Shifts a YYYY-MM-DD date back exactly one calendar year. Feb 29 clamps to
+// Feb 28 when last year wasn't a leap year.
+const shiftYearBack = (dateStr: string): string => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const targetYear = y - 1;
+  const isLeap = (yr: number) => (yr % 4 === 0 && yr % 100 !== 0) || yr % 400 === 0;
+  const day = m === 2 && d === 29 && !isLeap(targetYear) ? 28 : d;
+  return `${targetYear}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+// "Compare to last year" only makes sense for month-shaped periods (the
+// current month-to-date, or a specific calendar month) — swaps the range to
+// the same month one year earlier so it lines up day-for-day with the
+// current-year view it's being compared against.
+const getPeriodRange = (period: Period, compareLastYear: boolean = false): { start: string; end: string; label: string } => {
   const today = getLocalDateStr();
+  if (compareLastYear && (period === "mtd" || period.startsWith("month_"))) {
+    const base = getPeriodRange(period, false);
+    const yr = Number(base.start.slice(0, 4)) - 1;
+    const label = period === "mtd"
+      ? `${MONTH_LABELS[Number(today.slice(5, 7)) - 1]} ${yr} (Last Year MTD)`
+      : `${MONTH_LABELS[Number(period.slice(6)) - 1]} ${yr}`;
+    return { start: shiftYearBack(base.start), end: shiftYearBack(base.end), label };
+  }
   if (period === "today") return { start: today, end: today, label: "Today" };
   if (period === "yesterday") {
     const y = addDaysISO(today, -1);
@@ -749,12 +771,24 @@ const MobileLiveSales = () => {
     const saved = localStorage.getItem("lov.mobileLiveSales.period") as Period | null;
     return saved && PERIOD_ORDER.includes(saved) ? saved : "today";
   });
-  const periodInfo = getPeriodRange(period);
+  // "vs Last Year" only applies to month-shaped periods (MTD / a specific
+  // month) — cleared whenever the user switches to a period it can't apply to.
+  const [compareLastYear, setCompareLastYear] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("lov.mobileLiveSales.compareLastYear") === "1";
+  });
+  const canCompareLastYear = period === "mtd" || period.startsWith("month_");
+  const periodInfo = getPeriodRange(period, compareLastYear && canCompareLastYear);
   const sideTotalsKey = buildSideTotalsKey(periodInfo.start, periodInfo.end, marketplaceFilter || "ALL");
 
   useEffect(() => {
     try { localStorage.setItem("lov.mobileLiveSales.period", period); } catch {}
-  }, [period]);
+    if (!canCompareLastYear && compareLastYear) setCompareLastYear(false);
+  }, [period, canCompareLastYear, compareLastYear]);
+
+  useEffect(() => {
+    try { localStorage.setItem("lov.mobileLiveSales.compareLastYear", compareLastYear ? "1" : "0"); } catch {}
+  }, [compareLastYear]);
 
   // Sales mode is locked to 'smart' on Mobile Live Sales — the Smart/Estimated
   // toggle is hidden and Reconciled lives only in the P&L report. State stays
@@ -956,7 +990,7 @@ const MobileLiveSales = () => {
     let cancelled = false;
     const run = async () => {
       try {
-        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period);
+        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period, compareLastYear && canCompareLastYear);
         const key = buildSideTotalsKey(rangeStart, rangeEnd, marketplaceFilter || "ALL");
         const requestId = `promo-${Date.now().toString(36)}`;
         if (salesMode === "reconciled") return;
@@ -968,7 +1002,7 @@ const MobileLiveSales = () => {
     };
     run();
     return () => { cancelled = true; };
-  }, [user?.id, period, marketplaceFilter, salesMode, fetchPromotionTotalsForRange]);
+  }, [user?.id, period, compareLastYear, canCompareLastYear, marketplaceFilter, salesMode, fetchPromotionTotalsForRange]);
 
   // FX rates
   useEffect(() => {
@@ -990,7 +1024,7 @@ const MobileLiveSales = () => {
     let cancelled = false;
     const run = async () => {
       try {
-        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period);
+        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period, compareLastYear && canCompareLastYear);
         const key = buildSideTotalsKey(rangeStart, rangeEnd, marketplaceFilter || "ALL");
         const requestId = `adj-${Date.now().toString(36)}`;
         if (salesMode === "reconciled") return;
@@ -1004,7 +1038,7 @@ const MobileLiveSales = () => {
     run();
     // CPU-pressure control: periodic 120s auto-refresh removed.
     return () => { cancelled = true; };
-  }, [user?.id, period, marketplaceFilter, salesMode, fetchAdjustmentTotalsForRange]);
+  }, [user?.id, period, compareLastYear, canCompareLastYear, marketplaceFilter, salesMode, fetchAdjustmentTotalsForRange]);
 
   // FEC coverage probe — how many financial_events_cache rows exist for the
   // selected period. Drives the amber "Settlement data incomplete" banner.
@@ -1013,7 +1047,7 @@ const MobileLiveSales = () => {
     let cancelled = false;
     (async () => {
       try {
-        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period);
+        const { start: rangeStart, end: rangeEnd } = getPeriodRange(period, compareLastYear && canCompareLastYear);
         let q = supabase
           .from("financial_events_cache")
           .select("id", { count: "exact", head: true })
@@ -1031,7 +1065,7 @@ const MobileLiveSales = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [user?.id, period, marketplaceFilter]);
+  }, [user?.id, period, compareLastYear, canCompareLastYear, marketplaceFilter]);
 
 
 
@@ -1050,12 +1084,13 @@ const MobileLiveSales = () => {
 
   // Build a unique cache key per period. Forecast shares the MTD cache because
   // it derives from the same row set (linear projection in the render layer).
-  const cacheKeyForPeriod = useCallback((p: Period): string => {
-    const info = getPeriodRange(p);
+  const cacheKeyForPeriod = useCallback((p: Period, compareYr: boolean = false): string => {
+    const applyCompare = compareYr && (p === "mtd" || p.startsWith("month_"));
+    const info = getPeriodRange(p, applyCompare);
     // v19: invalidate cached rows computed before the snapshot
     // currency-tagging fix (USD-tagged inventory snapshots were previously
     // read as native currency and double-FX-converted, e.g. MX$19 -> $1.09).
-    const V = `v19-${marketplaceFilter}-${salesMode}`;
+    const V = `v19-${marketplaceFilter}-${salesMode}${applyCompare ? "-cmpLY" : ""}`;
 
     if (p === "today") return `${info.start}-${V}`;
     if (p === "yesterday") return `yesterday-${info.start}-${V}`;
@@ -1075,7 +1110,7 @@ const MobileLiveSales = () => {
     // shorter max age than settled historical periods.
     const snap = loadMobileLiveSalesCache(
       user.id,
-      cacheKeyForPeriod(period),
+      cacheKeyForPeriod(period, compareLastYear),
       period === "today" ? TODAY_CACHE_MAX_AGE_MS : undefined,
     );
     const cacheHasContent =
@@ -1110,7 +1145,7 @@ const MobileLiveSales = () => {
       setLoading(true);
     }
     setCacheHydrated(true);
-  }, [user?.id, period, cacheKeyForPeriod, salesMode]);
+  }, [user?.id, period, cacheKeyForPeriod, salesMode, compareLastYear]);
 
 
 
@@ -1154,7 +1189,8 @@ const MobileLiveSales = () => {
     setError(null);
 
     try {
-      const { start: rangeStart, end: rangeEnd } = getPeriodRange(period);
+      const applyCompareLY = compareLastYear && (period === "mtd" || period.startsWith("month_"));
+      const { start: rangeStart, end: rangeEnd } = getPeriodRange(period, applyCompareLY);
       const toUsd = (amount: number, mp: string | null | undefined) => {
         const currency = MARKETPLACE_CURRENCY[String(mp || "US").trim()] || "USD";
         if (currency === "USD") return amount;
@@ -2025,7 +2061,7 @@ const MobileLiveSales = () => {
       const cacheableRows = riskyAsins.size > 0
         ? finalRows.filter((r) => !riskyAsins.has(r.asin))
         : finalRows;
-      saveMobileLiveSalesCache(user.id, cacheKeyForPeriod(period), {
+      saveMobileLiveSalesCache(user.id, cacheKeyForPeriod(period, compareLastYear), {
         rows: cacheableRows,
         todaySummary: nextSummary,
         todayRefunds: nextRefundSummary,
@@ -2044,7 +2080,7 @@ const MobileLiveSales = () => {
       }
       fetchInFlightRef.current = false;
     }
-  }, [user?.id, isAmazonConnected, fxRates, period, cacheKeyForPeriod, salesMode, marketplaceFilter, fetchAdjustmentTotalsForRange, fetchPromotionTotalsForRange, fetchPendingEstTotalsForRange]);
+  }, [user?.id, isAmazonConnected, fxRates, period, compareLastYear, cacheKeyForPeriod, salesMode, marketplaceFilter, fetchAdjustmentTotalsForRange, fetchPromotionTotalsForRange, fetchPendingEstTotalsForRange]);
 
   const refreshLiveSales = useCallback(async (force = false) => {
     await fetchToday();
@@ -2340,6 +2376,24 @@ const MobileLiveSales = () => {
           </button>
         </div>
 
+        {/* Year-over-year compare — only meaningful for month-shaped periods
+            (MTD / a specific month), since it swaps the range to the same
+            month one year earlier. */}
+        {canCompareLastYear && (
+          <button
+            type="button"
+            onClick={() => setCompareLastYear((v) => !v)}
+            className={`mb-3 w-full flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+              compareLastYear
+                ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
+                : "bg-white/[0.04] text-white/70 border-white/10 hover:bg-white/10"
+            }`}
+          >
+            <History className="h-3 w-3" />
+            {compareLastYear ? `Showing ${periodInfo.label} — tap to view this year` : "Compare vs Last Year"}
+          </button>
+        )}
+
         {/* Marketplace filter */}
         {activeMarketplaces.length >= 1 && (
           <div className="mb-3 flex items-center gap-2">
@@ -2460,7 +2514,7 @@ const MobileLiveSales = () => {
                         if (next && shippingCreditOrders.length === 0 && user?.id) {
                           setShippingCreditLoading(true);
                           try {
-                            const { start, end } = getPeriodRange(period);
+                            const { start, end } = getPeriodRange(period, compareLastYear && canCompareLastYear);
                             // ORDER-DATE attribution: pull ALL sales_orders in
                             // this period (paginated, no 1000-row cap), then
                             // fetch FEC shipping_credits joined by
@@ -2829,7 +2883,7 @@ const MobileLiveSales = () => {
                       if (!user?.id) return;
                       setResyncingRefunds(true);
                       try {
-                        const { start, end } = getPeriodRange(period);
+                        const { start, end } = getPeriodRange(period, compareLastYear && canCompareLastYear);
                         toast({ title: "Re-syncing refunds…", description: `${start} → ${end}. This takes 1–3 minutes.` });
                         const { error } = await supabase.functions.invoke("sync-sales-orders", {
                           body: {
