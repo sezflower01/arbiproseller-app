@@ -815,11 +815,32 @@ Deno.serve(async (req) => {
     // above for the price chart), so this adds zero additional Keepa cost.
     const sellerHistory = summarizeCountSeries(parseSeries(csv[IDX_COUNT_NEW], days, false), days);
     const buyBoxSellerIdHistory: unknown[] = Array.isArray(product.buyBoxSellerIdHistory) ? product.buyBoxSellerIdHistory : [];
+
+    // AMAZON_SELLER_IDS is a hardcoded list (US/MX/DE/FR/UK/IT/JP) — it does
+    // NOT cover every marketplace this app operates in (CA and BR are
+    // missing, and any future/unseen Amazon retail account would be missing
+    // too). Without this, Amazon winning the Buy Box on those marketplaces
+    // reads as "one seller won the Buy Box" — a private-label signal — when
+    // it's actually just Amazon. resolveSellerNames() already solves this
+    // exact problem elsewhere in this file via a real Keepa storefront-name
+    // lookup + looksLikeAmazonName() fallback; reuse it here instead of
+    // trusting the static ID list alone, so Buy Box ownership scoring is
+    // never fooled by an Amazon account this file hasn't hardcoded.
+    const bbSellerIdsForLookup = Array.from(new Set([
+      ...Object.keys(product.stats?.buyBoxStats || {}),
+      ...buyBoxSellerIdHistory.filter((_, i) => i % 2 === 1).map(id => String(id)),
+    ].filter(Boolean)));
+    const bbSellerNameMap = await resolveSellerNames(admin, KEEPA_KEY, domainId, marketplace, bbSellerIdsForLookup);
+    const effectiveAmazonSellerIds = new Set([
+      ...AMAZON_SELLER_IDS,
+      ...bbSellerIdsForLookup.filter(id => bbSellerNameMap[id]?.isAmazon),
+    ]);
+
     const buyBoxOwnership = computeBuyBoxOwnership(
       product.stats?.buyBoxStats,
       buyBoxSellerIdHistory,
       days,
-      AMAZON_SELLER_IDS,
+      effectiveAmazonSellerIds,
       Date.now(),
     );
 
