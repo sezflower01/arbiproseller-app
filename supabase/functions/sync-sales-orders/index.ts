@@ -662,9 +662,42 @@ async function handleSyncRequest(req: Request): Promise<Response> {
         });
       }
 
+      // FAIRNESS + TIME BUDGET: this loop makes several SP-API calls (plus an
+      // explicit 500ms sleep) per user with no bound on total user count —
+      // with enough real users it runs well past this function's background
+      // execution ceiling (~150s, see EdgeRuntime.waitUntil comment above)
+      // and gets killed mid-loop. Whoever query order happened to put LAST
+      // never got reached, so their sales_orders only ever refreshed when
+      // they personally opened the app and triggered a direct sync — this
+      // is the root cause of "Live Sales only updates when I check it".
+      // Fix: process whoever's LEAST RECENTLY synced first (so the rotation
+      // is fair across ticks — no one is perpetually starved), and stop
+      // cleanly within budget instead of letting the platform kill us
+      // mid-user-loop.
+      const { data: syncStates } = await supabase
+        .from('sales_sync_state')
+        .select('user_id, last_orders_sync_at');
+      const lastSyncByUser = new Map<string, number>(
+        (syncStates || []).map((s: any) => [s.user_id, s.last_orders_sync_at ? new Date(s.last_orders_sync_at).getTime() : 0]),
+      );
+      const orderedAuthorizations = [...authorizations].sort((a: any, b: any) => {
+        const aTime = lastSyncByUser.has(a.user_id) ? lastSyncByUser.get(a.user_id)! : 0;
+        const bTime = lastSyncByUser.has(b.user_id) ? lastSyncByUser.get(b.user_id)! : 0;
+        return aTime - bTime; // stalest (or never-synced) first
+      });
+
+      const AUTO_SYNC_START = Date.now();
+      const AUTO_SYNC_TIME_BUDGET_MS = 100_000; // leaves margin under the ~150s background ceiling
+      let skippedForBudget = 0;
+
       const results = { total: authorizations.length, successful: 0, failed: 0, errors: [] as any[] };
 
-      for (const auth of authorizations) {
+      for (const auth of orderedAuthorizations) {
+        if (Date.now() - AUTO_SYNC_START > AUTO_SYNC_TIME_BUDGET_MS) {
+          skippedForBudget = orderedAuthorizations.length - (results.successful + results.failed);
+          console.log(`⏱️ AUTO_SYNC_BUDGET_EXHAUSTED: stopping after ${results.successful + results.failed}/${orderedAuthorizations.length} users; remaining ${skippedForBudget} will lead the next tick (stalest-first).`);
+          break;
+        }
         try {
           const accessToken = await getLWAAccessToken(auth.refresh_token);
           
@@ -819,7 +852,12 @@ async function handleSyncRequest(req: Request): Promise<Response> {
         }
       }
 
-      return new Response(JSON.stringify({ success: true, message: 'Auto-sync completed', results }), {
+      return new Response(JSON.stringify({
+        success: true,
+        message: skippedForBudget > 0 ? 'Auto-sync stopped early (time budget) — remainder leads next tick' : 'Auto-sync completed',
+        results,
+        skippedForBudget,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
