@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, Terminal, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -426,6 +426,14 @@ const ADMIN_SETTINGS_CARDS: StandaloneCard[] = [
     path: "/tools/database-maintenance",
     Icon: Database,
     accent: "from-cyan-500/15 to-blue-500/5 border-cyan-400/30 text-cyan-300",
+    badge: "Admin",
+  },
+  {
+    title: "Dev Environment Setup",
+    desc: "One-liner PowerShell bootstrap for a new Windows dev machine — Node.js, Git, Claude Code, both repos cloned and installed.",
+    path: "/tools/dev-environment-setup",
+    Icon: Terminal,
+    accent: "from-slate-500/15 to-zinc-500/5 border-slate-400/30 text-slate-300",
     badge: "Admin",
   },
 ];
