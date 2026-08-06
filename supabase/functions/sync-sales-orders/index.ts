@@ -849,6 +849,22 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           console.error(`❌ Sync failed for user ${auth.user_id}:`, userError.message);
           results.failed++;
           results.errors.push({ user_id: auth.user_id, error: userError.message });
+          // This whole path runs via EdgeRuntime.waitUntil() — the cron
+          // caller never sees this response, so a failure here was
+          // completely invisible until now (sync_traces was ONLY written
+          // on the success path below). Log it somewhere queryable.
+          try {
+            await supabase.from('sync_traces').insert({
+              user_id: auth.user_id,
+              sync_type: 'unified',
+              phase: 'auto_sync',
+              status: 'failed',
+              completed_at: new Date().toISOString(),
+              error_message: String(userError?.message || userError).slice(0, 500),
+            });
+          } catch (traceErr: any) {
+            console.warn('[SYNC_TRACE] Failed to log auto_sync failure:', traceErr?.message);
+          }
         }
       }
 
