@@ -174,7 +174,11 @@
                  this one ASIN. Hidden until a brand is resolved and the
                  lookup returns something to show. -->
             <div class="apx-brand-history" id="apx-brand-history" hidden></div>
-            <button type="button" class="apx-dm-export-btn" id="apx-fd-copy-debug" title="Copy the full decision engine payload (inputs + verdict + compliance flags) to clipboard" style="margin-top:8px;width:100%;">🐞 Copy decision JSON (debug)</button>
+            <!-- Admin-only — visibility toggled by applyAdminOnlyVisibility()
+                 in panel.js once ARBIPRO_CHECK_ADMIN resolves. Starts hidden
+                 so it never flashes visible for a non-admin before that
+                 check completes. -->
+            <button type="button" class="apx-dm-export-btn" id="apx-fd-copy-debug" title="Copy the full decision engine payload (inputs + verdict + compliance flags) to clipboard" style="margin-top:8px;width:100%;" hidden>🐞 Copy decision JSON (debug)</button>
           </div>
 
         </details>

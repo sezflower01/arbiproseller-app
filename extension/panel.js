@@ -27,6 +27,9 @@
     fbaComplianceLoading: false, fbaComplianceError: null,
     dims: null,
     cached: false, fetched_at: null, signedIn: false,
+    // null = not checked yet, true/false = resolved. Gates admin-only panel
+    // affordances (e.g. the decision-JSON debug button) — see checkSession().
+    isAdmin: null,
     // True until the current scan's data is fully consistent — see loadData()
     // and renderSellerAmpSkeleton(). Starts true so nothing renders a real
     // (and possibly false-alarm) verdict before the first scan even starts.
@@ -340,6 +343,32 @@
     if (state.signedIn && !wasSignedIn && state.asin) {
       loadData(true);
     }
+    if (state.signedIn && state.isAdmin === null) {
+      checkAdminStatus();
+    } else if (!state.signedIn) {
+      state.isAdmin = null;
+      applyAdminOnlyVisibility();
+    }
+  }
+
+  // Admin-only panel affordances (currently: the decision-JSON debug
+  // button). Resolved once per sign-in via the same RLS-scoped user_roles
+  // self-read the web app's admin settings pages already rely on.
+  async function checkAdminStatus() {
+    try {
+      const r = await new Promise((resolve) =>
+        chrome.runtime.sendMessage({ type: "ARBIPRO_CHECK_ADMIN" }, resolve));
+      state.isAdmin = !!(r?.ok && r.isAdmin);
+    } catch (e) {
+      console.warn("[apx] admin check failed", e?.message || e);
+      state.isAdmin = false;
+    }
+    applyAdminOnlyVisibility();
+  }
+
+  function applyAdminOnlyVisibility() {
+    const debugBtn = $("apx-fd-copy-debug");
+    if (debugBtn) debugBtn.hidden = !state.isAdmin;
   }
 
   // ── Per-ASIN cache (chrome.storage.local, 10 min) ──────────────────
@@ -2007,12 +2036,11 @@
     // Fire-and-forget: persist this scan into analyzer_decision_log.
     try { logAnalyzerDecisionFromCtx(ctx, final, profit, trend, comp); } catch (e) { console.warn("[DM] log failed", e); }
 
-    // Fire-and-forget: look up what the community has seen scanning OTHER
-    // ASINs from this same brand — see brand-history-lookup edge function.
-    try {
-      const brand = state.stability?.intel?.brand || state.product?.brand || null;
-      fetchBrandHistory(brand, state.asin);
-    } catch (e) { console.warn("[BrandHistory] fetch failed", e); }
+    // Brand History card disabled 2026-08-07 — too technical for regular
+    // users (raw Unknown/Low/Medium counts, no plain-language takeaway).
+    // fetchBrandHistory()/renderBrandHistory() and the backend
+    // brand-history-lookup function are left in place, unused, in case an
+    // admin-facing view wants this data later.
   }
 
   // ── Brand History: "other ASINs from this brand" pooled across every

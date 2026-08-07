@@ -327,6 +327,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true, data: Array.isArray(data) ? data[0] || null : null });
           break;
         }
+        case "ARBIPRO_CHECK_ADMIN": {
+          // Gates admin-only panel affordances (e.g. the decision-JSON debug
+          // button). Same RLS-scoped self-read the web app's admin settings
+          // already relies on — a user can read their own user_roles row.
+          const s = await ensureFreshSession();
+          const payload = JSON.parse(atob(s.access_token.split(".")[1]));
+          const data = await restGet(
+            `user_roles?user_id=eq.${payload.sub}&role=eq.admin&select=role&limit=1`,
+          );
+          sendResponse({ ok: true, isAdmin: Array.isArray(data) && data.length > 0 });
+          break;
+        }
         case "ARBIPRO_LOG_DECISION": {
           // Inject user_id from JWT so RLS passes; mirrors web ProductAnalyzer schema.
           const s = await ensureFreshSession();
