@@ -80,6 +80,60 @@ async function getAccessToken(refreshToken: string): Promise<string> {
   return j.access_token as string;
 }
 
+// ---- Fee correction (safety net) ----
+// Confirming a real shipping-label cost is authoritative proof this order is
+// FBM. If its fees were computed back when fulfillment_channel was still
+// ambiguous (defaulted to assuming FBA — see fetch-live-orders/index.ts),
+// referral_fee will be non-zero: correctly-computed FBM fees are always
+// bundled entirely into fba_fee with referral_fee=0 (see the "FBM: Bundle
+// ALL fees" convention there). Re-fetching here closes the loop for orders
+// that won't get another enrichment pass (e.g. already shipped), where the
+// sticky fulfillment_channel fix alone wouldn't self-heal them.
+type CorrectedFees = { referralFee: number; fbaFee: number; closingFee: number; totalFees: number } | null;
+
+async function getFbmFeesCorrection(
+  supabase: any,
+  asin: string,
+  referencePriceUsd: number,
+  accessToken: string,
+  marketplaceId: string,
+): Promise<CorrectedFees> {
+  if (!asin || !(referencePriceUsd > 0)) return null;
+  const url = `https://sellingpartnerapi-na.amazon.com/products/fees/v0/items/${asin}/feesEstimate`;
+  const body = JSON.stringify({
+    FeesEstimateRequest: {
+      MarketplaceId: marketplaceId,
+      IsAmazonFulfilled: false,
+      PriceToEstimateFees: { ListingPrice: { CurrencyCode: "USD", Amount: referencePriceUsd } },
+      Identifier: asin,
+    },
+  });
+  try {
+    await waitForApiToken(supabase, "fees_api");
+    const headers = await signSpApiRequest("POST", url, accessToken);
+    const res = await fetch(url, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body });
+    if (!res.ok) { console.warn(`[poll] fee correction failed for ${asin}: HTTP ${res.status}`); return null; }
+    const data = await res.json();
+    const feeDetails = data?.payload?.FeesEstimateResult?.FeesEstimate?.FeeDetailList;
+    if (!Array.isArray(feeDetails)) return null;
+    let referralFee = 0, fbaFee = 0, closingFee = 0;
+    for (const fee of feeDetails) {
+      const amount = Number(fee?.FeeAmount?.Amount ?? 0);
+      const type = String(fee?.FeeType || "");
+      if (type === "ReferralFee" || type.includes("Referral")) referralFee += amount;
+      else if (type === "VariableClosingFee" || type === "FixedClosingFee" || type.includes("ClosingFee")) closingFee += amount;
+      else if (type === "FBAFees" || type.startsWith("FBA") || type.includes("Fulfillment")) fbaFee += amount;
+    }
+    // Bundle into fba_fee, zero referral/closing — matches the FBM convention
+    // used everywhere else this app writes sales_orders fee columns.
+    const totalFbmFees = Math.round((referralFee + fbaFee + closingFee) * 100) / 100;
+    return { referralFee: 0, fbaFee: totalFbmFees, closingFee: 0, totalFees: totalFbmFees };
+  } catch (e) {
+    console.warn(`[poll] fee correction error for ${asin}:`, (e as Error).message);
+    return null;
+  }
+}
+
 // ---- Resolvers (subset of sync-fbm-label-cost) ----
 type Resolved = { amount: number; currency: string; source: "buy_shipping_rate" | "amazon_finances" };
 type TraceStage = { stage: string; ok: boolean; status?: number; reason?: string; shipment_count?: number; shipment_ids?: string[]; candidate_amounts?: number[]; event_counts?: Record<string, number>; resolved_amount?: number };
@@ -217,7 +271,7 @@ serve(async (req) => {
     // Fetch candidates. We OR last_polled IS NULL OR last_polled < cooldownTs.
     let candidateQuery = supabase
       .from("sales_orders")
-      .select("id, order_id, user_id, marketplace, order_date, shipping_label_fee_poll_attempts, shipping_label_fee_last_polled_at")
+      .select("id, order_id, user_id, marketplace, order_date, shipping_label_fee_poll_attempts, shipping_label_fee_last_polled_at, asin, referral_fee, sold_price, total_sale_amount, item_price, quantity")
       .eq("fulfillment_channel", "MFN")
       .or("shipping_label_fee.is.null,shipping_label_fee.eq.0")
       .or("shipping_label_fee_source.is.null,shipping_label_fee_source.neq.manual")
@@ -326,12 +380,39 @@ serve(async (req) => {
             }
           }
 
+          // Safety-net fee correction: referral_fee > 0 means these fees were
+          // computed while fulfillment_channel was still ambiguous — a real
+          // FBA fee estimate got attached to what's now confirmed to be an
+          // FBM order. Re-fetch under IsAmazonFulfilled=false and fold the
+          // correction into this same write.
+          let feeCorrection: Record<string, unknown> = {};
+          if (Number(o.referral_fee) > 0 && o.asin) {
+            const refPrice = Number(o.sold_price) > 0 ? Number(o.sold_price)
+              : Number(o.total_sale_amount) > 0 ? Number(o.total_sale_amount) / Math.max(1, Number(o.quantity) || 1)
+              : Number(o.item_price) > 0 ? Number(o.item_price)
+              : 0;
+            const mktId = MARKETPLACE_IDS[String(o.marketplace || "US").toUpperCase()] || MARKETPLACE_IDS.US;
+            const corrected = await getFbmFeesCorrection(supabase, o.asin, refPrice, access, mktId);
+            if (corrected) {
+              feeCorrection = {
+                referral_fee: corrected.referralFee,
+                fba_fee: corrected.fbaFee,
+                closing_fee: corrected.closingFee,
+                total_fees: Math.round((corrected.totalFees + usdAmount) * 100) / 100,
+              };
+              console.log(`[poll] corrected FBM fees for ${o.order_id}: was referral=$${o.referral_fee}, now bundled fba_fee=$${corrected.fbaFee}`);
+            } else {
+              console.warn(`[poll] fee correction unavailable for ${o.order_id} (referral_fee=$${o.referral_fee} still stale)`);
+            }
+          }
+
           await supabase.from("sales_orders").update({
             shipping_label_fee: usdAmount,
             shipping_label_fee_source: found.source,
             shipping_label_fee_synced_at: new Date().toISOString(),
             shipping_label_fee_last_polled_at: new Date().toISOString(),
             shipping_label_fee_poll_attempts: (o.shipping_label_fee_poll_attempts ?? 0) + 1,
+            ...feeCorrection,
           }).eq("id", o.id);
           resolved++;
           console.log(`[poll] resolved ${o.order_id} via ${found.source} = USD ${usdAmount} (from ${foundCurrency} ${found.amount})`);

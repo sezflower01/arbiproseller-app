@@ -1243,7 +1243,7 @@ Deno.serve(async (req) => {
     // STEP 1: First, get ALL existing orders from database for this date range (this is our cache)
     const { data: dbOrders, error: dbError } = await supabase
       .from('sales_orders')
-      .select('id, order_id, asin, sku, seller_sku, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, locked_from, referral_fee, fba_fee, closing_fee, shipping_label_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, order_status, order_date, price_source, price_confidence, price_calc_mode')
+      .select('id, order_id, asin, sku, seller_sku, title, image_url, quantity, sold_price, total_sale_amount, estimated_price, locked_est_price, locked_from, referral_fee, fba_fee, closing_fee, shipping_label_fee, total_fees, unit_cost, unit_cost_at_sale, cost_source_at_sale, cost_locked, order_status, order_date, price_source, price_confidence, price_calc_mode, fulfillment_channel')
       .eq('user_id', user.id)
       .eq('status', 'pending')
       .not('order_id', 'like', '%-REFUND%')
@@ -1461,6 +1461,16 @@ Deno.serve(async (req) => {
         const hasValidAsin = existing.asin && existing.asin !== 'PENDING';
         const hasValidPrice = existing.sold_price > 0;
         const hasValidFees = existing.total_fees > 0;
+        // fulfillment_channel unknown means the fee estimate above could be
+        // wrong — it may have defaulted to assuming FBA (see the sticky
+        // fulfillment_channel comment in the enrichment loop below) simply
+        // because Amazon's Orders API hadn't populated FulfillmentChannel
+        // yet on an earlier sync. Without this, "has some total_fees value"
+        // short-circuited re-enrichment forever, even when that value was
+        // computed under a wrong FBA/FBM assumption. Confirmed live
+        // 2026-08-07 on order 112-5948809-4229822 (real FBM order stuck
+        // with a phantom $10.50 FBA fee because it never got re-checked).
+        const hasKnownFulfillmentChannel = !!existing.fulfillment_channel;
         
         // CRITICAL: Protect repaired non-US prices from being overwritten
         // If price_source starts with 'pricing_api_' (from repair-pending-prices), don't re-enrich
@@ -1483,7 +1493,7 @@ Deno.serve(async (req) => {
         }
         
         // If already fully enriched, skip API call entirely
-        if (hasValidAsin && hasValidPrice && hasValidFees) {
+        if (hasValidAsin && hasValidPrice && hasValidFees && hasKnownFulfillmentChannel) {
           // Already complete - no API call needed
           continue;
         }
@@ -3033,6 +3043,17 @@ Deno.serve(async (req) => {
       }
 
       const existingDbOrder = existingOrdersMap.get(orderId);
+      // BUG FIX: orderDate was referenced below (cost-history lookup + log
+      // line) with no local binding in this enrichment loop — a ReferenceError
+      // that crashed the entire enrichment pass (every order in the batch,
+      // not just this one) whenever ordersNeedingEnrichment was non-empty.
+      // Prefer the already-stored order_date on the existing row (most
+      // authoritative — it's what this order was actually filed under);
+      // fall back to deriving it from Amazon's purchase date the same way
+      // the new-order insert path does, then the query window as a last resort.
+      const enrichPurchaseDate = amazonOrder?.PurchaseDate || amazonOrder?.LastUpdateDate;
+      const orderDate = existingDbOrder?.order_date
+        || (enrichPurchaseDate ? getCutoffDateStringInTimeZone(enrichPurchaseDate, userTimezone) : queryStartDate);
       const lockedUnitCost = Number(existingDbOrder?.unit_cost_at_sale || 0) || 0;
       const legacyLockedCost = Number(existingDbOrder?.unit_cost || 0) || 0;
       const costResolution = lockedUnitCost > 0
@@ -3075,7 +3096,23 @@ Deno.serve(async (req) => {
       // 2. Scale fees proportionally to actual sale price
       let fees: { referralFee: number | null; fbaFee: number | null; closingFee: number | null; totalFees: number | null } = { referralFee: null, fbaFee: null, closingFee: null, totalFees: null };
       let feesUnavailable = true;
-      
+      // STICKY: trust Amazon's current response when it actually includes
+      // FulfillmentChannel (handles genuine FBA<->FBM switches), but when
+      // Amazon's Orders API omits the field this pass — which happens
+      // transiently, especially right around a seller converting an order to
+      // self-fulfillment — fall back to the LAST CONFIRMED value on the row
+      // instead of silently re-assuming FBA. Without this, an order correctly
+      // identified as FBM on one sync could flip back to a phantom FBA fee
+      // estimate on the very next sync just because Amazon's API was
+      // momentarily ambiguous, re-adding a $10+ fee that was never actually
+      // charged. See architecture-audit.md — FBM fee regression, confirmed
+      // live 2026-08-07 on order 112-5948809-4229822. Declared here (not
+      // inside the `if` below) so it's available for the `updateData` write
+      // regardless of which branch actually fetched fees.
+      const existingFulfillmentChannel = existingDbOrder?.fulfillment_channel || null;
+      const enrichFulfillmentChannel = amazonOrder?.FulfillmentChannel || existingFulfillmentChannel || 'AFN';
+      const isEnrichFbm = enrichFulfillmentChannel === 'MFN';
+
       if (soldPrice > 0 && asin !== 'UNKNOWN' && asin !== 'PENDING') {
         // Try to get a Buy Box reference price for better fee accuracy
         const { data: buyBoxCache } = await supabase
@@ -3095,11 +3132,7 @@ Deno.serve(async (req) => {
         if (invData?.amazon_price) invAmazonPrice = invData.amazon_price;
         
         const referencePrice = buyBoxCache?.price || invAmazonPrice || soldPrice;
-        
-        // Detect FBA vs FBM for enrichment path
-        const enrichFulfillmentChannel = amazonOrder?.FulfillmentChannel || 'AFN';
-        const isEnrichFbm = enrichFulfillmentChannel === 'MFN';
-        
+
         const apiFees = await getProductFees(supabase, asin, referencePrice, accessToken, primaryMarketplaceId, soldPrice, fxRates, !isEnrichFbm);
         if (apiFees) {
           if (isEnrichFbm) {
@@ -3185,7 +3218,7 @@ Deno.serve(async (req) => {
         cost_locked: !!(unitCost && unitCost > 0),
         cost_locked_at: unitCost && unitCost > 0 ? new Date().toISOString() : null,
         marketplace,
-        fulfillment_channel: amazonOrder?.FulfillmentChannel || null, // AFN=FBA, MFN=FBM
+        fulfillment_channel: enrichFulfillmentChannel, // AFN=FBA, MFN=FBM — sticky, see above
         order_status: currentAmazonStatus, // Track status changes for re-enrichment
         // NEW fields for debugging
         is_multi_item_order: isMultiItemOrder,
