@@ -5120,8 +5120,16 @@ Deno.serve(async (req) => {
     
     // Helper: build snapshot and offers from SP-API data object
     const buildFromSpApiData = (spData: any) => {
-      usedSpApi = true;
-      
+      // Only count this as "real" SP-API data when the live fetch actually
+      // returned something. When repricer-sp-api-pricing hits the rate-limit
+      // slot-wait timeout (or another empty-fallback path), it still returns
+      // a well-formed object (buyboxPrice: null, offerBreakdown: [], etc.)
+      // tagged pricingSource: 'empty' — treating that as "used" silently
+      // skipped the cached-snapshot fallback below and produced a fully
+      // blank offer set, which forced DO_NOT_REPRICE even when a recent,
+      // still-valid competitor snapshot existed.
+      usedSpApi = spData.pricingSource !== 'empty';
+
       snapshot = {
         buybox_price: spData.buyboxPrice,
         buybox_seller_id: spData.buyboxSellerId,
@@ -5288,7 +5296,12 @@ Deno.serve(async (req) => {
     
     const _tSpApi = Date.now();
     
-    // Fallback: Use cached Rainforest snapshot if SP-API failed
+    // Fallback: Use cached competitor snapshot if SP-API failed (auth error,
+    // network error) or returned empty because the rate-limit slot-wait
+    // timed out this cycle. Only trust it while reasonably fresh — beyond
+    // that, prices/offers may no longer reflect the real market, so we fall
+    // through to the normal "no data" handling instead of guessing.
+    const SNAPSHOT_FALLBACK_MAX_AGE_MS = 30 * 60 * 1000;
     if (!usedSpApi) {
       const { data: rainforestSnapshot } = await supabase
         .from('repricer_competitor_snapshots')
@@ -5299,11 +5312,27 @@ Deno.serve(async (req) => {
         .order('fetched_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      
+
       if (rainforestSnapshot) {
-        snapshot = rainforestSnapshot;
-        offers = (rainforestSnapshot.offers_json as any[]) || [];
-        console.log(`[repricer-ai-evaluate] Using cached Rainforest snapshot from ${snapshot.fetched_at}`);
+        const snapshotAgeMs = rainforestSnapshot.fetched_at
+          ? Date.now() - new Date(rainforestSnapshot.fetched_at).getTime()
+          : Infinity;
+        if (snapshotAgeMs <= SNAPSHOT_FALLBACK_MAX_AGE_MS) {
+          offers = (rainforestSnapshot.offers_json as any[]) || [];
+          // repricer_competitor_snapshots has no bb_source column, so a raw
+          // row always reads as bbSource 'missing' downstream — which trips
+          // the "no reliable BB data, never lower price" guard even when the
+          // stored offers clearly identify a real Buy Box winner. Recover
+          // the same confidence a live 'winner_offer' read would have had.
+          const hasBuyboxWinnerOffer = offers.some((o: any) => o?.is_buybox_winner === true);
+          snapshot = {
+            ...rainforestSnapshot,
+            bb_source: hasBuyboxWinnerOffer ? 'winner_offer' : (rainforestSnapshot.buybox_price ? 'summary_fallback' : 'missing'),
+          };
+          console.log(`[repricer-ai-evaluate] Live fetch unavailable (${sp_api_data?.keepaNote || 'no sp_api_data'}) — using cached snapshot from ${snapshot.fetched_at} (${Math.round(snapshotAgeMs / 60000)}m old, bb_source=${snapshot.bb_source})`);
+        } else {
+          console.log(`[repricer-ai-evaluate] Live fetch unavailable and cached snapshot is ${Math.round(snapshotAgeMs / 60000)}m old (>30m) — treating as no data`);
+        }
       }
     }
 

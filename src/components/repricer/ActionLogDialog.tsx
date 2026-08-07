@@ -1030,15 +1030,6 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
     }
   }, [open, asin, sku, marketplace, user]);
 
-  // Auto-poll every 15s while dialog is open as fallback
-  useEffect(() => {
-    if (!open || !asin || !user) return;
-    const interval = setInterval(() => {
-      fetchData();
-    }, 15_000);
-    return () => clearInterval(interval);
-  }, [open, asin, sku, marketplace, user]);
-
   // Realtime channel scoping: user-scoped. See docs/realtime-channels.md.
   // Previously used ASIN as the sole namespace, which meant every user viewing
   // the same ASIN shared a channel. `repricer_assignments` RLS already scopes
@@ -2656,7 +2647,7 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
           </div>
         </div>
         <ScrollArea className="flex-1 pr-4">
-          {loading ? (
+          {loading && priceActions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : priceActions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No price actions recorded for this ASIN</div>
