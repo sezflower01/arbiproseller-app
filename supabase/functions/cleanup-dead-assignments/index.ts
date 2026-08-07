@@ -6,6 +6,33 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// PostgREST caps unpaginated selects at ~1000 rows by default, silently
+// dropping the rest with no error. Users with 1000+ enabled assignments
+// (a real case in this dataset — one user has 1,399) would have random
+// rows excluded from every disable check below, forever. Page through
+// with .range() so every row is actually considered.
+async function fetchAllRows(
+  supabase: any,
+  table: string,
+  select: string,
+  applyFilters: (q: any) => any,
+  pageSize = 1000,
+): Promise<any[]> {
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await applyFilters(
+      supabase.from(table).select(select).order("id", { ascending: true }),
+    ).range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 /**
  * cleanup-dead-assignments
  * 
@@ -51,22 +78,28 @@ Deno.serve(async (req) => {
         // 1. INTERNATIONAL INELIGIBLE: Disable non-US assignments with
         //    bad intl_listing_status. Keyed on (user_id, marketplace).
         // ═══════════════════════════════════════════════════════════════
-        const { data: intlBad } = await supabase
-          .from("repricer_assignments")
-          .select("id, asin, sku, marketplace, intl_listing_status")
-          .eq("user_id", userId)
-          .eq("is_enabled", true)
-          .neq("marketplace", "US")
-          .in("intl_listing_status", ["UNKNOWN", "NOT_FOUND", "INACTIVE", "[]", ""]);
+        const intlBad = await fetchAllRows(
+          supabase,
+          "repricer_assignments",
+          "id, asin, sku, marketplace, intl_listing_status",
+          (q) => q
+            .eq("user_id", userId)
+            .eq("is_enabled", true)
+            .neq("marketplace", "US")
+            .in("intl_listing_status", ["UNKNOWN", "NOT_FOUND", "INACTIVE", "[]", ""]),
+        );
 
         // Also catch NULL intl_listing_status for non-US
-        const { data: intlNull } = await supabase
-          .from("repricer_assignments")
-          .select("id, asin, sku, marketplace, intl_listing_status")
-          .eq("user_id", userId)
-          .eq("is_enabled", true)
-          .neq("marketplace", "US")
-          .is("intl_listing_status", null);
+        const intlNull = await fetchAllRows(
+          supabase,
+          "repricer_assignments",
+          "id, asin, sku, marketplace, intl_listing_status",
+          (q) => q
+            .eq("user_id", userId)
+            .eq("is_enabled", true)
+            .neq("marketplace", "US")
+            .is("intl_listing_status", null),
+        );
 
         const intlToDisable = [...(intlBad || []), ...(intlNull || [])];
         
@@ -95,22 +128,31 @@ Deno.serve(async (req) => {
         // ═══════════════════════════════════════════════════════════════
         // 2. TERMINAL INVENTORY STATUS
         // ═══════════════════════════════════════════════════════════════
-        const { data: terminalInv } = await supabase
-          .from("inventory")
-          .select("asin, sku")
-          .eq("user_id", userId)
-          .in("listing_status", ["NOT_IN_CATALOG", "DELETED", "NOT_FOUND"]);
+        const terminalInv = await fetchAllRows(
+          supabase,
+          "inventory",
+          "asin, sku",
+          (q) => q
+            .eq("user_id", userId)
+            .in("listing_status", ["NOT_IN_CATALOG", "DELETED", "NOT_FOUND"]),
+        );
 
         if (terminalInv?.length) {
           const terminalAsins = new Set(terminalInv.map(i => i.asin));
-          const { data: usTerminalAssignments } = await supabase
-            .from("repricer_assignments")
-            .select("id, asin, sku, marketplace")
-            .eq("user_id", userId)
-            .eq("is_enabled", true)
-            .eq("marketplace", "US");
+          // A terminal inventory status (NOT_IN_CATALOG/DELETED/NOT_FOUND) means
+          // the ASIN is gone from Amazon's catalog entirely, not just in one
+          // marketplace — so this must disable assignments across ALL
+          // marketplaces (US/CA/MX/BR), not just US. Previously this only
+          // queried marketplace="US", leaving CA/MX/BR assignments for the
+          // same ghost ASIN permanently enabled with no other cleanup path.
+          const terminalAssignments = await fetchAllRows(
+            supabase,
+            "repricer_assignments",
+            "id, asin, sku, marketplace",
+            (q) => q.eq("user_id", userId).eq("is_enabled", true),
+          );
 
-          const toDisable = (usTerminalAssignments || []).filter(a => terminalAsins.has(a.asin));
+          const toDisable = (terminalAssignments || []).filter(a => terminalAsins.has(a.asin));
 
           if (toDisable.length > 0) {
             const ids = toDisable.map(a => a.id);
@@ -122,7 +164,7 @@ Deno.serve(async (req) => {
                 .in("id", ids.slice(b, b + 200));
             }
             stats.terminal_status_disabled += toDisable.length;
-            console.log(`[cleanup] ${userId}: disabled ${toDisable.length} terminal-status US assignments`);
+            console.log(`[cleanup] ${userId}: disabled ${toDisable.length} terminal-status assignments (all marketplaces)`);
           }
         }
 
@@ -130,24 +172,27 @@ Deno.serve(async (req) => {
         // 3. MISMATCH + ZERO STOCK
         // ═══════════════════════════════════════════════════════════════
         const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-        const { data: mismatchInv } = await supabase
-          .from("inventory")
-          .select("asin, sku")
-          .eq("user_id", userId)
-          .eq("listing_status", "MISMATCH")
-          .lte("last_inventory_sync_at", cutoff)
-          .eq("available", 0)
-          .eq("reserved", 0)
-          .eq("inbound", 0);
+        const mismatchInv = await fetchAllRows(
+          supabase,
+          "inventory",
+          "asin, sku",
+          (q) => q
+            .eq("user_id", userId)
+            .eq("listing_status", "MISMATCH")
+            .lte("last_inventory_sync_at", cutoff)
+            .eq("available", 0)
+            .eq("reserved", 0)
+            .eq("inbound", 0),
+        );
 
         if (mismatchInv?.length) {
           const mismatchAsins = new Set(mismatchInv.map(i => i.asin));
-          const { data: usMismatchAssignments } = await supabase
-            .from("repricer_assignments")
-            .select("id, asin")
-            .eq("user_id", userId)
-            .eq("is_enabled", true)
-            .eq("marketplace", "US");
+          const usMismatchAssignments = await fetchAllRows(
+            supabase,
+            "repricer_assignments",
+            "id, asin",
+            (q) => q.eq("user_id", userId).eq("is_enabled", true).eq("marketplace", "US"),
+          );
 
           const toDisable = (usMismatchAssignments || []).filter(a => mismatchAsins.has(a.asin));
 
