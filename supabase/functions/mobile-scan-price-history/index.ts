@@ -453,17 +453,26 @@ async function resolveSellerNames(
   const fresh = new Set<string>();
   for (const row of (cached || []) as any[]) {
     const valid = row.expires_at && new Date(row.expires_at).getTime() > now;
+    // Populate `out` from EVERY cached row, not just unexpired ones. A
+    // business name we already know (even a week stale) is strictly more
+    // useful than the raw seller ID the UI falls back to — and the Keepa
+    // /seller endpoint is a shared per-account token bucket, so a burst of
+    // other lookups can leave it 429'ing for minutes at a time. Below, the
+    // live re-fetch for `missing` (stale or never-cached) IDs will
+    // overwrite this with fresh data when it succeeds; when it 429s/fails,
+    // this stale name is what keeps showing instead of silently reverting
+    // to the seller ID.
+    const nm = row.business_name || row.storefront_name || null;
+    out[row.seller_id] = {
+      name: nm || row.seller_id,
+      // Re-check the name even for rows cached before this fix existed —
+      // those were written with is_amazon=false for any seller ID outside
+      // AMAZON_SELLER_IDS, regardless of what Keepa's name actually said.
+      isAmazon: !!row.is_amazon || looksLikeAmazonName(nm),
+      rating: Number.isFinite(row.current_rating) ? row.current_rating : null,
+      ratingCount: Number.isFinite(row.current_rating_count) ? row.current_rating_count : null,
+    };
     if (valid) {
-      const nm = row.business_name || row.storefront_name || null;
-      out[row.seller_id] = {
-        name: nm || row.seller_id,
-        // Re-check the name even for rows cached before this fix existed —
-        // those were written with is_amazon=false for any seller ID outside
-        // AMAZON_SELLER_IDS, regardless of what Keepa's name actually said.
-        isAmazon: !!row.is_amazon || looksLikeAmazonName(nm),
-        rating: Number.isFinite(row.current_rating) ? row.current_rating : null,
-        ratingCount: Number.isFinite(row.current_rating_count) ? row.current_rating_count : null,
-      };
       // Rows written before the rating feature shipped have BOTH rating
       // fields null (the columns didn't exist yet) — don't count those as
       // "fresh", or every existing cached seller would show no rating until
