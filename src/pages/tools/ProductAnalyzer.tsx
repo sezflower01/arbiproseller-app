@@ -365,6 +365,7 @@ export default function ProductAnalyzer() {
                           raw_snapshot: { quickInfo: data.quickInfo, ranksPrices: data.ranksPrices, computed: data.computed, alerts: data.alerts },
                           category: data.identity.category,
                           brand: data.identity.brand,
+                          pl_risk: data.plRisk?.label ?? null,
                           amazon_presence: data.offers.some(o => o.isAmazon) ? "present" : "absent",
                           source_surface: "web",
                           data_freshness: data.cached ? "cached" : "live",

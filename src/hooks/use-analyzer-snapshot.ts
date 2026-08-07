@@ -39,6 +39,12 @@ export interface AnalyzerSnapshot {
   };
   ranksPrices: Record<"bsr" | "buyBox" | "amazon" | "newFba" | "offerCount", { current: number | null; avg30: number | null; avg90: number | null; avg180: number | null }>;
   computed: { fbaOffers: number; fbmOffers: number; totalOffers: number };
+  plRisk: {
+    label: string;
+    level: "Low" | "Medium" | "High" | "unknown";
+    normalizedScore: number | null;
+    text: string;
+  };
 }
 
 async function getFunctionErrorMessage(error: unknown, fallback: string) {

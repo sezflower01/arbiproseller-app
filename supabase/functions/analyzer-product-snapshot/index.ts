@@ -4,6 +4,8 @@
 // connected their account. Results are cached per (asin, marketplace) for 30 min.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { summarizeCountSeries, computeBuyBoxOwnership } from '../_shared/plRiskSeries.ts';
+import { computePrivateLabelRisk, plRiskCategoricalLabel } from '../_shared/plRisk.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,6 +129,14 @@ interface AnalyzerSnapshot {
     fbaOffers: number;
     fbmOffers: number;
     totalOffers: number;
+  };
+  plRisk: {
+    // Categorical label matching analyzer_decision_log.pl_risk's convention:
+    // "Low" | "Medium" | "High" | "Insufficient Data" | "Limited History".
+    label: string;
+    level: 'Low' | 'Medium' | 'High' | 'unknown';
+    normalizedScore: number | null;
+    text: string;
   };
 }
 
@@ -334,6 +344,33 @@ Deno.serve(async (req) => {
     const bbHist: any[] = Array.isArray(p.buyBoxSellerIdHistory) ? p.buyBoxSellerIdHistory : [];
     const lastBBSeller: string | null = bbHist.length >= 2 ? String(bbHist[bbHist.length - 1] || '') || null : null;
 
+    // Private-Label Risk — same scoring as the Chrome extension
+    // (mobile-scan-price-history + extension/plRisk.js), ported to
+    // _shared/plRisk.ts so both surfaces agree on the same ASIN. Uses the
+    // SAME raw Keepa data already fetched above (stats.buyBoxStats,
+    // buyBoxSellerIdHistory, csv[COUNT_NEW]) — zero extra Keepa cost.
+    // windowDays is 180 to match the `stats=180` window requested from
+    // Keepa above (stats.buyBoxStats reflects that same window); this
+    // file's chart series has no day-range picker, unlike the extension.
+    const PL_WINDOW_DAYS = 180;
+    const rawCountNewPoints: { t: number; v: number }[] = [];
+    {
+      const countNewCsv: number[] = Array.isArray(csv[CSV.COUNT_NEW]) ? csv[CSV.COUNT_NEW] : [];
+      for (let i = 0; i < countNewCsv.length; i += 2) {
+        const t = countNewCsv[i], v = countNewCsv[i + 1];
+        if (typeof t !== 'number' || typeof v !== 'number' || v === -1) continue;
+        rawCountNewPoints.push({ t, v });
+      }
+    }
+    const listedSinceRaw = Number(p.listedSince) > 0 ? Number(p.listedSince) : Number(p.trackingSince);
+    const productAgeDays = Number.isFinite(listedSinceRaw) && listedSinceRaw > 0
+      ? Math.max(1, Math.floor((Date.now() - keepaToMs(listedSinceRaw)) / (24 * 60 * 60 * 1000)))
+      : null;
+    const plSellerHistory = summarizeCountSeries(rawCountNewPoints, PL_WINDOW_DAYS);
+    const plBuyBoxOwnership = computeBuyBoxOwnership(stats?.buyBoxStats, bbHist, PL_WINDOW_DAYS, AMAZON_SELLER_IDS, Date.now());
+    const plResult = computePrivateLabelRisk({ sellerHistory: plSellerHistory, buyBoxOwnership: plBuyBoxOwnership, productAgeDays });
+    const plRiskLabel = plRiskCategoricalLabel(plResult);
+
     const rawOffers = (p.offers || [])
       .filter((o: any) => o && (o.condition === 1 || o.condition === 0 || o.condition == null))
       .filter((o: any) => {
@@ -473,12 +510,22 @@ Deno.serve(async (req) => {
     const amazonAvg90 = statsField(stats, CSV.AMAZON, true).avg90;
     const amazonOnListing = (amazonCurrent != null) || (amazonAvg90 != null);
 
+    // Private Label alert — was hardcoded to status:'good', value:'Unlikely'
+    // regardless of the actual listing (no classifier was ever wired up).
+    // Now reflects the real plResult computed above.
+    const plAlertStatus: 'good' | 'warn' | 'bad' | 'info' =
+      plResult.level === 'High' ? 'bad'
+      : plResult.level === 'Medium' ? 'warn'
+      : plResult.level === 'Low' ? 'good'
+      : 'info';
+    const plAlertValue = plResult.level === 'unknown' ? plRiskLabel : `${plResult.level} Risk`;
+
     const alerts: AnalyzerSnapshot['alerts'] = [
       { key: 'eligibility', label: 'Eligibility', status: 'info', value: 'Connect Amazon to verify' },
       { key: 'hazmat', label: 'Hazmat', status: isHazmat ? 'bad' : 'good', value: isHazmat ? 'Yes' : 'No' },
       { key: 'dangerous', label: 'Dangerous Goods', status: isHazmat ? 'warn' : 'good', value: isHazmat ? 'Likely' : 'No' },
       { key: 'amazon_share', label: 'Amazon Share Buy Box', status: amazonOnListing ? 'warn' : 'good', value: amazonOnListing ? 'Sometimes' : 'Never on Listing' },
-      { key: 'private_label', label: 'Private Label', status: 'good', value: 'Unlikely' },
+      { key: 'private_label', label: 'Private Label', status: plAlertStatus, value: plAlertValue },
       { key: 'ip', label: 'IP Analysis', status: 'good', value: 'No known IP issues' },
       { key: 'size', label: 'Size', status: 'info', value: p.packageHeight && p.packageHeight > 460 ? 'Oversize' : 'Standard Size' },
       { key: 'meltable', label: 'Meltable', status: isMeltable ? 'warn' : 'good', value: isMeltable ? 'Yes' : 'No' },
@@ -513,6 +560,12 @@ Deno.serve(async (req) => {
         offerCount: statsField(stats, CSV.COUNT_NEW, false),
       },
       computed: { fbaOffers, fbmOffers, totalOffers: offers.length },
+      plRisk: {
+        label: plRiskLabel,
+        level: plResult.level,
+        normalizedScore: plResult.normalizedScore,
+        text: plResult.text,
+      },
     };
 
 
