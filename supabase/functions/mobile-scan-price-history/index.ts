@@ -866,93 +866,102 @@ Deno.serve(async (req) => {
       buyBoxOwnership,
     };
 
-    // Build live offers from product.offers
-    const rawOffers: any[] = Array.isArray(product.offers) ? product.offers : [];
-    type Offer = {
-      sellerId: string;
-      isFBA: boolean;
-      isPrime: boolean;
-      condition: number;
-      price: number | null;
-      shipping: number | null;
-      stock: number | null;
-      isBuyBox: boolean;
-    };
-    const lastBBSeller = buyBoxSellerIdHistory.length > 1
-      ? String(buyBoxSellerIdHistory[buyBoxSellerIdHistory.length - 1])
-      : null;
-
-    // Filter stale offers: Keepa returns the union of offers ever seen.
-    // Only offers seen within the last 7 days are considered "live".
-    // Keepa time = minutes since 2011-01-01 UTC.
-    const nowKeepaMin = Math.floor((Date.now() - KEEPA_EPOCH_MS_CONST) / 60000);
-    const LIVE_WINDOW_MIN = 7 * 24 * 60; // 7 days
-
-    const offers: Offer[] = rawOffers
-      .filter(o => o && (o.condition === 1 || o.condition === 0 || o.condition == null)) // New only
-      .filter(o => {
-        const ls = Number(o.lastSeen);
-        // If lastSeen is missing, keep (Keepa sometimes omits); otherwise require recency.
-        if (!Number.isFinite(ls) || ls <= 0) return true;
-        return (nowKeepaMin - ls) <= LIVE_WINDOW_MIN;
-      })
-      .map(o => {
-        // o.offerCSV alternates [t, price, shipping] triples (newest last)
-        const arr: number[] = Array.isArray(o.offerCSV) ? o.offerCSV : [];
-        let price: number | null = null;
-        let shipping: number | null = null;
-        if (arr.length >= 3) {
-          const p = arr[arr.length - 2];
-          const s = arr[arr.length - 1];
-          if (typeof p === 'number' && p > 0) price = p / 100;
-          if (typeof s === 'number' && s >= 0) shipping = s / 100;
-        }
-        // Strict FBA: Keepa flags many FBM offers with isFBA=true if seller has any FBA SKUs.
-        // True FBA offers are ALWAYS Prime-eligible. Require both flags.
-        const strictFBA = !!o.isFBA && !!o.isPrime;
-        return {
-          sellerId: String(o.sellerId || ''),
-          isFBA: strictFBA,
-          isPrime: !!o.isPrime,
-          condition: Number(o.condition ?? 1),
-          price,
-          shipping,
-          stock: Number.isFinite(Number(o.stockCSV?.at?.(-1))) ? Number(o.stockCSV.at(-1)) : null,
-          isBuyBox: lastBBSeller != null && String(o.sellerId) === lastBBSeller,
-        } as Offer;
-      })
-      .filter(o => o.sellerId && o.price != null);
-
-
-    // Resolve seller names
-    const sellerIds = offers.map(o => o.sellerId);
-    const nameMap = await resolveSellerNames(admin, KEEPA_KEY, domainId, marketplace, sellerIds);
-
-    const enrichedOffers = offers
-      .map(o => {
-        const total = (o.price ?? 0) + (o.shipping ?? 0);
-        const meta = nameMap[o.sellerId];
-        return {
-          ...o,
-          landed: total,
-          sellerName: meta?.name || o.sellerId,
-          isAmazon: !!meta?.isAmazon,
-          rating: meta?.rating ?? null,
-          ratingCount: meta?.ratingCount ?? null,
-        };
-      })
-      .sort((a, b) => a.landed - b.landed);
-
-    let finalOffers = enrichedOffers;
+    // Live competitor list: try Amazon's own SP-API GetItemOffers FIRST —
+    // it's the authoritative, real-time source Amazon itself uses for
+    // pricing decisions (same call the repricer relies on), and unlike the
+    // Keepa-derived offers below, resolving it costs zero Keepa tokens.
+    // Only fall back to building an offers list out of this Keepa /product
+    // response (and the seller-name lookups that requires) when SP-API
+    // genuinely has nothing — e.g. this ASIN isn't in the user's catalog,
+    // or the SP-API pricing rate gate is currently saturated.
+    let finalOffers: any[];
     let liveBuyBoxPrice: number | null = null;
+    let spLive: Awaited<ReturnType<typeof fetchLiveSpApiOffers>> = null;
     try {
-      const spLive = await fetchLiveSpApiOffers(admin, KEEPA_KEY, domainId, userRes.user.id, asin, marketplace);
-      if (spLive) {
-        finalOffers = spLive.offers;
-        liveBuyBoxPrice = spLive.buyBoxPrice;
-      }
+      spLive = await fetchLiveSpApiOffers(admin, KEEPA_KEY, domainId, userRes.user.id, asin, marketplace);
     } catch (e) {
-      console.warn('[mobile-scan-price-history] SP-API live offers failed, using Keepa offers', (e as Error).message);
+      console.warn('[mobile-scan-price-history] SP-API live offers failed, falling back to Keepa offers', (e as Error).message);
+    }
+
+    if (spLive) {
+      finalOffers = spLive.offers;
+      liveBuyBoxPrice = spLive.buyBoxPrice;
+    } else {
+      // Build live offers from product.offers
+      const rawOffers: any[] = Array.isArray(product.offers) ? product.offers : [];
+      type Offer = {
+        sellerId: string;
+        isFBA: boolean;
+        isPrime: boolean;
+        condition: number;
+        price: number | null;
+        shipping: number | null;
+        stock: number | null;
+        isBuyBox: boolean;
+      };
+      const lastBBSeller = buyBoxSellerIdHistory.length > 1
+        ? String(buyBoxSellerIdHistory[buyBoxSellerIdHistory.length - 1])
+        : null;
+
+      // Filter stale offers: Keepa returns the union of offers ever seen.
+      // Only offers seen within the last 7 days are considered "live".
+      // Keepa time = minutes since 2011-01-01 UTC.
+      const nowKeepaMin = Math.floor((Date.now() - KEEPA_EPOCH_MS_CONST) / 60000);
+      const LIVE_WINDOW_MIN = 7 * 24 * 60; // 7 days
+
+      const offers: Offer[] = rawOffers
+        .filter(o => o && (o.condition === 1 || o.condition === 0 || o.condition == null)) // New only
+        .filter(o => {
+          const ls = Number(o.lastSeen);
+          // If lastSeen is missing, keep (Keepa sometimes omits); otherwise require recency.
+          if (!Number.isFinite(ls) || ls <= 0) return true;
+          return (nowKeepaMin - ls) <= LIVE_WINDOW_MIN;
+        })
+        .map(o => {
+          // o.offerCSV alternates [t, price, shipping] triples (newest last)
+          const arr: number[] = Array.isArray(o.offerCSV) ? o.offerCSV : [];
+          let price: number | null = null;
+          let shipping: number | null = null;
+          if (arr.length >= 3) {
+            const p = arr[arr.length - 2];
+            const s = arr[arr.length - 1];
+            if (typeof p === 'number' && p > 0) price = p / 100;
+            if (typeof s === 'number' && s >= 0) shipping = s / 100;
+          }
+          // Strict FBA: Keepa flags many FBM offers with isFBA=true if seller has any FBA SKUs.
+          // True FBA offers are ALWAYS Prime-eligible. Require both flags.
+          const strictFBA = !!o.isFBA && !!o.isPrime;
+          return {
+            sellerId: String(o.sellerId || ''),
+            isFBA: strictFBA,
+            isPrime: !!o.isPrime,
+            condition: Number(o.condition ?? 1),
+            price,
+            shipping,
+            stock: Number.isFinite(Number(o.stockCSV?.at?.(-1))) ? Number(o.stockCSV.at(-1)) : null,
+            isBuyBox: lastBBSeller != null && String(o.sellerId) === lastBBSeller,
+          } as Offer;
+        })
+        .filter(o => o.sellerId && o.price != null);
+
+      // Resolve seller names
+      const sellerIds = offers.map(o => o.sellerId);
+      const nameMap = await resolveSellerNames(admin, KEEPA_KEY, domainId, marketplace, sellerIds);
+
+      finalOffers = offers
+        .map(o => {
+          const total = (o.price ?? 0) + (o.shipping ?? 0);
+          const meta = nameMap[o.sellerId];
+          return {
+            ...o,
+            landed: total,
+            sellerName: meta?.name || o.sellerId,
+            isAmazon: !!meta?.isAmazon,
+            rating: meta?.rating ?? null,
+            ratingCount: meta?.ratingCount ?? null,
+          };
+        })
+        .sort((a, b) => a.landed - b.landed);
     }
 
     const finalFba = finalOffers.filter((o: any) => o.isFBA || o.isAmazon || o.isSelf).map((o: any) => Number(o.landed)).filter((v: number) => Number.isFinite(v) && v > 0);
