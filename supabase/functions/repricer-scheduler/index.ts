@@ -649,6 +649,7 @@ Deno.serve(async (req) => {
                   user_id: userId,
                   asin,
                   marketplace,
+                  our_price_change_at: assignment.last_applied_at,
                   our_old_price: assignment.last_applied_price ?? null,
                   our_new_price: assignment.last_applied_price ?? null,
                   competitor_price_before: priorBb,

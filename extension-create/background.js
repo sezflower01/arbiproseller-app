@@ -313,7 +313,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const s = await ensureFreshSession();
           const uid = userIdFromJWT(s.access_token);
           const data = await restGet(
-            `seller_authorizations?user_id=eq.${uid}&select=marketplace_code,marketplace_id,is_active&is_active=eq.true`,
+            `seller_authorizations?user_id=eq.${uid}&select=marketplace_id,is_active&is_active=eq.true`,
           );
           // Also load primary_marketplace_id from profiles
           const prof = await restGet(`profiles?id=eq.${uid}&select=primary_marketplace_id&limit=1`);

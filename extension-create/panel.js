@@ -353,7 +353,9 @@ async function loadMarketplaces() {
   const sel = $("apx-mkt-select");
   sel.innerHTML = "";
   const codes = state.marketplaces.length
-    ? state.marketplaces.map((m) => m.marketplace_code).filter(Boolean)
+    ? state.marketplaces
+        .map((m) => Object.keys(MARKETPLACES).find((c) => MARKETPLACES[c].id === m.marketplace_id))
+        .filter(Boolean)
     : Object.keys(MARKETPLACES);
   for (const c of codes) {
     const m = MARKETPLACES[c];

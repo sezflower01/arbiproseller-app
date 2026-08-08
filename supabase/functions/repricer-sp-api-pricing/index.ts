@@ -129,9 +129,15 @@ async function acquireSpApiSlot(
     .maybeSingle();
   if (claimNull.data) return { ok: true, waitMs: 0 };
 
+  // ON CONFLICT DO NOTHING: if a row already exists here (created between
+  // the two claim attempts above and now), leave its last_called_at alone --
+  // overwriting it would hand this caller a slot it didn't actually win.
+  // ignoreDuplicates avoids the plain-insert unique-violation this used to
+  // throw (and log) on every race, while keeping identical fall-through
+  // behavior on conflict (insertAttempt.data stays empty -> ok:false below).
   const insertAttempt = await supabase
     .from('sp_api_rate_limit_state')
-    .insert({ user_id: userId, operation, last_called_at: nowIso })
+    .upsert({ user_id: userId, operation, last_called_at: nowIso }, { onConflict: 'user_id,operation', ignoreDuplicates: true })
     .select('user_id')
     .maybeSingle();
   if (insertAttempt.data) return { ok: true, waitMs: 0 };
