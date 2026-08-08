@@ -222,14 +222,14 @@ async function adaptUser(
           {
             user_id: userId,
             asin: a.asin,
-            marketplace: a.marketplace,
+            marketplace_id: a.marketplace,
             state: target,
             reason_business: reason,
             reason_technical: "COMMERCIAL_ADAPT",
             signals: { adapted_at: new Date().toISOString(), confidence, tier },
             updated_at: new Date().toISOString(),
           },
-          { onConflict: "user_id,asin,marketplace" },
+          { onConflict: "user_id,asin,marketplace_id" },
         );
       }
     }

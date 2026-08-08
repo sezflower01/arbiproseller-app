@@ -717,9 +717,6 @@ Deno.serve(async (req) => {
         const sellerId = sellerIdRow?.seller_id || sellerIdRow?.selling_partner_id || null;
 
         if (successMarketplaceId) {
-          const conflictCols = sellerId
-            ? 'seller_id,marketplace_id,seller_sku'
-            : 'marketplace_id,seller_sku';
           await supabase
             .from('fnsku_map')
             .upsert(
@@ -734,7 +731,7 @@ Deno.serve(async (req) => {
                   : (successfulAttempt?.matched_summary_identity?.condition || 'NEW'),
                 updated_at: new Date().toISOString(),
               },
-              { onConflict: conflictCols },
+              { onConflict: 'seller_id,marketplace_id,asin,fnsku' },
             );
         }
       } catch (fnskuErr: any) {

@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
                       seller_id: Deno.env.get('SPAPI_SELLER_ID') || 'GLOBAL',
                       marketplace_id: marketplace_id || 'ATVPDKIKX0DER',
                       seller_sku: skuToCache,
-                    }, { onConflict: 'asin,seller_id,marketplace_id' });
+                    }, { onConflict: 'asin,seller_id,marketplace_id,fnsku' });
                   console.log(`[RESOLVE] Cached SKU mapping: ${skuToCache} -> ${resolvedAsin}`);
                 } catch { /* ignore cache errors */ }
               }
