@@ -135,7 +135,7 @@ serve(async (req: Request) => {
           selling_partner_id: selling_partner_id,
         },
         {
-          onConflict: "user_id",
+          onConflict: "seller_id,marketplace_id",
         }
       )
       .select()
