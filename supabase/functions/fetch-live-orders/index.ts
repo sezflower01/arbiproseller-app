@@ -1066,12 +1066,22 @@ async function captureMissingBbEstimateForOrders(
       const currentConfidence = order.price_confidence;
       const currentSource = String(order.price_source || '').toLowerCase();
       const currentEst = Number(order.estimated_price || 0);
-      const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, userId, order.order_id, order.asin, order.marketplace || 'US', fxRates);
+      const exactSnapshot = await getExactOrderSnapshotEstimate(supabase, userId, order.order_id, order.asin, order.marketplace || 'US', fxRates);
+      const exactSnapshotEstimate = exactSnapshot?.price ?? null;
+      // Only pricing_api/orders_api snapshots are genuine live reads taken at
+      // order-discovery time. 'inventory'-sourced snapshots just freeze
+      // whatever inventory.price happened to be at that moment, which can
+      // itself be a stale local cache lagging the true live listing (see
+      // order 113-6385372-8887439: inventory.price read $10 in the snapshot
+      // while the live Buy Box read $20 one second later, and inventory.price
+      // wasn't corrected to $20 until 10+ hours after). Only the live-read
+      // sources get to unconditionally restore/overwrite the current estimate.
+      const exactSnapshotIsLiveRead = exactSnapshot !== null && (exactSnapshot.source === 'pricing_api' || exactSnapshot.source === 'orders_api');
       if (
-        exactSnapshotEstimate !== null &&
+        exactSnapshotIsLiveRead &&
         currentSoldPrice === 0 &&
         currentConfidence !== 'CONFIRMED' &&
-        Math.abs(currentEst - exactSnapshotEstimate) > 0.001
+        Math.abs(currentEst - exactSnapshotEstimate!) > 0.001
       ) {
         updatePayload.estimated_price = exactSnapshotEstimate;
         updatePayload.locked_est_price = exactSnapshotEstimate;
@@ -1083,41 +1093,44 @@ async function captureMissingBbEstimateForOrders(
         console.log(`🛡️ SNAPSHOT_BACKFILL_RESTORED: ${order.order_id}/${order.asin} estimated_price ${currentEst} -> ${exactSnapshotEstimate}`);
       }
       // Seller-derived sources OUTRANK BB estimate. Never overwrite a positive
-      // seller-derived estimated_price (snapshot/repricer/recent_sale/order_total/
+      // seller-derived estimated_price (live snapshot/repricer/order_total/
       // listings_api) with a BB competitor snapshot — the seller's own listing
       // price is the source of truth for pending orders.
-      const isSellerDerivedTrusted = exactSnapshotEstimate !== null || currentEst > 0 && (
+      const isSellerDerivedTrusted = exactSnapshotIsLiveRead || currentEst > 0 && (
         currentSource.startsWith('snapshot_price') ||
         currentSource.startsWith('repricer_') ||
         currentSource.startsWith('order_total') ||
         currentSource.startsWith('listings_api') ||
-        currentSource.startsWith('seller_derived:snapshot') ||
         currentSource.startsWith('seller_derived:repricer') ||
         currentSource.startsWith('seller_derived:order_total') ||
         currentSource.startsWith('seller_derived:listings_api')
       );
-      // recent_sale is just this ASIN's last confirmed sale (up to 14 days
-      // old) -- unlike the other seller_derived tiers it isn't tied to THIS
-      // order's actual price. A qualified+owner-matched BB estimate (our own
-      // featured offer, snapshot anchored near this order's purchase time)
-      // is a stronger signal for what we actually charged than a stale sale.
-      const isRecentSaleOnly = currentEst > 0 && (
-        currentSource.startsWith('recent_sale') || currentSource.startsWith('seller_derived:recent')
+      // recent_sale (this ASIN's last confirmed sale, up to 14 days old) and
+      // an inventory-backed seller_derived:snapshot tag are both "soft"
+      // estimates -- neither is tied to THIS order's actual live price the
+      // way repricer_action/order_total/listings_api/a live snapshot are. A
+      // qualified+owner-matched BB estimate (our own featured offer, anchored
+      // near this order's purchase time) is a stronger signal for what we
+      // actually charged than either.
+      const isSoftEstimate = !isSellerDerivedTrusted && currentEst > 0 && (
+        currentSource.startsWith('recent_sale') ||
+        currentSource.startsWith('seller_derived:recent') ||
+        currentSource.startsWith('seller_derived:snapshot')
       );
-      const bbPromotesOverRecentSale = isRecentSaleOnly && !isSellerDerivedTrusted
+      const bbPromotesOverSoftEstimate = isSoftEstimate
         && bbFields.bb_estimate_qualified && bbFields.bb_estimate_owner_match
         && (bbFields.bb_estimate_price ?? 0) > 0
         && Math.abs((bbFields.bb_estimate_price ?? 0) - currentEst) > 0.001;
-      if (bbPromotesOverRecentSale) {
+      if (bbPromotesOverSoftEstimate) {
         updatePayload.estimated_price = bbFields.bb_estimate_price;
         updatePayload.locked_est_price = bbFields.bb_estimate_price;
         updatePayload.locked_from = 'bb_estimate:own_buybox';
         updatePayload.price_source = 'bb_estimate:own_buybox';
         updatePayload.price_confidence = 'HIGH_CONFIDENCE_PENDING';
-        console.log(`🛡️ BB_PROMOTED_OVER_RECENT_SALE: ${order.order_id}/${order.asin} estimated_price ${currentEst} -> ${bbFields.bb_estimate_price} (recent_sale replaced by own-BB anchored near order time)`);
-      } else if (bbFields.bb_estimate_qualified && !isSellerDerivedTrusted && !isRecentSaleOnly) {
+        console.log(`🛡️ BB_PROMOTED_OVER_SOFT_ESTIMATE: ${order.order_id}/${order.asin} estimated_price ${currentEst} -> ${bbFields.bb_estimate_price} (${currentSource} replaced by own-BB anchored near order time)`);
+      } else if (bbFields.bb_estimate_qualified && !isSellerDerivedTrusted && !isSoftEstimate) {
         console.log(`🛡️ BB_BACKFILL_CAPTURE_ONLY: ${order.order_id}/${order.asin} did not promote BB=$${bbFields.bb_estimate_price}; pending prices require seller-derived source`);
-      } else if ((isSellerDerivedTrusted || isRecentSaleOnly) && bbFields.bb_estimate_qualified) {
+      } else if ((isSellerDerivedTrusted || isSoftEstimate) && bbFields.bb_estimate_qualified) {
         console.log(`🛡️ BB_BACKFILL_SKIPPED_SELLER_DERIVED: ${order.order_id}/${order.asin} kept ${currentSource}=$${currentEst} over BB=$${bbFields.bb_estimate_price}`);
       }
       const { error: updateError } = await supabase.from('sales_orders').update(updatePayload).eq('id', order.id);
@@ -1139,7 +1152,7 @@ async function getExactOrderSnapshotEstimate(
   asin: string,
   marketplace: string,
   fxRates: Record<string, number>,
-): Promise<number | null> {
+): Promise<{ price: number; source: string } | null> {
   if (!userId || !orderId || !asin || asin === 'UNKNOWN' || asin === 'PENDING') return null;
   const { data, error } = await supabase
     .from('order_price_snapshots')
@@ -1173,7 +1186,7 @@ async function getExactOrderSnapshotEstimate(
     ? snapshotPrice * fxRates[nativeCurrency]
     : snapshotPrice;
 
-  return Math.round(nativePrice * 100) / 100;
+  return { price: Math.round(nativePrice * 100) / 100, source: String(data?.snapshot_source || 'inventory') };
 }
 
 Deno.serve(async (req) => {
@@ -2885,8 +2898,15 @@ Deno.serve(async (req) => {
               Object.assign(orderDataWithItems, bbFields);
               const localSrc = String(priceSource || '').toLowerCase();
               const localEst = Number(finalEstimatedPrice || 0);
-              const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
-              if (exactSnapshotEstimate !== null && Math.abs(localEst - exactSnapshotEstimate) > 0.001) {
+              const localExactSnapshot = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
+              const exactSnapshotEstimate = localExactSnapshot?.price ?? null;
+              // See exactSnapshotIsLiveRead comment in captureMissingBbEstimateForOrders:
+              // only pricing_api/orders_api snapshots are genuine live reads; an
+              // 'inventory'-sourced snapshot just freezes whatever the local
+              // inventory.price cache said at that moment, which can lag the true
+              // live listing price.
+              const exactSnapshotIsLiveRead = localExactSnapshot !== null && (localExactSnapshot.source === 'pricing_api' || localExactSnapshot.source === 'orders_api');
+              if (exactSnapshotIsLiveRead && Math.abs(localEst - exactSnapshotEstimate!) > 0.001) {
                 orderDataWithItems.estimated_price = exactSnapshotEstimate;
                 orderDataWithItems.locked_est_price = exactSnapshotEstimate;
                 orderDataWithItems.locked_from = 'seller_derived:snapshot';
@@ -2897,25 +2917,27 @@ Deno.serve(async (req) => {
                 orderDataWithItems.price_last_error = null;
                 console.log(`🛡️ SNAPSHOT_INSERT_RESTORED: ${orderId}/${asin} estimated_price ${localEst} -> ${exactSnapshotEstimate}`);
               }
-              const localSellerDerived = localEst > 0 && (
+              const localSellerDerived = exactSnapshotIsLiveRead || localEst > 0 && (
                 localSrc.startsWith('snapshot_price') ||
                 localSrc.startsWith('repricer_') ||
                 localSrc.startsWith('order_total') ||
                 localSrc.startsWith('listings_api') ||
-                localSrc.startsWith('seller_derived:snapshot') ||
                 localSrc.startsWith('seller_derived:repricer') ||
                 localSrc.startsWith('seller_derived:order_total') ||
                 localSrc.startsWith('seller_derived:listings_api')
               );
-              // See BB_PROMOTED_OVER_RECENT_SALE comment in captureMissingBbEstimateForOrders:
-              // recent_sale isn't tied to THIS order, so a qualified+owner-matched BB
-              // estimate anchored near order time outranks it.
-              const localIsRecentSaleOnly = localEst > 0 && (
-                localSrc.startsWith('recent_sale') || localSrc.startsWith('seller_derived:recent')
+              // See BB_PROMOTED_OVER_SOFT_ESTIMATE comment in captureMissingBbEstimateForOrders:
+              // recent_sale and an inventory-backed seller_derived:snapshot are both
+              // "soft" -- neither is tied to THIS order's actual live price, so a
+              // qualified+owner-matched BB estimate anchored near order time outranks them.
+              const localIsSoftEstimate = !localSellerDerived && localEst > 0 && (
+                localSrc.startsWith('recent_sale') ||
+                localSrc.startsWith('seller_derived:recent') ||
+                localSrc.startsWith('seller_derived:snapshot')
               );
-              const localBbPromotes = localIsRecentSaleOnly && !localSellerDerived
+              const localBbPromotes = localIsSoftEstimate
                 && bbFields.bb_estimate_qualified && bbFields.bb_estimate_owner_match
-                && (bbFields.bb_estimate_price ?? 0) > 0 && exactSnapshotEstimate === null
+                && (bbFields.bb_estimate_price ?? 0) > 0
                 && Math.abs((bbFields.bb_estimate_price ?? 0) - localEst) > 0.001;
               if (localBbPromotes) {
                 orderDataWithItems.estimated_price = bbFields.bb_estimate_price;
@@ -2923,10 +2945,10 @@ Deno.serve(async (req) => {
                 orderDataWithItems.locked_from = 'bb_estimate:own_buybox';
                 orderDataWithItems.price_source = 'bb_estimate:own_buybox';
                 orderDataWithItems.price_confidence = 'HIGH_CONFIDENCE_PENDING';
-                console.log(`🛡️ BB_PROMOTED_OVER_RECENT_SALE: ${orderId}/${asin} estimated_price ${localEst} -> ${bbFields.bb_estimate_price} (recent_sale replaced by own-BB anchored near order time)`);
-              } else if (bbFields.bb_estimate_qualified && (bbFields.bb_estimate_price ?? 0) > 0 && exactSnapshotEstimate === null && !localSellerDerived && !localIsRecentSaleOnly) {
+                console.log(`🛡️ BB_PROMOTED_OVER_SOFT_ESTIMATE: ${orderId}/${asin} estimated_price ${localEst} -> ${bbFields.bb_estimate_price} (${localSrc} replaced by own-BB anchored near order time)`);
+              } else if (bbFields.bb_estimate_qualified && (bbFields.bb_estimate_price ?? 0) > 0 && !localSellerDerived && !localIsSoftEstimate) {
                 console.log(`🛡️ BB_INSERT_CAPTURE_ONLY: ${orderId}/${asin} did not promote BB=$${bbFields.bb_estimate_price}; pending prices require seller-derived source`);
-              } else if ((localSellerDerived || localIsRecentSaleOnly) && bbFields.bb_estimate_qualified) {
+              } else if ((localSellerDerived || localIsSoftEstimate) && bbFields.bb_estimate_qualified) {
                 console.log(`🛡️ BB_INSERT_SKIPPED_SELLER_DERIVED: ${orderId}/${asin} kept ${localSrc}=$${localEst} over BB=$${bbFields.bb_estimate_price}`);
               }
             } catch (e: any) {
@@ -3316,10 +3338,17 @@ Deno.serve(async (req) => {
             ((globalThis as any).__bbSellerIdCache ||= makeSellerIdCache()),
           );
           Object.assign(updateData, bbFields);
-          const exactSnapshotEstimate = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
+          const enrExactSnapshot = await getExactOrderSnapshotEstimate(supabase, user.id, orderId, asin, marketplace, fxRates);
+          const exactSnapshotEstimate = enrExactSnapshot?.price ?? null;
+          // See exactSnapshotIsLiveRead comment in captureMissingBbEstimateForOrders:
+          // only pricing_api/orders_api snapshots are genuine live reads; an
+          // 'inventory'-sourced snapshot just freezes whatever the local
+          // inventory.price cache said at that moment, which can lag the true
+          // live listing price.
+          const enrExactSnapshotIsLiveRead = enrExactSnapshot !== null && (enrExactSnapshot.source === 'pricing_api' || enrExactSnapshot.source === 'orders_api');
           if (
-            exactSnapshotEstimate !== null &&
-            Math.abs(Number(updateData.estimated_price ?? estimatedPrice ?? existingDbOrder?.estimated_price ?? 0) - exactSnapshotEstimate) > 0.001
+            enrExactSnapshotIsLiveRead &&
+            Math.abs(Number(updateData.estimated_price ?? estimatedPrice ?? existingDbOrder?.estimated_price ?? 0) - exactSnapshotEstimate!) > 0.001
           ) {
             updateData.estimated_price = exactSnapshotEstimate;
             updateData.locked_est_price = exactSnapshotEstimate;
@@ -3333,27 +3362,30 @@ Deno.serve(async (req) => {
           }
           const enrSrc = String(updateData.price_source || priceSource || '').toLowerCase();
           const enrEst = Number(updateData.estimated_price ?? estimatedPrice ?? 0);
-          const enrSellerDerived = enrEst > 0 && (
+          const enrSellerDerived = enrExactSnapshotIsLiveRead || enrEst > 0 && (
             enrSrc.startsWith('snapshot_price') ||
             enrSrc.startsWith('repricer_') ||
             enrSrc.startsWith('order_total') ||
             enrSrc.startsWith('listings_api') ||
-            enrSrc.startsWith('seller_derived:snapshot') ||
             enrSrc.startsWith('seller_derived:repricer') ||
             enrSrc.startsWith('seller_derived:order_total') ||
             enrSrc.startsWith('seller_derived:listings_api')
           );
-          // See BB_PROMOTED_OVER_RECENT_SALE comment in captureMissingBbEstimateForOrders:
-          // recent_sale isn't tied to THIS order, so a qualified+owner-matched BB
-          // estimate anchored near order time outranks it. This also correctly
-          // overrides the sticky-lock carry-forward above (existingLockedEstimate),
-          // same as the exactSnapshotEstimate override just above it.
-          const enrIsRecentSaleOnly = enrEst > 0 && (
-            enrSrc.startsWith('recent_sale') || enrSrc.startsWith('seller_derived:recent')
+          // See BB_PROMOTED_OVER_SOFT_ESTIMATE comment in captureMissingBbEstimateForOrders:
+          // recent_sale and an inventory-backed seller_derived:snapshot are both
+          // "soft" -- neither is tied to THIS order's actual live price, so a
+          // qualified+owner-matched BB estimate anchored near order time outranks
+          // them. This also correctly overrides the sticky-lock carry-forward above
+          // (existingLockedEstimate), same as the exactSnapshotEstimate override
+          // just above it.
+          const enrIsSoftEstimate = !enrSellerDerived && enrEst > 0 && (
+            enrSrc.startsWith('recent_sale') ||
+            enrSrc.startsWith('seller_derived:recent') ||
+            enrSrc.startsWith('seller_derived:snapshot')
           );
-          const enrBbPromotes = enrIsRecentSaleOnly && !enrSellerDerived
+          const enrBbPromotes = enrIsSoftEstimate
             && bbFields.bb_estimate_qualified && bbFields.bb_estimate_owner_match
-            && (bbFields.bb_estimate_price ?? 0) > 0 && exactSnapshotEstimate === null
+            && (bbFields.bb_estimate_price ?? 0) > 0
             && Math.abs((bbFields.bb_estimate_price ?? 0) - enrEst) > 0.001;
           if (enrBbPromotes) {
             updateData.estimated_price = bbFields.bb_estimate_price;
@@ -3361,10 +3393,10 @@ Deno.serve(async (req) => {
             updateData.locked_from = 'bb_estimate:own_buybox';
             updateData.price_source = 'bb_estimate:own_buybox';
             updateData.price_confidence = 'HIGH_CONFIDENCE_PENDING';
-            console.log(`🛡️ BB_PROMOTED_OVER_RECENT_SALE: ${orderId}/${asin} estimated_price ${enrEst} -> ${bbFields.bb_estimate_price} (recent_sale replaced by own-BB anchored near order time)`);
-          } else if (bbFields.bb_estimate_qualified && (bbFields.bb_estimate_price ?? 0) > 0 && exactSnapshotEstimate === null && !enrSellerDerived && !enrIsRecentSaleOnly) {
+            console.log(`🛡️ BB_PROMOTED_OVER_SOFT_ESTIMATE: ${orderId}/${asin} estimated_price ${enrEst} -> ${bbFields.bb_estimate_price} (${enrSrc} replaced by own-BB anchored near order time)`);
+          } else if (bbFields.bb_estimate_qualified && (bbFields.bb_estimate_price ?? 0) > 0 && !enrSellerDerived && !enrIsSoftEstimate) {
             console.log(`🛡️ BB_ENRICH_CAPTURE_ONLY: ${orderId}/${asin} did not promote BB=$${bbFields.bb_estimate_price}; pending prices require seller-derived source`);
-          } else if ((enrSellerDerived || enrIsRecentSaleOnly) && bbFields.bb_estimate_qualified) {
+          } else if ((enrSellerDerived || enrIsSoftEstimate) && bbFields.bb_estimate_qualified) {
             console.log(`🛡️ BB_ENRICH_SKIPPED_SELLER_DERIVED: ${orderId}/${asin} kept ${enrSrc}=$${enrEst} over BB=$${bbFields.bb_estimate_price}`);
           }
         } catch (e: any) {
