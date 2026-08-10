@@ -79,6 +79,7 @@ export default function SmartEngineReview() {
   }, [user?.id, summary]);
 
   const loadBatchDetails = useCallback(async (batchId: string, batchMeta: any) => {
+    if (!user?.id) return;
     setLoadingBatchId(batchId);
     try {
       const { data: items, error } = await supabase
@@ -100,8 +101,36 @@ export default function SmartEngineReview() {
         .select("asin, my_price, min_price, max_price, image_url, title, sku")
         .in("asin", asinKeys);
 
+      // Real Gemini output for this batch lives in `smart_engine_ai_reviews`,
+      // written by smart-engine-ai-review (manual "Generate Batch") and
+      // smart-engine-auto-review (the 8am/12pm cron) alike -- but that table
+      // has no batch_id back to smart_engine_review_batches (it FKs to its
+      // own smart_engine_ai_review_batches instead). Both writers insert the
+      // AI rows within the same request as the review-batch row, so matching
+      // by (asin, marketplace) + nearest created_at within a generous window
+      // reliably recovers the right row without a schema change.
+      const batchTime = new Date(batchMeta.created_at).getTime();
+      const windowStart = new Date(batchTime - 10 * 60_000).toISOString();
+      const windowEnd = new Date(batchTime + 10 * 60_000).toISOString();
+      const { data: aiRows } = await supabase
+        .from("smart_engine_ai_reviews")
+        .select("asin, marketplace, ai_judgment, ai_reasoning_summary, ai_tuning_suggestion, ai_confidence, created_at")
+        .eq("user_id", user.id)
+        .in("asin", asinKeys)
+        .gte("created_at", windowStart)
+        .lte("created_at", windowEnd);
+
+      const aiMap = new Map<string, { row: NonNullable<typeof aiRows>[number]; dist: number }>();
+      for (const row of aiRows || []) {
+        const key = `${row.asin}::${row.marketplace}`;
+        const dist = Math.abs(new Date(row.created_at).getTime() - batchTime);
+        const existing = aiMap.get(key);
+        if (!existing || dist < existing.dist) aiMap.set(key, { row, dist });
+      }
+
       const reviewItems: ReviewAsin[] = items.map((item: any) => {
         const inv = invData?.find(i => i.asin === item.asin) || {} as any;
+        const ai = aiMap.get(`${item.asin}::${item.marketplace}`)?.row;
         return {
           asin: item.asin,
           sku: item.sku || inv.sku || null,
@@ -123,6 +152,10 @@ export default function SmartEngineReview() {
           explanation: item.judgment_reason || "Loaded from batch history",
           tuningSignals: item.tuning_signals || [],
           blockers: [],
+          aiJudgment: ai?.ai_judgment ?? undefined,
+          aiReasoning: ai?.ai_reasoning_summary ?? undefined,
+          aiSuggestion: ai?.ai_tuning_suggestion ?? undefined,
+          aiConfidence: ai?.ai_confidence ?? undefined,
         };
       });
 
@@ -133,7 +166,7 @@ export default function SmartEngineReview() {
         review: batchMeta.review_needed_count || 0,
         generatedAt: batchMeta.created_at,
         topIssue: batchMeta.top_signal,
-        aiPowered: true,
+        aiPowered: aiMap.size > 0,
       });
       setAiStatus("complete");
     } catch (err: any) {
@@ -141,7 +174,7 @@ export default function SmartEngineReview() {
     } finally {
       setLoadingBatchId(null);
     }
-  }, []);
+  }, [user?.id]);
 
   // AI analysis
   const runAiAnalysis = useCallback(async (items: ReviewAsin[]) => {
