@@ -289,21 +289,20 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     }
   }
 
-  // Fetch rules
+  // Rules, snapshots, marketplace prices, FX rate, fee cache, and
+  // created_listings enrichment are five independent steps -- each only
+  // needs assignmentsData/asins, already available at this point -- but were
+  // previously awaited one after another, turning what should be a handful
+  // of concurrent round trips into a long sequential waterfall on every load
+  // AND every marketplace switch (this same function runs for both). Run
+  // them all concurrently via Promise.all below; each is defined as its own
+  // async function first so the logic inside is unchanged from before.
   const ruleIds = [...new Set((assignmentsData || []).map(a => a.rule_id).filter(Boolean))];
-  let rulesMap: Record<string, any> = {};
-  if (ruleIds.length > 0) {
-    const { data: rulesData } = await supabase
-      .from("repricer_rules")
-      .select("*")
-      .in("id", ruleIds);
-    rulesMap = (rulesData || []).reduce((acc: any, r: any) => ({ ...acc, [r.id]: r }), {});
-  }
-
-  // Fetch latest snapshots with extended data for the target marketplace
   const asins = [...new Set((inventoryData || []).map(i => i.asin))];
-  
-  // Helper: batch .in() queries to avoid URL length limits with large inventories (3000+ ASINs)
+
+  // Helper: batch .in() queries to avoid URL length limits with large inventories (3000+ ASINs).
+  // Batches run concurrently too -- each targets a disjoint ASIN slice, so
+  // there's no shared state to race on.
   const BATCH_IN_SIZE = 500;
   const batchInQuery = async (
     table: string,
@@ -312,19 +311,31 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     inValues: string[],
     extraFilters?: (q: any) => any
   ): Promise<any[]> => {
-    const all: any[] = [];
+    const batches: string[][] = [];
     for (let i = 0; i < inValues.length; i += BATCH_IN_SIZE) {
-      const batch = inValues.slice(i, i + BATCH_IN_SIZE);
+      batches.push(inValues.slice(i, i + BATCH_IN_SIZE));
+    }
+    const results = await Promise.all(batches.map(async (batch) => {
       let q = (supabase as any).from(table).select(selectCols).in(inColumn, batch);
       if (extraFilters) q = extraFilters(q);
       const { data } = await q;
-      if (data) all.push(...data);
-    }
-    return all;
+      return data || [];
+    }));
+    return results.flat();
   };
 
-  const snapshotsMap: Record<string, any> = {};
-  if (asins.length > 0) {
+  const fetchRulesMap = async (): Promise<Record<string, any>> => {
+    if (ruleIds.length === 0) return {};
+    const { data: rulesData } = await supabase
+      .from("repricer_rules")
+      .select("*")
+      .in("id", ruleIds);
+    return (rulesData || []).reduce((acc: any, r: any) => ({ ...acc, [r.id]: r }), {});
+  };
+
+  const fetchSnapshotsMap = async (): Promise<Record<string, any>> => {
+    const snapshotsMap: Record<string, any> = {};
+    if (asins.length === 0) return snapshotsMap;
     try {
       const snapshotsData = await batchInQuery(
         "repricer_competitor_snapshots",
@@ -336,7 +347,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
         // at least one row. 5000 rows covers ~500 ASINs × 10 snapshots each.
         (q: any) => q.eq("marketplace", targetMarketplace).order("fetched_at", { ascending: false }).limit(5000)
       );
-      
+
       const hasSnapshotSignal = (snap: any) =>
         snap?.buybox_price != null ||
         snap?.lowest_fba_price != null ||
@@ -362,13 +373,15 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     } catch (e) {
       console.error("[Repricer] Non-critical: snapshots fetch failed:", e);
     }
-  }
+    return snapshotsMap;
+  };
 
   // Fetch marketplace-specific prices from asin_my_price_cache for non-US markets
   const marketplaceConfig = getMarketplaceConfig(targetMarketplace);
-  const marketplacePricesMap: Record<string, number | null> = {};
-  
-  if (targetMarketplace !== "US" && asins.length > 0) {
+
+  const fetchMarketplacePricesMap = async (): Promise<Record<string, number | null>> => {
+    const marketplacePricesMap: Record<string, number | null> = {};
+    if (targetMarketplace === "US" || asins.length === 0) return marketplacePricesMap;
     // Keyed by asin|sku, NOT asin alone — an ASIN can have more than one SKU
     // mapped to it in the same marketplace (e.g. an old/replaced listing kept
     // disabled alongside the active one). Keying by asin only meant whichever
@@ -386,30 +399,30 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     for (const p of priceData || []) {
       marketplacePricesMap[`${p.asin}|${p.seller_sku}`] = p.my_price;
     }
-  }
+    return marketplacePricesMap;
+  };
 
   // Fetch FX rate for non-US marketplaces so cost can be displayed in local currency on load
-  let initialFxRate: number | null = null;
-  if (targetMarketplace !== "US") {
+  const fetchFxRate = async (): Promise<number | null> => {
+    if (targetMarketplace === "US") return null;
+    const fallbackRates: Record<string, number> = { CAD: 1.36, MXN: 17.5, BRL: 5.0, GBP: 0.79, EUR: 0.92 };
     try {
       const { data: fxData } = await supabase.functions.invoke("get-fx-rates", {
         body: { quote: marketplaceConfig.currency },
       });
       if (fxData?.rate?.rate) {
-        initialFxRate = Number(fxData.rate.rate);
-      } else {
-        const fallbackRates: Record<string, number> = { CAD: 1.36, MXN: 17.5, BRL: 5.0, GBP: 0.79, EUR: 0.92 };
-        initialFxRate = fallbackRates[marketplaceConfig.currency] || null;
+        return Number(fxData.rate.rate);
       }
+      return fallbackRates[marketplaceConfig.currency] || null;
     } catch {
-      const fallbackRates: Record<string, number> = { CAD: 1.36, MXN: 17.5, BRL: 5.0, GBP: 0.79, EUR: 0.92 };
-      initialFxRate = fallbackRates[marketplaceConfig.currency] || null;
+      return fallbackRates[marketplaceConfig.currency] || null;
     }
-  }
+  };
 
   // Fetch asin_fee_cache to get accurate FBA fees when fees_json is missing or incomplete
-  const feeCacheMap: Record<string, any> = {};
-  if (asins.length > 0) {
+  const fetchFeeCacheMap = async (): Promise<Record<string, any>> => {
+    const feeCacheMap: Record<string, any> = {};
+    if (asins.length === 0) return feeCacheMap;
     try {
       const feeCacheData = await batchInQuery(
         "asin_fee_cache",
@@ -424,7 +437,8 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     } catch (e) {
       console.error("[Repricer] Non-critical: asin_fee_cache fetch failed:", e);
     }
-  }
+    return feeCacheMap;
+  };
 
   // ============================================================
   // Phase 1 enrichment from created_listings:
@@ -433,8 +447,9 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
   // This runs once per load, keyed by ASIN, so newly-stocked items
   // never appear as "no COG / no image" if the listing exists.
   // ============================================================
-  const createdListingMap: Record<string, { unitCost: number | null; image_url: string | null; title: string | null; price: number | null }> = {};
-  if (asins.length > 0) {
+  const fetchCreatedListingMap = async (): Promise<Record<string, { unitCost: number | null; image_url: string | null; title: string | null; price: number | null }>> => {
+    const createdListingMap: Record<string, { unitCost: number | null; image_url: string | null; title: string | null; price: number | null }> = {};
+    if (asins.length === 0) return createdListingMap;
     try {
       // Paginated fetch, NOT batchInQuery — this project's PostgREST "Max Rows"
       // setting silently clamps ANY query (regardless of client-side .limit())
@@ -446,11 +461,16 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       // produced 1000+ rows and its row never made it into createdListingMap).
       // Paginating with .range() inside each batch — same pattern as
       // fetchAllPaged above — guarantees completeness regardless of the
-      // project's row cap or how the table grows.
-      const clRows: any[] = [];
+      // project's row cap or how the table grows. Batches run concurrently
+      // (disjoint ASIN slices); only pages *within* one batch stay sequential,
+      // since each page's existence depends on whether the previous was full.
       const CL_PAGE_SIZE = 1000;
+      const clBatches: string[][] = [];
       for (let i = 0; i < asins.length; i += BATCH_IN_SIZE) {
-        const batch = asins.slice(i, i + BATCH_IN_SIZE);
+        clBatches.push(asins.slice(i, i + BATCH_IN_SIZE));
+      }
+      const clBatchResults = await Promise.all(clBatches.map(async (batch) => {
+        const rows: any[] = [];
         let clFrom = 0;
         while (true) {
           const { data: clPage, error: clPageErr } = await supabase
@@ -461,12 +481,14 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
             .order("id", { ascending: true })
             .range(clFrom, clFrom + CL_PAGE_SIZE - 1);
           if (clPageErr) break;
-          const rows = clPage || [];
-          clRows.push(...rows);
-          if (rows.length < CL_PAGE_SIZE) break;
+          const page = clPage || [];
+          rows.push(...page);
+          if (page.length < CL_PAGE_SIZE) break;
           clFrom += CL_PAGE_SIZE;
         }
-      }
+        return rows;
+      }));
+      const clRows = clBatchResults.flat();
       // Group by ASIN, then pick the NEWEST row (mirrors resolveUnitCost.pickNewestListing:
       // date_created DESC NULLS LAST, created_at DESC, id DESC). This guarantees the
       // most-recently-created listing wins for COG (and image/title/price fallbacks),
@@ -514,7 +536,17 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
     } catch (e) {
       console.error("[Repricer] Non-critical: created_listings COG/image enrichment failed:", e);
     }
-  }
+    return createdListingMap;
+  };
+
+  const [rulesMap, snapshotsMap, marketplacePricesMap, initialFxRate, feeCacheMap, createdListingMap] = await Promise.all([
+    fetchRulesMap(),
+    fetchSnapshotsMap(),
+    fetchMarketplacePricesMap(),
+    fetchFxRate(),
+    fetchFeeCacheMap(),
+    fetchCreatedListingMap(),
+  ]);
 
   // ============================================================
   // Sales data is deferred to Phase 2 (fetchSalesEnrichment)
