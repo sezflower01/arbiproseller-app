@@ -69,14 +69,27 @@ function MinMaxPriceCellsImpl(props: MinMaxPriceCellsProps) {
   const minNumOk = minValNum != null && !isNaN(Number(minValNum));
   const maxNumOk = maxValNum != null && !isNaN(Number(maxValNum));
 
-  // While actively typing, recompute ROI live from the in-progress value
-  // instead of waiting for blur. At rest (not editing), keep using the
-  // server-computed roiAtMin/MaxPercent exactly as before — no behavior
-  // change there.
-  const liveRoiAtMin = editingMin != null && minNumOk
+  // While actively typing a genuinely different value, recompute ROI live
+  // from the in-progress value instead of waiting for blur. Gate this on the
+  // value actually having changed from what was there before -- not merely
+  // on `editingMin`/`editingMax` being set, since focusing the input alone
+  // seeds that state with the CURRENT value (see handleMinCellFocus), before
+  // any edit happens. Without this guard, the instant a field was focused
+  // the display would swap from roiAtMin/MaxPercent (server-computed via
+  // live SP-API fees, matches the Product Analyzer exactly) to this
+  // client-side estimate (cached fees_json + cached-or-fallback FX rate) —
+  // for the identical, unchanged price. Any drift between those two fee/FX
+  // sources (routine for international marketplaces) then looked like the
+  // ROI mysteriously changing just from clicking into the field.
+  const minOriginalValue = minOverride ?? invMin;
+  const maxOriginalValue = maxOverride ?? invMax;
+  const minHasRealEdit = editingMin != null && minNumOk && Number(minValNum) !== minOriginalValue;
+  const maxHasRealEdit = editingMax != null && maxNumOk && Number(maxValNum) !== maxOriginalValue;
+
+  const liveRoiAtMin = minHasRealEdit
     ? calcRoiAtPrice(cost, feesJson, Number(minValNum), fxRate, marketplace)
     : roiAtMinPercent;
-  const liveRoiAtMax = editingMax != null && maxNumOk
+  const liveRoiAtMax = maxHasRealEdit
     ? calcRoiAtPrice(cost, feesJson, Number(maxValNum), fxRate, marketplace)
     : roiAtMaxPercent;
   const showMinGtMax = minNumOk && maxNumOk && Number(minValNum) > Number(maxValNum);
