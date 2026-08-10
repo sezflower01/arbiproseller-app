@@ -5233,13 +5233,67 @@ Deno.serve(async (req) => {
         console.log(`[repricer-ai-evaluate] Built ${offers.length} virtual offers from SP-API (BB: $${spData.buyboxPrice}, FBA: ${spData.fbaOfferCount}, FBM: ${spData.fbmOfferCount})`);
       }
     };
-    
+
+    // The Repricer UI's Low/BB columns (AssignmentsTable.tsx) read from
+    // repricer_competitor_snapshots, but this per-assignment live SP-API
+    // check -- the same data the pricing decision itself is based on -- was
+    // never written there. That table was only ever populated by sales-order
+    // capture or a client-side fetch that skips ASINs which already have ANY
+    // snapshot, however old, so the UI could show data from a stale check
+    // (confirmed live: over 34h old) while the engine was pricing off a
+    // check from minutes ago. Persist here so the UI reflects what the
+    // engine actually used. Throttled since this evaluation runs every few
+    // minutes per assignment and the table has no unique constraint to
+    // upsert against (pure time-series, used for historical price charts).
+    const SNAPSHOT_WRITE_THROTTLE_MS = 15 * 60 * 1000;
+    const persistLiveCompetitorSnapshot = async () => {
+      try {
+        const hasSignal = snapshot?.buybox_price != null || snapshot?.lowest_fba_price != null || snapshot?.lowest_overall_price != null;
+        if (!hasSignal) return;
+
+        const { data: recent } = await supabase
+          .from('repricer_competitor_snapshots')
+          .select('fetched_at')
+          .eq('user_id', userId)
+          .eq('asin', targetAsin)
+          .eq('marketplace', targetMarketplace)
+          .order('fetched_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (recent?.fetched_at && Date.now() - new Date(recent.fetched_at).getTime() < SNAPSHOT_WRITE_THROTTLE_MS) return;
+
+        await supabase.from('repricer_competitor_snapshots').insert({
+          user_id: userId,
+          asin: targetAsin,
+          sku: targetSku || null,
+          marketplace: targetMarketplace,
+          fetched_at: snapshot.fetched_at || new Date().toISOString(),
+          buybox_price: snapshot.buybox_price,
+          buybox_seller_id: snapshot.buybox_seller_id,
+          buybox_seller_name: snapshot.buybox_seller_name,
+          buybox_is_fba: snapshot.buybox_is_fba,
+          lowest_fba_price: snapshot.lowest_fba_price,
+          lowest_fbm_price: snapshot.lowest_fbm_price,
+          lowest_overall_price: snapshot.lowest_overall_price,
+          offers_count: snapshot.offers_count,
+          offers_json: offers,
+          source: 'sp-api',
+          fetch_reason: 'live_eval',
+          credits_used: 0,
+        });
+      } catch (e) {
+        console.warn(`[repricer-ai-evaluate] persistLiveCompetitorSnapshot failed for ${targetAsin}:`, (e as Error).message);
+      }
+    };
+
     // OPTIMIZATION: Use pre-fetched SP-API data from scheduler if available
     // This eliminates the redundant SP-API call that was adding ~75s per evaluation
     if (sp_api_data && sp_api_data.buyboxPrice !== undefined) {
       console.log(`[repricer-ai-evaluate] Using PRE-FETCHED SP-API data for ${targetAsin} (saved ~75s)`);
       console.log(`[repricer-ai-evaluate] SP-API pricing for ${targetAsin}:`, sp_api_data);
       buildFromSpApiData(sp_api_data);
+      if (usedSpApi) await persistLiveCompetitorSnapshot();
     } else {
       // Fallback: fetch SP-API data directly (for manual runs, tests, or when scheduler didn't pass data)
       try {
@@ -5264,6 +5318,7 @@ Deno.serve(async (req) => {
         if (spApiData.success && spApiData.data) {
           console.log(`[repricer-ai-evaluate] SP-API pricing for ${targetAsin}:`, spApiData.data);
           buildFromSpApiData(spApiData.data);
+          if (usedSpApi) await persistLiveCompetitorSnapshot();
         } else {
           console.warn(`[repricer-ai-evaluate] SP-API pricing failed for ${targetAsin}:`, spApiData.error);
         }
