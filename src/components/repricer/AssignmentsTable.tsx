@@ -175,6 +175,8 @@ interface InventoryWithAssignment {
   lowest_overall_price: number | null;
   offers_count: number | null;
   snapshot_fetched_at: string | null;
+  // SP-API-verified buy box ownership from the assignment's own live check
+  last_buybox_status: string | null;
   // Computed fields
   amazon_fees: number | null;
   bb_percentage: number | null;
@@ -755,6 +757,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
       lowest_overall_price: snapshot?.lowest_overall_price || null,
       offers_count: snapshot?.offers_count ?? null,
       snapshot_fetched_at: snapshot?.fetched_at || null,
+      last_buybox_status: assignment?.last_buybox_status || null,
       amazon_fees: amazonFees,
       bb_percentage: null,
       position: null,
@@ -964,6 +967,7 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
           lowest_overall_price: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.lowest_overall_price || null,
           offers_count: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.offers_count ?? null,
           snapshot_fetched_at: snapshotsMap[`${a.asin}-${targetMarketplace}`]?.fetched_at || null,
+          last_buybox_status: a.last_buybox_status || null,
           amazon_fees: null,
           bb_percentage: null,
           position: null,
@@ -8109,8 +8113,20 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                             {item.buybox_price != null ? (
                               <div className="font-medium text-primary">{formatPrice(Number(item.buybox_price), marketplace)}</div>
                             ) : "—"}
-                            {/* BB Owner fulfillment (FBA/FBM/—) — merged in from its own column */}
-                            <div className="flex items-center justify-end mt-0.5">
+                            {/* BB Owner fulfillment (FBA/FBM/—) — merged in from its own column.
+                                "YOU" badge (matches the extension analyser's own-offer tag,
+                                same indigo styling) when this assignment's own SP-API check
+                                confirmed we're the buy box winner. */}
+                            <div className="flex items-center justify-end gap-1 mt-0.5">
+                              {(item.last_buybox_status === 'winning' || item.last_buybox_status === 'owned') && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] px-1 py-0 h-4 border-0"
+                                  style={{ backgroundColor: 'rgba(79,70,229,0.25)', color: '#4F46E5' }}
+                                >
+                                  YOU
+                                </Badge>
+                              )}
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger>
