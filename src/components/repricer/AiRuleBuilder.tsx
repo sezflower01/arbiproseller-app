@@ -31,23 +31,27 @@ import { toast } from "sonner";
 // section was removed. The recommended values are still saved for every rule
 // via the hardcoded fallbacks in RuleBuilder.tsx's save logic.
 
-export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'PROFIT_EXTRACTOR';
+export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'PROFIT_EXTRACTOR' | 'MATCH_BUYBOX' | 'MATCH_LOWEST';
 
 // Profiles hidden by default (advanced/high-risk) — unlockable via toggle
 const ADVANCED_PROFILES: SmartProfile[] = ['VELOCITY_DOMINATOR'];
-const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR'];
+const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST'];
 
 // Behavior metrics per profile for the summary card
 const PROFILE_BEHAVIOR: Record<SmartProfile, { salesSpeed: number; marginProtection: number; raiseAggression: number; bbDefense: number; riskLevel: number; tags: string[] }> = {
   VELOCITY_DOMINATOR: { salesSpeed: 5, marginProtection: 1, raiseAggression: 0, bbDefense: 0, riskLevel: 9, tags: ['Clearance', 'Rank building', 'Cash flow'] },
   MOMENTUM_BUILDER: { salesSpeed: 4, marginProtection: 3, raiseAggression: 3, bbDefense: 3, riskLevel: 4, tags: ['OA / Arbitrage', 'Competitive wholesale', 'Growth phase'] },
   PROFIT_EXTRACTOR: { salesSpeed: 2, marginProtection: 5, raiseAggression: 5, bbDefense: 3, riskLevel: 8, tags: ['Private label', 'Low competition', 'Ceiling discovery'] },
+  MATCH_BUYBOX: { salesSpeed: 3, marginProtection: 4, raiseAggression: 0, bbDefense: 3, riskLevel: 2, tags: ['Predictable pricing', 'No undercutting', 'Buy Box parity'] },
+  MATCH_LOWEST: { salesSpeed: 4, marginProtection: 3, raiseAggression: 0, bbDefense: 3, riskLevel: 3, tags: ['Predictable pricing', 'No undercutting', 'Lowest-offer parity'] },
 };
 
 export const SMART_PROFILES: { value: SmartProfile; label: string; description: string; bestFor: string; salesStars: number; profitStars: number; icon: string; recommended?: boolean; advanced?: boolean; badge?: string; badgeColor?: string; microLabel?: string; keyDiff?: string; legacy?: boolean; safetyScore?: number; salesImpactLabel?: string; salesImpactDesc?: string; salesImpactLevel?: 'strong' | 'balanced' | 'lower' | 'clearance' }[] = [
   { value: 'VELOCITY_DOMINATOR', label: 'Aggressive Capture', description: 'Win more often with lower profit per sale.', bestFor: 'Heavy competition & fast-moving items', salesStars: 5, profitStars: 1, icon: '🚀', safetyScore: 3, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often, but may reduce profit', salesImpactLevel: 'strong', microLabel: 'Get more sales fast' },
   { value: 'MOMENTUM_BUILDER', label: 'Momentum Builder', description: 'Stay competitive while protecting your margins.', bestFor: 'Arbitrage, wholesale, most products', salesStars: 4, profitStars: 2, icon: '📈', recommended: true, safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often while keeping strong sales volume', salesImpactLevel: 'strong', microLabel: 'Best balance of sales and profit' },
   { value: 'PROFIT_EXTRACTOR', label: 'Profit Extractor', description: 'Raises prices to capture more profit, but may reduce sales.', bestFor: 'Private label & exclusive products', salesStars: 1, profitStars: 5, icon: '🏆', safetyScore: 7, salesImpactLabel: 'Lower Sales', salesImpactDesc: 'May lose Buy Box and reduce sales if prices increase', salesImpactLevel: 'lower', microLabel: 'Maximize profit when competition is low' },
+  { value: 'MATCH_BUYBOX', label: 'Match Buy Box', description: 'Sets your price exactly at the Buy Box price — never below it, never above it.', bestFor: 'When you just want price parity, not a price war', salesStars: 3, profitStars: 4, icon: '🎯', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Matches the Buy Box exactly — competitive without racing to the bottom', salesImpactLevel: 'balanced', microLabel: 'Match the Buy Box, nothing more' },
+  { value: 'MATCH_LOWEST', label: 'Match Lowest', description: 'Sets your price exactly at the lowest competitor offer — never below it, never above it.', bestFor: 'Staying at parity with the cheapest seller without undercutting', salesStars: 4, profitStars: 3, icon: '⚖️', safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Tracks the lowest offer exactly — stays competitive without a price war', salesImpactLevel: 'strong', microLabel: 'Match the lowest price, nothing more' },
 ];
 
 // Profile key → UI label mapping (canonical source of truth)
@@ -55,6 +59,8 @@ export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   VELOCITY_DOMINATOR: 'Aggressive Capture',
   MOMENTUM_BUILDER: 'Momentum Builder',
   PROFIT_EXTRACTOR: 'Profit Extractor',
+  MATCH_BUYBOX: 'Match Buy Box',
+  MATCH_LOWEST: 'Match Lowest',
 };
 
 // Profile preset configurations - these override specific settings
@@ -125,6 +131,38 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     // Anchor to Buy Box price — no reason to chase the cheapest offer when
     // the goal is capturing margin in a low-competition category.
     target_anchor: 'buybox',
+  },
+  // Pure "match, never chase" presets — no monopoly mode, no opportunistic
+  // smart-raise, no extended cooldown (unlike Profit Extractor, which shares
+  // the same undercut_amount=0 identity but bundles those extras on top).
+  // undercut_amount=0 alone already puts these in the engine's matchExactly
+  // path, which settles cleanly at the anchor in both directions without
+  // fighting the cooldown guards that only throttle undercut_amount>0 rules.
+  MATCH_BUYBOX: {
+    undercut_amount: 0.00,
+    enable_smart_raise: false,
+    enable_monopoly_mode: false,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+    ignore_fbm_unless_buybox_owner: false,
+    // Anchor to Buy Box price specifically — never the wider lowest-offer field.
+    target_anchor: 'buybox',
+  },
+  MATCH_LOWEST: {
+    undercut_amount: 0.00,
+    enable_smart_raise: false,
+    enable_monopoly_mode: false,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+    ignore_fbm_unless_buybox_owner: false,
+    // Anchor to the absolute cheapest eligible offer (FBA + FBM), not just BB.
+    target_anchor: 'lowest_offer',
   },
 };
 

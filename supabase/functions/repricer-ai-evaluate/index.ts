@@ -212,10 +212,10 @@ function computeRaiseOffset(ctx: RaiseOffsetContext): { offset: number; reason: 
   if (isAggressive) {
     return { offset: 0.01, reason: 'undercut:aggressive_strategy' };
   }
-  // FBM sellers: respect profile intent for match-only profiles (Margin Protection, Profit Extractor)
+  // FBM sellers: respect profile intent for match-only profiles (Profit Extractor, Match Buy Box, Match Lowest)
   // Only force undercut for profiles that are NOT match-only
   if (ctx.myFulfillment === 'FBM') {
-    const isMatchOnlyProfile = ctx.smartProfile === 'PROFIT_EXTRACTOR';
+    const isMatchOnlyProfile = ctx.smartProfile === 'PROFIT_EXTRACTOR' || ctx.smartProfile === 'MATCH_BUYBOX' || ctx.smartProfile === 'MATCH_LOWEST';
     if (isMatchOnlyProfile) {
       return { offset: 0.00, reason: 'match:fbm_match_only_profile' };
     }
@@ -3162,7 +3162,7 @@ function computeAiWinSalesBoosterPrice(
     const actualGap = currentPrice - buyboxPrice; // positive = we are above BB
     const gapSufficient = actualGap >= fbmCompetitiveGap || currentPrice <= buyboxPrice;
     
-    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER'];
+    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER', 'MATCH_BUYBOX', 'MATCH_LOWEST'];
     const aggressiveProfilesFbm = ['VELOCITY_DOMINATOR'];
     const isConservative = conservativeProfiles.includes(currentSmartProfile);
     const isAggressive = aggressiveProfilesFbm.includes(currentSmartProfile);
@@ -6194,6 +6194,8 @@ Deno.serve(async (req) => {
           maxRaiseAboveBuyboxPercent: (() => {
             switch (rule.smart_profile || 'CUSTOM') {
               case 'PROFIT_EXTRACTOR': return 0;
+              case 'MATCH_BUYBOX': return 0;
+              case 'MATCH_LOWEST': return 0;
               case 'VELOCITY_DOMINATOR': return 4;
               case 'MOMENTUM_BUILDER':
               default: return 2;
@@ -7241,7 +7243,7 @@ Deno.serve(async (req) => {
         // FBM→FBM non-aggressive cap: never raise above the real FBM Buy Box
         const peIsFbmSeller = context.yourFulfillmentType === 'FBM';
         const peBbIsFbm = (buyboxSellerType as any) === 'FBM' || buyboxSellerType === null || (buyboxSellerType as any) === 'unknown';
-        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR'];
+        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST'];
         const peCurrentProfile = rule.smart_profile || 'CUSTOM';
         const peIsFbmFbmCapped = peIsFbmSeller && peBbIsFbm && peNonAggressiveProfiles.includes(peCurrentProfile) && peBbPrice && peBbPrice > 0;
         

@@ -15,6 +15,8 @@ export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   VELOCITY_DOMINATOR: "Aggressive Capture",
   MOMENTUM_BUILDER: "Momentum Builder",
   PROFIT_EXTRACTOR: "Profit Extractor",
+  MATCH_BUYBOX: "Match Buy Box",
+  MATCH_LOWEST: "Match Lowest",
 };
 
 export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
@@ -65,6 +67,34 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
     ignore_fbm_unless_buybox_owner: true,
+  },
+  // MATCH_BUYBOX / MATCH_LOWEST: pure "match, never chase" presets. No
+  // monopoly mode, no opportunistic smart-raise, no extended cooldown —
+  // just track the anchor (buybox / lowest_offer, set via target_anchor on
+  // the frontend template) and settle there. undercut_amount=0 already puts
+  // these in the engine's `matchExactly` path, which bypasses cooldown for
+  // corrective moves in both directions (see resolved_profile_audit / the
+  // isMatchOnlyProfile, conservativeProfiles, and maxRaiseAboveBuyboxPercent
+  // call sites in index.ts, which explicitly include these two keys).
+  MATCH_BUYBOX: {
+    undercut_amount: 0,
+    enable_smart_raise: false,
+    enable_monopoly_mode: false,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+  },
+  MATCH_LOWEST: {
+    undercut_amount: 0,
+    enable_smart_raise: false,
+    enable_monopoly_mode: false,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
   },
 };
 

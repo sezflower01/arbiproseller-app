@@ -544,6 +544,16 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
         ruleData.max_raise_step_dollars = formData.max_raise_step_dollars ?? 0.25;
         ruleData.max_raise_step_percent = formData.max_raise_step_percent ?? 2;
         ruleData.only_raise_when_buybox_owner = formData.only_raise_when_buybox_owner ?? true;
+        // Monopoly Mode — was collected into formData by AiRuleBuilder (both
+        // via smart_profile presets and the user-facing toggle/dropdowns) but
+        // never actually written here, so every rule silently kept whatever
+        // the enable_monopoly_mode column's DB default was regardless of the
+        // selected preset or any manual toggle.
+        ruleData.enable_monopoly_mode = (formData as any).enable_monopoly_mode ?? true;
+        ruleData.monopoly_mode_type = (formData as any).monopoly_mode_type ?? 'conservative';
+        ruleData.monopoly_raise_step_dollars = (formData as any).monopoly_raise_step_dollars ?? 0.10;
+        ruleData.monopoly_raise_step_percent = (formData as any).monopoly_raise_step_percent ?? 1;
+        ruleData.monopoly_cooldown_minutes = (formData as any).monopoly_cooldown_minutes ?? 60;
         // Competitor Quality Filtering (NEW)
         ruleData.min_seller_rating = (formData as any).min_seller_rating ?? 80;
         ruleData.max_handling_days = (formData as any).max_handling_days ?? 2;
