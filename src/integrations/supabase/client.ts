@@ -5,6 +5,28 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://mstibdszibcheodvnprm.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdGliZHN6aWJjaGVvZHZucHJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MTA3NTUsImV4cCI6MjA1OTM4Njc1NX0.akgxF2XOOlNk8OTECcLeOSP1DWqRY89dBDW8GkE2pgc";
 
+// supabase-js's auth client (token refresh, getSession) shares this same
+// fetch with every other client (postgrest/storage/functions) -- there's no
+// way to give auth its own shorter timeout without hand-rolling the client.
+// Without this wrapper, a single stalled (not rejected -- stalled) network
+// request during a background auto-refresh tick holds auth-js's internal
+// session lock with NO timeout of its own, freezing every subsequent
+// getSession()/auth-dependent call app-wide until the browser's own default
+// connection timeout eventually fires (minutes, not seconds) -- matching
+// reports of the whole app freezing for a short period every few days, then
+// recovering on its own. 120s is well above the ~90-100s ceiling already
+// used by this app's own in-flight-request timeout races (e.g. repricer
+// runSingleItem), so it only ever acts as a backstop against a truly stuck
+// connection, never as an early abort on a legitimately slow-but-working call.
+const FETCH_TIMEOUT_MS = 120_000;
+const fetchWithTimeout: typeof fetch = (input, init) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  // Respect a caller-supplied signal too, if one was ever passed.
+  init?.signal?.addEventListener('abort', () => controller.abort());
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+};
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
@@ -14,5 +36,8 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+  },
+  global: {
+    fetch: fetchWithTimeout,
   },
 });
