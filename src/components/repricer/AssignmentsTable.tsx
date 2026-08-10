@@ -8091,9 +8091,24 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 ? item.lowest_fba_price
                                 : item.lowest_overall_price;
                               const lowRoi = lowPrice != null ? calculateRoiFromPrice(item, Number(lowPrice)) : null;
+                              const myPrice = item.my_price ?? item.price;
+                              // Same "YOU" treatment as the BB column: our own current price
+                              // matches the observed lowest, so we're (tied for) the lowest offer.
+                              const isLowestMine = lowPrice != null && myPrice != null && Math.abs(Number(myPrice) - Number(lowPrice)) < 0.005;
                               return (
                                 <>
-                                  <div>{lowPrice != null ? formatPrice(Number(lowPrice), marketplace) : "—"}</div>
+                                  <div className="flex items-center justify-end gap-1">
+                                    {isLowestMine && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[9px] px-1 py-0 h-4 border-0"
+                                        style={{ backgroundColor: 'rgba(79,70,229,0.25)', color: '#4F46E5' }}
+                                      >
+                                        YOU
+                                      </Badge>
+                                    )}
+                                    <span>{lowPrice != null ? formatPrice(Number(lowPrice), marketplace) : "—"}</span>
+                                  </div>
                                   <div className={`text-[10px] font-mono ${
                                     lowRoi != null
                                       ? lowRoi >= 0
