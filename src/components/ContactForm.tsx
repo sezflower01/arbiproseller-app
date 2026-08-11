@@ -46,8 +46,7 @@ const ContactForm = () => {
     setSubmitStatus('loading');
     
     try {
-      // Change this to your verified email in Resend
-      const adminEmail = "onboarding@resend.dev"; // This is always verified with Resend
+      const adminEmail = "support@inventorysprint.com";
       
       const result = await sendContactFormEmail(
         adminEmail,
