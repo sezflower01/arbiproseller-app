@@ -1624,8 +1624,15 @@ function renderFnskuOptions(options) {
   if (printState.selectedOptionIndex == null || !printState.options[printState.selectedOptionIndex]) printState.selectedOptionIndex = 0;
   const current = printState.options[printState.selectedOptionIndex];
   const unsafe = fnskuBlockReason(current.fnsku, printState.listing?.asin) || (printState.fbaElig && printState.fbaElig.eligible === false);
-  selected.classList.toggle("hidden", !!unsafe);
-  selected.innerHTML = unsafe ? "" : `Selected for Printing<br><b>${current.fnsku}</b> • ${current.condition || "NEW"}${current.sku ? `<div>SKU: <b>${current.sku}</b></div>` : ""}<div>✓ This FNSKU and condition will be used for the label</div>`;
+  const hasPicker = printState.options.length > 1;
+  // When there are 2+ FNSKU/condition options (e.g. two SKUs sharing one
+  // ASIN), the picker list below already marks the active choice with
+  // "✓ Selected" -- showing this summary card on top of it repeated the
+  // same FNSKU/SKU/condition a second time right above the picker, which
+  // read as a confusing duplicate rather than a confirmation. Only show it
+  // when there's a single option and no picker to convey that instead.
+  selected.classList.toggle("hidden", !!unsafe || hasPicker);
+  selected.innerHTML = (unsafe || hasPicker) ? "" : `Selected for Printing<br><b>${current.fnsku}</b> • ${current.condition || "NEW"}${current.sku ? `<div>SKU: <b>${current.sku}</b></div>` : ""}<div>✓ This FNSKU and condition will be used for the label</div>`;
   if (current.condition) $("apx-l-cond").value = current.condition;
   box.classList.toggle("hidden", printState.options.length <= 1);
   printState.options.forEach((option, index) => {
