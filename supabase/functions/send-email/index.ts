@@ -66,8 +66,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Sending ${emailType} email to ${to}`);
     
-    // Default sender email - using Resend's onboarding email which is always verified
-    const senderEmail = from || "onboarding@resend.dev";
+    // Default sender email - inventorysprint.com is verified on Resend
+    const senderEmail = from || "noreply@inventorysprint.com";
     
     // Generate email content based on type
     let subject: string;
@@ -206,7 +206,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Prepare email options
     const emailOptions: any = {
-      from: `ArbiProSeller <${senderEmail}>`,
+      from: `InventorySprint <${senderEmail}>`,
       to: [to],
       subject: subject,
       html: html,

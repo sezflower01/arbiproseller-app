@@ -75,7 +75,6 @@ export async function sendContactFormEmail(adminEmail: string, customerName: str
   // Send admin notification
   const adminResult = await sendEmail({
     to: adminEmail,
-    from: "onboarding@resend.dev", // Use verified sender
     name: customerName,
     emailType: "contact-form",
     inquiry: inquiry,
@@ -85,7 +84,6 @@ export async function sendContactFormEmail(adminEmail: string, customerName: str
   // Send auto-reply to user
   const autoReplyResult = await sendEmail({
     to: customerEmail,
-    from: "onboarding@resend.dev", // Use verified sender
     name: customerName,
     emailType: "contact-auto-reply"
   });
