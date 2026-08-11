@@ -66,17 +66,37 @@ function jsonResponse(body: unknown, status = 200) {
 
 // Parse a CSV series [t,v,t,v,...]; returns ordered samples within last N days.
 // Values are cents; -1 means no data.
+//
+// Keepa's CSV only records a new (t,v) pair when the value actually CHANGES,
+// not one point per day — so a listing whose price/BSR has been stable for
+// longer than the selected window has no points inside it at all, even
+// though the true value is well known. Left unhandled, that produces a
+// completely empty series (and an empty chart) for a perfectly stable
+// listing. Carry the last known value from before the window forward as a
+// single point at the window boundary so the chart still shows a flat line
+// instead of nothing — only when the window itself is otherwise empty, so
+// this never overrides real in-window history.
 function parseSeries(csv: number[] | null | undefined, daysBack: number, isPrice = true) {
   if (!csv || csv.length < 2) return [] as { t: number; v: number }[];
   const cutoffMin = Math.floor(Date.now() / 60_000) - KEEPA_EPOCH_MIN - daysBack * 24 * 60;
   const out: { t: number; v: number }[] = [];
+  let lastBeforeWindow: { t: number; v: number } | null = null;
   for (let i = 0; i < csv.length; i += 2) {
     const t = csv[i];
     const v = csv[i + 1];
     if (typeof t !== 'number' || typeof v !== 'number') continue;
     if (v === -1) continue;
-    if (t < cutoffMin) continue;
-    out.push({ t, v: isPrice ? v / 100 : v });
+    const value = isPrice ? v / 100 : v;
+    if (t < cutoffMin) {
+      // csv entries are chronological, so the last one seen before the
+      // cutoff is the most recent value as of the window's start.
+      lastBeforeWindow = { t, v: value };
+      continue;
+    }
+    out.push({ t, v: value });
+  }
+  if (out.length === 0 && lastBeforeWindow) {
+    out.push({ t: cutoffMin, v: lastBeforeWindow.v });
   }
   return out;
 }
