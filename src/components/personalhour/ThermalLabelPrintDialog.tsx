@@ -645,18 +645,6 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
 
                   <div className="text-xs text-muted-foreground space-y-1">
                     <p>
-                      Verify the client is running:{" "}
-                      <a
-                        href="http://localhost:7777/health"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline font-mono"
-                      >
-                        http://localhost:7777/health
-                      </a>{" "}
-                      should return <code className="font-mono">{"{ status: \"ok\" }"}</code>.
-                    </p>
-                    <p>
                       <strong>Auto-start tip:</strong> after testing, place a shortcut to{" "}
                       <code className="font-mono">SprintPrint.exe</code> in{" "}
                       <code className="font-mono">shell:startup</code> (Win+R → <code>shell:startup</code>) so it
