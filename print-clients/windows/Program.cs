@@ -25,7 +25,7 @@ AppDomain.CurrentDomain.UnhandledException += (s, e) =>
 {
     var ex = e.ExceptionObject as Exception;
     LogLine($"UNHANDLED: {ex}");
-    try { MessageBox.Show($"ArbiProSeller Print Client crashed:\n\n{ex?.Message}\n\nLog: {LogPath()}", "Print Client Error", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+    try { MessageBox.Show($"SprintPrint crashed:\n\n{ex?.Message}\n\nLog: {LogPath()}", "Print Client Error", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
 };
 
 try
@@ -304,16 +304,16 @@ try
             {
                 Icon = System.Drawing.SystemIcons.Application,
                 Visible = true,
-                Text = "ArbiProSeller Print Client — running on http://127.0.0.1:7777"
+                Text = "SprintPrint — running on http://127.0.0.1:7777"
             };
 
             var menu = new ContextMenuStrip();
-            var header = new ToolStripMenuItem("ArbiProSeller Print Client") { Enabled = false };
+            var header = new ToolStripMenuItem("SprintPrint") { Enabled = false };
             menu.Items.Add(header);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Status: Running on port 7777", null, (s, e) =>
             {
-                MessageBox.Show($"Print client is running.\n\nURL: http://127.0.0.1:7777\nLog: {LogPath()}", "ArbiProSeller Print Client", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Print client is running.\n\nURL: http://127.0.0.1:7777\nLog: {LogPath()}", "SprintPrint", MessageBoxButtons.OK, MessageBoxIcon.Information);
             });
             menu.Items.Add("Print test label", null, (s, e) =>
             {
@@ -352,7 +352,7 @@ try
             });
             trayIcon.ContextMenuStrip = menu;
 
-            trayIcon.BalloonTipTitle = "ArbiProSeller Print Client";
+            trayIcon.BalloonTipTitle = "SprintPrint";
             trayIcon.BalloonTipText = "Running on http://127.0.0.1:7777 — right-click the tray icon for options.";
             trayIcon.ShowBalloonTip(4000);
 
@@ -386,7 +386,7 @@ catch (Exception ex)
     var msg = PrintClientDiagnostics.IsPortInUseFailure(ex)
         ? $"Port 7777 is already in use. The print client may already be running.\n\nLog: {logPath}"
         : $"{ex.Message}\n\nLog: {logPath}";
-    try { MessageBox.Show(msg, "ArbiProSeller Print Client — could not start", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+    try { MessageBox.Show(msg, "SprintPrint — could not start", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
 }
 
 // ----------------- Models -----------------

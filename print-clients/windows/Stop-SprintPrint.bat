@@ -1,7 +1,7 @@
 @echo off
-title Stop ArbiProSeller Print Client
+title Stop SprintPrint
 echo.
-echo Stopping all ArbiProSeller Print Client processes...
+echo Stopping all SprintPrint processes...
 echo.
 
 taskkill /F /IM SprintPrint.exe 2>nul

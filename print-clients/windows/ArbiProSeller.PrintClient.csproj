@@ -20,7 +20,7 @@
     <Version>1.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0</InformationalVersion>
-    <Product>ArbiProSeller Print Client</Product>
+    <Product>SprintPrint</Product>
     <Company>ArbiProSeller</Company>
     <Description>Local HTTP bridge that prints thermal labels (ZPL) from arbiproseller.com</Description>
   </PropertyGroup>

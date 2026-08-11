@@ -1,4 +1,4 @@
-# ArbiProSeller Print Client (Windows)
+# SprintPrint (Windows)
 
 A lightweight Windows service that receives label print requests from the ArbiProSeller web app and sends ZPL commands directly to thermal printers (Zebra, Rollo, etc.).
 

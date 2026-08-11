@@ -277,7 +277,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
       toast({
         title: "Direct print failed",
         description: message.includes("Failed to fetch")
-          ? "The ArbiProSeller Print Client is not running on localhost:7777. Start it or use Browser Print fallback."
+          ? "SprintPrint is not running on localhost:7777. Start it or use Browser Print fallback."
           : message,
         variant: "destructive",
       });
@@ -367,7 +367,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
       toast({
         title: "Direct print failed",
         description: message.includes("Failed to fetch")
-          ? "The ArbiProSeller Print Client is not running on localhost:7777. Start it or use Browser Print fallback."
+          ? "SprintPrint is not running on localhost:7777. Start it or use Browser Print fallback."
           : message,
         variant: "destructive",
       });
@@ -484,7 +484,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
                   <div className="flex-1">
                     <p className="font-semibold text-foreground">Print Client not running</p>
                     <p className="text-muted-foreground mt-1">
-                      Start ArbiProSeller Print Client, or configure printing in{" "}
+                      Start SprintPrint, or configure printing in{" "}
                       <Link to="/settings" className="underline">Settings → Connect Printer</Link>.
                     </p>
                   </div>

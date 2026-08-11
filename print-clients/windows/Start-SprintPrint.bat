@@ -1,18 +1,18 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title ArbiProSeller Print Client
+title SprintPrint
 
 set "LOGDIR=%LOCALAPPDATA%\ArbiProSeller\PrintClient"
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 set "LOGFILE=%LOGDIR%\launcher.log"
 
-echo ArbiProSeller Print Client launcher started > "%LOGFILE%"
+echo SprintPrint launcher started > "%LOGFILE%"
 echo Date/time: %DATE% %TIME% >> "%LOGFILE%"
 echo Folder: %CD% >> "%LOGFILE%"
 echo. >> "%LOGFILE%"
 
-echo ArbiProSeller Print Client
+echo SprintPrint
 echo.
 echo This window must stay open while printing labels.
 echo.

@@ -104,7 +104,7 @@ export default function ConnectPrinterSettings() {
       setStatus((prev) => {
         const next: Status = ok ? "connected" : "disconnected";
         if (prev !== next && next === "connected") {
-          toast({ title: "Printer connected", description: "ArbiProSeller Print Client is running." });
+          toast({ title: "Printer connected", description: "SprintPrint is running." });
         }
         return next;
       });
@@ -226,7 +226,7 @@ export default function ConnectPrinterSettings() {
       <div>
         <h2 className="text-xl font-semibold text-white">Connect Printer</h2>
         <p className="text-sm text-gray-400 mt-1">
-          Install the ArbiProSeller Print Client to send FNSKU and shipping labels directly to your thermal printer.
+          Install SprintPrint to send FNSKU and shipping labels directly to your thermal printer.
         </p>
       </div>
 
@@ -238,7 +238,7 @@ export default function ConnectPrinterSettings() {
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-white">ArbiProSeller Print Client</h3>
+              <h3 className="text-base font-semibold text-white">SprintPrint</h3>
               {status === "connected" && (
                 <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                   <CheckCircle2 className="h-3 w-3 mr-1" /> Printer connected

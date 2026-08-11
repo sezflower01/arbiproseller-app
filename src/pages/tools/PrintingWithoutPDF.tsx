@@ -540,7 +540,7 @@ const PrintingWithoutPDF = () => {
                     <AlertTitle>Setup Required for Direct Thermal Printing</AlertTitle>
                     <AlertDescription className="mt-2 space-y-3">
                       <p className="text-sm">
-                        To use <strong>Direct Thermal Print</strong>, you need to run the ArbiProSeller Print Client on your Windows PC.
+                        To use <strong>Direct Thermal Print</strong>, you need to run SprintPrint on your Windows PC.
                       </p>
                       <div className="space-y-2 text-sm">
                         <p className="font-medium">Quick Setup:</p>
