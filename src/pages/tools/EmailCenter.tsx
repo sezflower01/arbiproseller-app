@@ -3,8 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Mail, Search, LogOut, Paperclip, ChevronLeft, Plus, X, Star, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Mail, Search, LogOut, Paperclip, ChevronLeft, Plus, X, Star, RefreshCw, ChevronDown, ChevronRight, Reply, Send } from "lucide-react";
 import { toast } from "sonner";
+
+function parseFromHeader(from: string): { name: string; email: string } {
+  const match = from.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+  if (match) {
+    return { name: match[1].trim() || match[2], email: match[2].trim() };
+  }
+  return { name: from.trim(), email: from.trim() };
+}
 
 interface GmailAttachment {
   filename: string;
@@ -26,6 +35,7 @@ interface GmailMessage {
   attachments: GmailAttachment[];
   labelIds: string[];
   account?: string;
+  messageId?: string;
 }
 interface SavedFilter {
   id: string;
@@ -60,6 +70,9 @@ export default function EmailCenter() {
   const [paging, setPaging] = useState(false);
   const [selected, setSelected] = useState<GmailMessage | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replySending, setReplySending] = useState(false);
 
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [groups, setGroups] = useState<Record<string, FilterGroup>>({});
@@ -311,6 +324,37 @@ export default function EmailCenter() {
     } finally { setPaging(false); }
   }
 
+  async function handleSendReply() {
+    if (!selected || !replyText.trim()) return;
+    const { name: toName, email: toEmail } = parseFromHeader(selected.from);
+    setReplySending(true);
+    try {
+      const subject = selected.subject && /^re:/i.test(selected.subject.trim())
+        ? selected.subject
+        : `Re: ${selected.subject || "(no subject)"}`;
+      const { data, error } = await supabase.functions.invoke("send-email", {
+        body: {
+          to: toEmail,
+          from: "support@inventorysprint.com",
+          name: toName,
+          emailType: "gmail-reply",
+          replyBody: replyText.trim(),
+          replySubject: subject,
+          inReplyTo: selected.messageId,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Reply sent to ${toEmail}`);
+      setReplyText("");
+      setReplyOpen(false);
+    } catch (e) {
+      toast.error("Failed to send reply: " + (e as Error).message);
+    } finally {
+      setReplySending(false);
+    }
+  }
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
@@ -463,14 +507,19 @@ export default function EmailCenter() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
+                    <Button variant="ghost" size="sm" onClick={() => { setSelected(null); setReplyOpen(false); setReplyText(""); }}>
                       <ChevronLeft className="h-4 w-4" /> Back
                     </Button>
-                    {selected.attachments.length > 0 && (
-                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                        <Paperclip className="h-3 w-3" /> {selected.attachments.length} attachment(s)
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {selected.attachments.length > 0 && (
+                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                          <Paperclip className="h-3 w-3" /> {selected.attachments.length} attachment(s)
+                        </span>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => setReplyOpen((v) => !v)}>
+                        <Reply className="h-4 w-4" /> Reply
+                      </Button>
+                    </div>
                   </div>
                   <CardTitle className="text-lg break-words">{selected.subject || "(no subject)"}</CardTitle>
                   <div className="text-xs text-muted-foreground space-y-0.5">
@@ -480,7 +529,27 @@ export default function EmailCenter() {
                     <div><strong>Date:</strong> {selected.date}</div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  {replyOpen && (
+                    <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+                      <p className="text-xs text-muted-foreground">
+                        Replying to <strong>{parseFromHeader(selected.from).email}</strong> as <strong>support@inventorysprint.com</strong>
+                      </p>
+                      <Textarea
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder="Type your reply…"
+                        className="min-h-[140px] bg-background"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" onClick={handleSendReply} disabled={replySending || !replyText.trim()} className="bg-[#0f1c3f] hover:bg-[#1a2a55]">
+                          {replySending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          {replySending ? "Sending…" : "Send Reply"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setReplyOpen(false); setReplyText(""); }}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                   {selected.html ? (
                     <iframe title="email-body" sandbox="" srcDoc={selected.html} className="w-full min-h-[600px] border rounded bg-white" />
                   ) : (

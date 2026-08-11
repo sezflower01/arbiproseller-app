@@ -28,7 +28,7 @@ function amazonListingUrl(asin: string, marketplace?: string): string {
 }
 
 // Email template types
-type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired";
+type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired" | "gmail-reply";
 
 interface EmailRequest {
   to: string;
@@ -49,6 +49,18 @@ interface EmailRequest {
     currentPrice?: number;
     confirmUrl?: string;
   };
+  replyBody?: string;
+  replySubject?: string;
+  inReplyTo?: string;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -58,7 +70,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { to, from, name, emailType, orderDetails, licenseKey, inquiry, replyTo, priceAlert }: EmailRequest = await req.json();
+    const { to, from, name, emailType, orderDetails, licenseKey, inquiry, replyTo, priceAlert, replyBody, replySubject, inReplyTo }: EmailRequest = await req.json();
     
     if (!to || !name || !emailType) {
       throw new Error("Missing required fields: to, name, or emailType");
@@ -200,6 +212,19 @@ const handler = async (req: Request): Promise<Response> => {
           </p>
         </div>
       `;
+    } else if (emailType === "gmail-reply") {
+      if (!replyBody) {
+        throw new Error("replyBody is required for gmail-reply email type");
+      }
+      subject = replySubject || "Re:";
+      html = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="white-space: pre-line;">${escapeHtml(replyBody)}</div>
+          <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+            Sent from InventorySprint Email Center
+          </p>
+        </div>
+      `;
     } else {
       throw new Error(`Invalid email type: ${emailType}`);
     }
@@ -215,6 +240,16 @@ const handler = async (req: Request): Promise<Response> => {
     // Add reply-to for contact form emails
     if (emailType === "contact-form" && replyTo) {
       emailOptions.reply_to = [replyTo];
+    }
+
+    // Thread gmail-reply emails into the original Gmail conversation, and route
+    // any further replies from the customer back to the sender address.
+    if (emailType === "gmail-reply") {
+      emailOptions.reply_to = [senderEmail];
+      if (inReplyTo) {
+        const ref = inReplyTo.startsWith("<") ? inReplyTo : `<${inReplyTo}>`;
+        emailOptions.headers = { "In-Reply-To": ref, "References": ref };
+      }
     }
 
     // Send the email using Resend

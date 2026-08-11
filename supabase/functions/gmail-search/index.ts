@@ -111,6 +111,7 @@ async function searchOne(conn: any, admin: any, q: string, maxResults: number, p
       from: getHeader(headers, "From"),
       to: getHeader(headers, "To"),
       date: getHeader(headers, "Date"),
+      messageId: getHeader(headers, "Message-ID"),
       internalDate: m.internalDate,
       html,
       text,
