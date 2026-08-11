@@ -36,10 +36,10 @@ const Support = () => {
                 For any inquiries, please send an email to:
               </p>
               <a 
-                href="mailto:support@arbiproseller.com" 
+                href="mailto:support@inventorysprint.com"
                 className="text-blue-600 text-xl font-bold hover:underline"
               >
-                support@arbiproseller.com
+                support@inventorysprint.com
               </a>
               <p className="text-gray-500 mt-4">
                 Our support team will respond to your email as soon as possible.

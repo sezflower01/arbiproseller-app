@@ -15,7 +15,7 @@ const PaymentInstructions = () => {
         <li>{t('payment.instructions.step4')}</li>
       </ol>
       <div className="mt-4 text-sm text-gray-500">
-        <p>{t('payment.instructions.help_text')} <a href="mailto:support@arbiproseller.com" className="text-purple-600 hover:text-purple-800">support@arbiproseller.com</a></p>
+        <p>{t('payment.instructions.help_text')} <a href="mailto:support@inventorysprint.com" className="text-purple-600 hover:text-purple-800">support@inventorysprint.com</a></p>
       </div>
     </div>
   );

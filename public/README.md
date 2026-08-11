@@ -32,5 +32,5 @@
 
 ## Support
 
-If you encounter any issues, please contact support@arbiproseller.com
+If you encounter any issues, please contact support@inventorysprint.com
 

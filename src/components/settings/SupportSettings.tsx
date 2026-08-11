@@ -31,7 +31,7 @@ export default function SupportSettings() {
 
         {/* Email Support */}
         <a
-          href="mailto:support@arbiproseller.com"
+          href="mailto:support@inventorysprint.com"
           className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors"
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -39,7 +39,7 @@ export default function SupportSettings() {
           </div>
           <div>
             <p className="text-sm font-semibold text-white">Email Support</p>
-            <p className="text-xs text-gray-400">{user?.email || "support@arbiproseller.com"}</p>
+            <p className="text-xs text-gray-400">{user?.email || "support@inventorysprint.com"}</p>
           </div>
         </a>
       </div>

@@ -113,7 +113,7 @@ serve(async (req) => {
 
     const fromLines = [
       "ArbiProSeller",
-      "support@arbiproseller.com",
+      "support@inventorysprint.com",
     ];
     let fromY = y;
     for (const line of fromLines) {
