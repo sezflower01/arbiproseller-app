@@ -668,8 +668,7 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
           <Sparkles className="h-5 w-5 text-purple-500" />
           Choose the result you want
         </CardTitle>
-        <p className="text-xs text-muted-foreground/70 mb-1">Pick one — you can change it anytime.</p>
-        <p className="text-sm text-muted-foreground mb-4">💡 Not sure? Choose <strong>Momentum Builder</strong> — works best for most sellers.</p>
+        <p className="text-xs text-muted-foreground/70 mb-4">Pick one — you can change it anytime.</p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {SMART_PROFILES.filter(p => !p.advanced && !p.legacy).map((profile) => (
             <button
