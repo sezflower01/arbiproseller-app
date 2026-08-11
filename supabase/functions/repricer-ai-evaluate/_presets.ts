@@ -17,6 +17,7 @@ export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   PROFIT_EXTRACTOR: "Profit Extractor",
   MATCH_BUYBOX: "Match Buy Box",
   MATCH_LOWEST: "Match Lowest",
+  SMART_MATCH: "Smart Match",
 };
 
 export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
@@ -87,6 +88,22 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
     only_raise_when_buybox_owner: true,
   },
   MATCH_LOWEST: {
+    undercut_amount: 0,
+    enable_smart_raise: false,
+    enable_monopoly_mode: false,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+  },
+  // SMART_MATCH: same "match, never chase" identity as MATCH_BUYBOX/MATCH_LOWEST
+  // (undercut_amount=0, no monopoly mode, no opportunistic smart-raise) — the
+  // only difference is target_anchor (set on the frontend template, see
+  // AiRuleBuilder.tsx's PROFILE_PRESETS), which picks 'smart_recapture'
+  // instead of a fixed 'buybox'/'lowest_offer': anchor to Buy Box when
+  // already lowest or already the BB owner, switch to Lowest FBA when not.
+  SMART_MATCH: {
     undercut_amount: 0,
     enable_smart_raise: false,
     enable_monopoly_mode: false,

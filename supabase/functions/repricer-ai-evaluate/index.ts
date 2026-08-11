@@ -215,7 +215,7 @@ function computeRaiseOffset(ctx: RaiseOffsetContext): { offset: number; reason: 
   // FBM sellers: respect profile intent for match-only profiles (Profit Extractor, Match Buy Box, Match Lowest)
   // Only force undercut for profiles that are NOT match-only
   if (ctx.myFulfillment === 'FBM') {
-    const isMatchOnlyProfile = ctx.smartProfile === 'PROFIT_EXTRACTOR' || ctx.smartProfile === 'MATCH_BUYBOX' || ctx.smartProfile === 'MATCH_LOWEST';
+    const isMatchOnlyProfile = ctx.smartProfile === 'PROFIT_EXTRACTOR' || ctx.smartProfile === 'MATCH_BUYBOX' || ctx.smartProfile === 'MATCH_LOWEST' || ctx.smartProfile === 'SMART_MATCH';
     if (isMatchOnlyProfile) {
       return { offset: 0.00, reason: 'match:fbm_match_only_profile' };
     }
@@ -3162,7 +3162,7 @@ function computeAiWinSalesBoosterPrice(
     const actualGap = currentPrice - buyboxPrice; // positive = we are above BB
     const gapSufficient = actualGap >= fbmCompetitiveGap || currentPrice <= buyboxPrice;
     
-    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER', 'MATCH_BUYBOX', 'MATCH_LOWEST'];
+    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH'];
     const aggressiveProfilesFbm = ['VELOCITY_DOMINATOR'];
     const isConservative = conservativeProfiles.includes(currentSmartProfile);
     const isAggressive = aggressiveProfilesFbm.includes(currentSmartProfile);
@@ -6196,6 +6196,7 @@ Deno.serve(async (req) => {
               case 'PROFIT_EXTRACTOR': return 0;
               case 'MATCH_BUYBOX': return 0;
               case 'MATCH_LOWEST': return 0;
+              case 'SMART_MATCH': return 0;
               case 'VELOCITY_DOMINATOR': return 4;
               case 'MOMENTUM_BUILDER':
               default: return 2;
@@ -6227,7 +6228,7 @@ Deno.serve(async (req) => {
       marketplace: targetMarketplace,
       currencyCode: marketplaceCurrency,
       _bbSource: (snapshot?.bb_source || 'missing') as 'winner_offer' | 'summary_fallback' | 'missing',
-      bbLossAfterRaiseCount: assignment.bb_loss_after_raise_count || 0,
+      bbLossAfterRaiseCount: assignment?.bb_loss_after_raise_count || 0,
       triggerSource: (body as any).trigger_source ?? null,
       forceMode: (body as any).force_mode ?? null,
     };
@@ -7243,7 +7244,7 @@ Deno.serve(async (req) => {
         // FBM→FBM non-aggressive cap: never raise above the real FBM Buy Box
         const peIsFbmSeller = context.yourFulfillmentType === 'FBM';
         const peBbIsFbm = (buyboxSellerType as any) === 'FBM' || buyboxSellerType === null || (buyboxSellerType as any) === 'unknown';
-        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST'];
+        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH'];
         const peCurrentProfile = rule.smart_profile || 'CUSTOM';
         const peIsFbmFbmCapped = peIsFbmSeller && peBbIsFbm && peNonAggressiveProfiles.includes(peCurrentProfile) && peBbPrice && peBbPrice > 0;
         
@@ -7409,7 +7410,7 @@ Deno.serve(async (req) => {
         // Signal 3: BB loss after raise (repeated losses suggest war)
         // SKIP when BB is suppressed — cannot "lose" a non-existent Buy Box
         const isBbSuppressed = context.isBuyboxSuppressed; // canonical definition (line 5246) — !snapshot?.buybox_price && offers.length > 0
-        const bbLossCount = assignment.bb_loss_after_raise_count || 0;
+        const bbLossCount = assignment?.bb_loss_after_raise_count || 0;
         if (!isBbSuppressed) {
           if (bbLossCount >= 5) { oscScore += 3; oscReasonParts.push(`bb_loss_streak_${bbLossCount}`); }
           else if (bbLossCount >= 2) { oscScore += 1; oscReasonParts.push(`bb_loss_streak_${bbLossCount}`); }

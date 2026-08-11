@@ -268,6 +268,42 @@ function buildPlainSummary(action: PriceAction, marketplace: string): string {
     return `Update failed${action.error_message ? ` — ${action.error_message}` : ''}.`;
   }
 
+  // Smart Match anchors to Buy Box or Lowest FBA depending on ownership, so
+  // its plain-English line should say WHY that anchor was picked, not just
+  // which one. Live-verified against real evaluations: downstream guards
+  // (min-floor blocks, self-undercut holds, filtered-empty holds) routinely
+  // overwrite `reason` with their own message and drop the raw
+  // [anchor:smart_recapture — ...] tag the anchor-selection switch writes —
+  // so recapture is detected primarily from the structured
+  // 'smart_recapture_enforced' guard (present even when the floor blocks the
+  // move), with the raw tag only as a fallback. "Already owner" covers every
+  // phrasing real holds actually use ("(BB owner)" / "(BB owned)" / "already
+  // lowest"), not just the anchor-switch's own wording.
+  const isSmartMatch = f.strategy_visibility?.profile_key === 'SMART_MATCH';
+  const smartMatchReason = action.reason || '';
+  const smartMatchGuards: string[] = f.guards_applied || [];
+  const smartMatchIsRecapture = smartMatchGuards.includes('smart_recapture_enforced')
+    || /anchor:smart_recapture.*(not lowest|ENFORCED)/i.test(smartMatchReason);
+  const smartMatchIsAlreadyOwner = !smartMatchIsRecapture
+    && /\(BB owner\)|\(BB owned\)|already lowest|anchor:smart_recapture.*already lowest/i.test(smartMatchReason);
+
+  // Smart Match — outlier protection: the cluster-based anchor override fired,
+  // meaning the lowest live offer was judged a likely pricing error and
+  // ignored in favor of the real competitive band (see analyzeCompetitorClusters
+  // / 'cluster_anchor_override' in repricer-ai-evaluate/index.ts).
+  if (isSmartMatch && (f.guards_applied || []).includes('cluster_anchor_override')) {
+    const heldPrice = action.new_price ?? action.old_price;
+    const outlierPrice = f.price_trace?.lowest_overall ?? null;
+    const clusterPrice = f.anchor_price ?? f.price_trace?.final_price ?? null;
+    const gapPct = outlierPrice && clusterPrice && outlierPrice > 0
+      ? Math.round(((clusterPrice - outlierPrice) / outlierPrice) * 100)
+      : null;
+    const outlierClause = outlierPrice != null
+      ? ` the lowest competitor offer (${formatCurrency(outlierPrice)}) looks like a pricing error${gapPct != null ? ` (${gapPct}% below the next closest seller)` : ''}, so it was ignored.`
+      : ` the lowest competitor offer looked like a pricing error, so it was ignored.`;
+    return `Price held at ${formatCurrency(heldPrice)} —${outlierClause}`;
+  }
+
   // Plain-English source of the target price (competitor anchor), when relevant.
   const anchorKey = f.anchor_source || f.reason_codes?.anchor_source || f.bb_source;
   const anchorPrice = f.anchor_price;
@@ -279,6 +315,11 @@ function buildPlainSummary(action: PriceAction, marketplace: string): string {
       : String(anchorKey).includes('fbm') ? `the lowest FBM competitor (${anchorAmount})`
       : `the lowest competitor price (${anchorAmount})`;
     anchorPhrase = ` to match ${label}`;
+    if (isSmartMatch && smartMatchIsRecapture) {
+      anchorPhrase += ` — recapturing the Buy Box, which you didn't currently hold`;
+    } else if (isSmartMatch && smartMatchIsAlreadyOwner) {
+      anchorPhrase += ` — you already own the Buy Box, no change needed`;
+    }
   }
 
   if (action.action_type === 'minmax_change') {
@@ -301,6 +342,9 @@ function buildPlainSummary(action: PriceAction, marketplace: string): string {
   }
 
   if (action.action_type === 'hold') {
+    if (isSmartMatch && smartMatchIsAlreadyOwner) {
+      return `Checked — you already hold the Buy Box, no change needed.`;
+    }
     return `Checked — price is already competitive, no change needed.`;
   }
 
@@ -2677,6 +2721,14 @@ export default function ActionLogDialog({ asin, sku, marketplace, open, onOpenCh
                         <Badge variant="outline" className="text-xs">{humanizeTriggerSource(action.trigger_source)}</Badge>
                         {action.rule_name && (
                           <Badge variant="secondary" className="text-xs">{action.rule_name}</Badge>
+                        )}
+                        {/* Smart Match indicator — always visible (not gated to Detailed view) so it's
+                            scannable at a glance which anchor-decided rows used the AI's own judgment
+                            call, without needing to open the technical trace. */}
+                        {action.intelligence_factors?.strategy_visibility?.profile_key === 'SMART_MATCH' && (
+                          <Badge variant="outline" className="text-xs border-teal-500/40 text-teal-400 bg-teal-500/10">
+                            🧭 Smart Match
+                          </Badge>
                         )}
                         {/* Strategy Visibility — shows if strategy or override drove the decision (technical; Detailed view only) */}
                         {!simpleView && (() => {
