@@ -16,7 +16,7 @@ import {
 } from "@/lib/printerSettings";
 
 const PRINT_CLIENT_BUCKET = "access";
-const PRINT_CLIENT_PATH = "ArbiProSellerPrintClient.exe";
+const PRINT_CLIENT_PATH = "SprintPrint.exe";
 const CLIENT_URLS = ["http://127.0.0.1:7777", "http://localhost:7777"];
 
 type Status = "checking" | "connected" | "disconnected";
@@ -138,7 +138,7 @@ export default function ConnectPrinterSettings() {
 
       toast({
         title: "Downloading print client…",
-        description: "Once downloaded, run ArbiProSellerPrintClient.exe. The status here will flip to 'Connected' automatically.",
+        description: "Once downloaded, run SprintPrint.exe. The status here will flip to 'Connected' automatically.",
       });
     } catch (e) {
       toast({
@@ -295,7 +295,7 @@ export default function ConnectPrinterSettings() {
               <div className="mt-5 text-xs text-gray-400 space-y-2 bg-black/20 border border-white/10 rounded-md p-3">
                 <p className="font-medium text-gray-300">How it works:</p>
                 <ol className="list-decimal pl-4 space-y-1">
-                  <li>Click <span className="text-white">Connect Printer</span> — your browser will download <code className="text-xs bg-black/40 px-1 rounded">ArbiProSellerPrintClient.exe</code>.</li>
+                  <li>Click <span className="text-white">Connect Printer</span> — your browser will download <code className="text-xs bg-black/40 px-1 rounded">SprintPrint.exe</code>.</li>
                   <li>Open the downloaded file and keep it running (it lives in your system tray near the clock).</li>
                   <li>The status above will switch to <span className="text-emerald-400">Printer connected</span> automatically — no need to click again.</li>
                 </ol>

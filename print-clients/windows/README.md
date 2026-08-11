@@ -10,9 +10,9 @@ A lightweight Windows service that receives label print requests from the ArbiPr
 
 ## Quick start (end user)
 
-1. Get `ArbiProSellerPrintClient.exe` and `Start-ArbiProSellerPrintClient.bat` from your admin (or build once with the steps below).
+1. Get `SprintPrint.exe` and `Start-SprintPrint.bat` from your admin (or build once with the steps below).
 2. Put both files in the same folder, e.g. `C:\ArbiProSeller\`.
-3. **Double-click `Start-ArbiProSellerPrintClient.bat`.** A console window opens and stays visible while the client runs.
+3. **Double-click `Start-SprintPrint.bat`.** A console window opens and stays visible while the client runs.
 4. Leave that window open while you print. Open the web app → Label Printing → status should turn **connected**.
 5. (Optional) Drop a shortcut into `shell:startup` so it launches automatically on login.
 
@@ -30,7 +30,7 @@ publish.bat
 This produces a single self-contained executable at:
 
 ```
-print-clients\windows\dist\ArbiProSellerPrintClient.exe
+print-clients\windows\dist\SprintPrint.exe
 ```
 
 Ship that one file to any Windows 10/11 x64 machine — no runtime install needed.
@@ -47,7 +47,7 @@ dotnet publish -c Release -r win-x64 --self-contained true ^
 
 ## Run
 
-Double-click `Start-ArbiProSellerPrintClient.bat` from the same folder as `ArbiProSellerPrintClient.exe`.
+Double-click `Start-SprintPrint.bat` from the same folder as `SprintPrint.exe`.
 
 It will listen on `http://localhost:7777/print-labels`.
 
@@ -139,7 +139,7 @@ You can override this by specifying the exact printer name in the request.
 - Try printing a test page from Windows to confirm printer connectivity
 
 ### Connection refused errors
-- Make sure the Print Client is running (check for `ArbiProSeller.PrintClient.exe` in Task Manager)
+- Make sure the Print Client is running (check for `SprintPrint.exe` in Task Manager)
 - Verify no firewall is blocking localhost:7777
 
 ## Running as a Background Service
@@ -151,7 +151,7 @@ For production use, you may want to run this as a Windows Service:
 dotnet publish -c Release -r win-x64 --self-contained /p:PublishSingleFile=true
 
 # Install as Windows Service (run as Administrator)
-sc create ArbiProSellerPrint binPath="C:\path\to\ArbiProSeller.PrintClient.exe"
+sc create ArbiProSellerPrint binPath="C:\path\to\SprintPrint.exe"
 sc start ArbiProSellerPrint
 ```
 

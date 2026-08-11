@@ -1571,7 +1571,7 @@ async function checkPrintClient() {
   printState.connected = false;
   setStatus(
     "apx-l-client-status",
-    "Print client not running on localhost:7777. Start ArbiProSellerPrintClient.exe.",
+    "Print client not running on localhost:7777. Start SprintPrint.exe.",
     "err",
   );
   return false;

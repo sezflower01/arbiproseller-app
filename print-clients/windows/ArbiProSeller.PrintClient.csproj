@@ -4,7 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>ArbiProSellerPrintClient</AssemblyName>
+    <AssemblyName>SprintPrint</AssemblyName>
     <RootNamespace>ArbiProSeller.PrintClient</RootNamespace>
 
     <!-- Self-contained single-file .exe publishing -->

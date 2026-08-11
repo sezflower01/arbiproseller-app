@@ -47,17 +47,17 @@ jobs:
       - name: Verify EXE exists
         shell: pwsh
         run: |
-          if (-Not (Test-Path "dist/ArbiProSellerPrintClient.exe")) {
+          if (-Not (Test-Path "dist/SprintPrint.exe")) {
             Write-Error "EXE was not produced"
             exit 1
           }
-          Get-Item dist/ArbiProSellerPrintClient.exe | Select-Object Name, Length, LastWriteTime
+          Get-Item dist/SprintPrint.exe | Select-Object Name, Length, LastWriteTime
 
       - name: Upload as workflow artifact (always)
         uses: actions/upload-artifact@v4
         with:
-          name: ArbiProSellerPrintClient
-          path: print-clients/windows/dist/ArbiProSellerPrintClient.exe
+          name: SprintPrint
+          path: print-clients/windows/dist/SprintPrint.exe
           if-no-files-found: error
           retention-days: 90
 
@@ -67,5 +67,5 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.release_tag }}
           name: ${{ github.event.inputs.release_tag }}
-          files: print-clients/windows/dist/ArbiProSellerPrintClient.exe
+          files: print-clients/windows/dist/SprintPrint.exe
           generate_release_notes: true

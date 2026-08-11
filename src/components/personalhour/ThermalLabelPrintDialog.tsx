@@ -19,7 +19,7 @@ import { Link } from "react-router-dom";
 const SHOW_INLINE_SETTINGS = false;
 
 const PRINT_CLIENT_BUCKET = "access";
-const PRINT_CLIENT_PATH = "ArbiProSellerPrintClient.exe";
+const PRINT_CLIENT_PATH = "SprintPrint.exe";
 
 type ThermalLabelSizeId = Exclude<LabelSizeId, "a4-40up">;
 type PrintMode = "thermal" | "a4";
@@ -95,7 +95,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
     if (!file.name.toLowerCase().endsWith(".exe")) {
       toast({
         title: "Invalid file",
-        description: "Please upload ArbiProSellerPrintClient.exe.",
+        description: "Please upload SprintPrint.exe.",
         variant: "destructive",
       });
       return;
@@ -150,13 +150,13 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
 
       toast({
         title: "Download started",
-        description: "ArbiProSellerPrintClient.exe is downloading.",
+        description: "SprintPrint.exe is downloading.",
       });
     } catch (err) {
       toast({
         title: "Download unavailable",
         description: err instanceof Error
-          ? `${err.message} Ask an admin to upload ArbiProSellerPrintClient.exe to the "access" Storage bucket.`
+          ? `${err.message} Ask an admin to upload SprintPrint.exe to the "access" Storage bucket.`
           : "Print client EXE is not yet available.",
         variant: "destructive",
       });
@@ -347,7 +347,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
       if (response.status === 404) {
         throw new Error(
           "This print client is too old to support WYSIWYG image printing. " +
-          "Download the latest ArbiProSellerPrintClient.exe and replace the running copy."
+          "Download the latest SprintPrint.exe and replace the running copy."
         );
       }
 
@@ -658,7 +658,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
                     </p>
                     <p>
                       <strong>Auto-start tip:</strong> after testing, place a shortcut to{" "}
-                      <code className="font-mono">ArbiProSellerPrintClient.exe</code> in{" "}
+                      <code className="font-mono">SprintPrint.exe</code> in{" "}
                       <code className="font-mono">shell:startup</code> (Win+R → <code>shell:startup</code>) so it
                       launches automatically when Windows starts.
                     </p>

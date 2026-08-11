@@ -26,3 +26,9 @@ public/*.zip
 
 # Supabase CLI local state (project ref, pooler URL, etc.)
 supabase/.temp/
+
+# .NET build output (print-clients/windows) — these were previously
+# committed by accident, leaving stale build artifacts (including a
+# renamed exe under its old name) sitting in git indefinitely.
+print-clients/windows/bin/
+print-clients/windows/obj/

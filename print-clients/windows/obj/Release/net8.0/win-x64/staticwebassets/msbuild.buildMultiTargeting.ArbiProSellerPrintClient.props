@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="../build/ArbiProSellerPrintClient.props" />
-</Project>

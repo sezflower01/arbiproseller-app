@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================
 REM Build a single self-contained .exe for the print client.
-REM Output: print-clients\windows\dist\ArbiProSellerPrintClient.exe
+REM Output: print-clients\windows\dist\SprintPrint.exe
 REM Requires: .NET 8 SDK installed on the machine doing the build
 REM           (end users do NOT need .NET — the exe is self-contained)
 REM ============================================================
@@ -31,7 +31,7 @@ if errorlevel 1 (
 echo.
 echo === Done. ===
 echo Single-file exe created at:
-echo   %cd%\dist\ArbiProSellerPrintClient.exe
+echo   %cd%\dist\SprintPrint.exe
 echo.
 echo Double-click it on any Windows 10/11 x64 machine to start the print client.
 echo.
