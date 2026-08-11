@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { Plus, Edit2, Trash2, Copy, Settings2, Beaker, Sparkles, Star, TrendingUp, Shield, Play, Pause } from "lucide-react";
 import AiRuleBuilder, { defaultAiRuleSettings, type AiRuleSettings, SMART_PROFILES, PROFILE_PRESETS } from "./AiRuleBuilder";
 import type { SmartProfile } from "./AiRuleBuilder";
+import PresetComparisonDialog from "./PresetComparisonDialog";
 
 // Strategy options for standard rules
 const STRATEGIES = [
@@ -763,6 +764,9 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
               <p className="text-[10px] text-muted-foreground/70 text-center">Full control over every setting</p>
             </button>
           )}
+        </div>
+        <div className="mt-3">
+          <PresetComparisonDialog />
         </div>
       </CardHeader>
       <CardContent>
