@@ -727,6 +727,24 @@ export default function RuleBuilder({ onRulesChange, isAdmin }: RuleBuilderProps
               {profile.salesImpactDesc && (
                 <p className="text-[10px] text-muted-foreground/80 mb-1.5">{profile.salesImpactDesc}</p>
               )}
+              <div className="flex items-center gap-3 mb-1.5">
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3 text-green-500" />
+                  <div className="flex">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className={`h-2.5 w-2.5 ${i < profile.salesStars ? 'fill-yellow-500 text-yellow-500' : 'text-muted-foreground/40'}`} />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Shield className="h-3 w-3 text-blue-500" />
+                  <div className="flex">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className={`h-2.5 w-2.5 ${i < profile.profitStars ? 'fill-yellow-500 text-yellow-500' : 'text-muted-foreground/40'}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
               {profile.microLabel && (
                 <p className="text-[11px] font-medium text-foreground/80 mb-0.5">{profile.microLabel}</p>
               )}

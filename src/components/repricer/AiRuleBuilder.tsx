@@ -47,13 +47,25 @@ const PROFILE_BEHAVIOR: Record<SmartProfile, { salesSpeed: number; marginProtect
   SMART_MATCH: { salesSpeed: 4, marginProtection: 4, raiseAggression: 0, bbDefense: 4, riskLevel: 2, tags: ['Predictable pricing', 'No undercutting', 'Buy Box recapture'] },
 };
 
-export const SMART_PROFILES: { value: SmartProfile; label: string; description: string; bestFor: string; salesStars: number; profitStars: number; icon: string; recommended?: boolean; advanced?: boolean; badge?: string; badgeColor?: string; microLabel?: string; keyDiff?: string; legacy?: boolean; safetyScore?: number; salesImpactLabel?: string; salesImpactDesc?: string; salesImpactLevel?: 'strong' | 'balanced' | 'lower' | 'clearance' }[] = [
+export const SMART_PROFILES: { value: SmartProfile; label: string; description: string; bestFor: string; salesStars: number; profitStars: number; icon: string; recommended?: boolean; advanced?: boolean; badge?: string; badgeColor?: string; microLabel?: string; keyDiff?: string; legacy?: boolean; safetyScore?: number; salesImpactLabel?: string; salesImpactDesc?: string; salesImpactLevel?: 'strong' | 'balanced' | 'lower' | 'clearance'; undercutNote?: string }[] = [
   { value: 'VELOCITY_DOMINATOR', label: 'Aggressive Capture', description: 'Win more often with lower profit per sale.', bestFor: 'Heavy competition & fast-moving items', salesStars: 5, profitStars: 1, icon: '🚀', safetyScore: 3, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often, but may reduce profit', salesImpactLevel: 'strong', microLabel: 'Get more sales fast' },
-  { value: 'MOMENTUM_BUILDER', label: 'Momentum Builder', description: 'Stay competitive while protecting your margins.', bestFor: 'Arbitrage, wholesale, most products', salesStars: 4, profitStars: 2, icon: '📈', recommended: true, safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often while keeping strong sales volume', salesImpactLevel: 'strong', microLabel: 'Best balance of sales and profit' },
-  { value: 'PROFIT_EXTRACTOR', label: 'Profit Extractor', description: 'Raises prices to capture more profit, but may reduce sales.', bestFor: 'Private label & exclusive products', salesStars: 1, profitStars: 5, icon: '🏆', safetyScore: 7, salesImpactLabel: 'Lower Sales', salesImpactDesc: 'May lose Buy Box and reduce sales if prices increase', salesImpactLevel: 'lower', microLabel: 'Maximize profit when competition is low' },
+  // salesStars/profitStars corrected from 4/2 — the old numbers made this look
+  // more sales-leaning than profit-leaning, which contradicted its own "protecting
+  // your margins" description and didn't sit as a real midpoint between Aggressive
+  // Capture (5/1) and Profit Extractor (1/5). It never undercuts (same $0.00 floor
+  // as the three Match presets) and raises fairly aggressively (1.5% trigger, $1.00
+  // step) — 3 sales / 4 profit reflects that correctly.
+  { value: 'MOMENTUM_BUILDER', label: 'Momentum Builder', description: 'Stay competitive while protecting your margins.', bestFor: 'Arbitrage, wholesale, most products', salesStars: 3, profitStars: 4, icon: '📈', recommended: true, safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Wins the Buy Box often while keeping strong sales volume', salesImpactLevel: 'strong', microLabel: 'Best balance of sales and profit',
+    undercutNote: '$0.00 only applies to lowering your price — it never undercuts. See Raise Trigger below for how this preset actively moves your price up when you’re winning.' },
+  { value: 'PROFIT_EXTRACTOR', label: 'Profit Extractor', description: 'Raises prices to capture more profit, but may reduce sales.', bestFor: 'Private label & exclusive products', salesStars: 1, profitStars: 5, icon: '🏆', safetyScore: 7, salesImpactLabel: 'Lower Sales', salesImpactDesc: 'May lose Buy Box and reduce sales if prices increase', salesImpactLevel: 'lower', microLabel: 'Maximize profit when competition is low',
+    undercutNote: '$0.00 only applies to lowering your price — it never undercuts. See Raise Trigger below: this preset raises the most aggressively of all six presets when conditions allow.' },
   { value: 'MATCH_BUYBOX', label: 'Match Buy Box', description: 'Sets your price exactly at the Buy Box price — never below it, never above it.', bestFor: 'When you just want price parity, not a price war', salesStars: 3, profitStars: 4, icon: '🎯', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Matches the Buy Box exactly — competitive without racing to the bottom', salesImpactLevel: 'balanced', microLabel: 'Match the Buy Box, nothing more' },
   { value: 'MATCH_LOWEST', label: 'Match Lowest', description: 'Sets your price exactly at the lowest competitor offer — never below it, never above it.', bestFor: 'Staying at parity with the cheapest seller without undercutting', salesStars: 4, profitStars: 3, icon: '⚖️', safetyScore: 7, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Tracks the lowest offer exactly — stays competitive without a price war', salesImpactLevel: 'strong', microLabel: 'Match the lowest price, nothing more' },
-  { value: 'SMART_MATCH', label: 'Smart Match', description: 'Matches the Buy Box when you already have it, switches to matching the lowest FBA seller when you don’t — never undercuts either way.', bestFor: 'When you want the right anchor picked for you, without chasing a price war', salesStars: 4, profitStars: 4, icon: '🧭', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Recaptures the Buy Box when you lose it, holds position when you already have it', salesImpactLevel: 'balanced', microLabel: 'Match whichever price is right, automatically' },
+  // profitStars corrected from 4 — Smart Match behaves like Match Buy Box (profit 4)
+  // when it already holds the Buy Box, but drops to matching Lowest FBA (profit 3,
+  // same margin tradeoff as Match Lowest) whenever it's recapturing. 3 reflects the
+  // blended reality rather than only the best-case half of its behavior.
+  { value: 'SMART_MATCH', label: 'Smart Match', description: 'Matches the Buy Box when you already have it, switches to matching the lowest FBA seller when you don’t — never undercuts either way.', bestFor: 'When you want the right anchor picked for you, without chasing a price war', salesStars: 4, profitStars: 3, icon: '🧭', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Recaptures the Buy Box when you lose it, holds position when you already have it', salesImpactLevel: 'balanced', microLabel: 'Match whichever price is right, automatically' },
 ];
 
 // Profile key → UI label mapping (canonical source of truth)
@@ -645,6 +657,11 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
           <p className="text-sm text-muted-foreground">
             {activeProfile.description}
           </p>
+          {activeProfile.undercutNote && (
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              ℹ️ {activeProfile.undercutNote}
+            </p>
+          )}
         </div>
         {activeProfile.salesStars > 0 && (
           <div className="flex gap-4 text-sm">
