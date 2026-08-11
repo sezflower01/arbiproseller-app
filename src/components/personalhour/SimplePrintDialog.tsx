@@ -104,7 +104,7 @@ export const SimplePrintDialog = ({ open, onOpenChange, labels }: SimplePrintDia
       if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
         toast({
           title: "Print Client Not Running",
-          description: "SprintPrint is not running on localhost:7777. Please start it or use Browser Print instead.",
+          description: "SprintPrint is not connected. Please start it or use Browser Print instead.",
           variant: "destructive",
         });
       } else {
@@ -236,7 +236,7 @@ export const SimplePrintDialog = ({ open, onOpenChange, labels }: SimplePrintDia
                 💡 Print Methods
               </p>
               <ul className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
-                <li><strong>Direct Thermal Print:</strong> Sends labels directly to your thermal printer via SprintPrint (requires client running on localhost:7777)</li>
+                <li><strong>Direct Thermal Print:</strong> Sends labels directly to your thermal printer via SprintPrint (requires SprintPrint to be running)</li>
                 <li><strong>Browser Print:</strong> Opens browser print dialog - select your thermal printer and ensure paper size matches</li>
               </ul>
             </div>

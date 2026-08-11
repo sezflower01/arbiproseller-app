@@ -246,7 +246,7 @@ export default function ConnectPrinterSettings() {
               )}
               {status === "disconnected" && (
                 <Badge variant="outline" className="text-gray-400 border-gray-600">
-                  <XCircle className="h-3 w-3 mr-1" /> Not running
+                  <XCircle className="h-3 w-3 mr-1" /> Disconnected
                 </Badge>
               )}
               {status === "checking" && (
@@ -256,7 +256,7 @@ export default function ConnectPrinterSettings() {
               )}
             </div>
             <p className="text-sm text-gray-400 mt-1">
-              Lightweight Windows app that listens on <code className="text-xs bg-black/30 px-1 py-0.5 rounded">127.0.0.1:7777</code> and forwards labels to your local printer.
+              Lightweight Windows app that forwards labels to your local printer.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mt-4">

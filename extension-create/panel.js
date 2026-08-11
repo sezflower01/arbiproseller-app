@@ -1571,7 +1571,7 @@ async function checkPrintClient() {
   printState.connected = false;
   setStatus(
     "apx-l-client-status",
-    "Print client not running on localhost:7777. Start SprintPrint.exe.",
+    "SprintPrint is not connected. Start it to print labels.",
     "err",
   );
   return false;
@@ -1799,7 +1799,7 @@ $("apx-l-print").addEventListener("click", async () => {
     setStatus(
       "apx-l-action-status",
       msg.includes("aborted") || msg.includes("Failed to fetch")
-        ? "Print client unreachable on localhost:7777. Start the EXE and Recheck."
+        ? "SprintPrint is not connected. Start it and Recheck."
         : msg,
       "err",
     );

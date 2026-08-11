@@ -277,7 +277,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
       toast({
         title: "Direct print failed",
         description: message.includes("Failed to fetch")
-          ? "SprintPrint is not running on localhost:7777. Start it or use Browser Print fallback."
+          ? "SprintPrint is not connected. Start it or use Browser Print fallback."
           : message,
         variant: "destructive",
       });
@@ -367,7 +367,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
       toast({
         title: "Direct print failed",
         description: message.includes("Failed to fetch")
-          ? "SprintPrint is not running on localhost:7777. Start it or use Browser Print fallback."
+          ? "SprintPrint is not connected. Start it or use Browser Print fallback."
           : message,
         variant: "destructive",
       });
