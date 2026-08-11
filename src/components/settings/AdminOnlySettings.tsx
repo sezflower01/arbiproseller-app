@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, Terminal, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, Terminal, Mail, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -434,6 +434,14 @@ const ADMIN_SETTINGS_CARDS: StandaloneCard[] = [
     path: "/tools/dev-environment-setup",
     Icon: Terminal,
     accent: "from-slate-500/15 to-zinc-500/5 border-slate-400/30 text-slate-300",
+    badge: "Admin",
+  },
+  {
+    title: "Email Center",
+    desc: "Search connected Gmail inboxes by keyword, saved filters, and reply as support@inventorysprint.com.",
+    path: "/tools/email-center",
+    Icon: Mail,
+    accent: "from-blue-500/15 to-cyan-500/5 border-blue-400/30 text-blue-300",
     badge: "Admin",
   },
 ];

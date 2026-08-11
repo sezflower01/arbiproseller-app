@@ -32,3 +32,6 @@ supabase/.temp/
 # renamed exe under its old name) sitting in git indefinitely.
 print-clients/windows/bin/
 print-clients/windows/obj/
+
+.vercel
+.env*

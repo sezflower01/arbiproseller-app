@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { User, Building2, HeadphonesIcon, CreditCard, Link2, Receipt, Zap, Rocket, Mail, Printer, PackageCheck, Shield } from "lucide-react";
+import { User, Building2, HeadphonesIcon, CreditCard, Link2, Receipt, Zap, Rocket, Printer, PackageCheck, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import ProfileSettings from "@/components/settings/ProfileSettings";
@@ -26,7 +26,6 @@ const TABS = [
   { id: "amazon", label: "Connect Amazon", icon: Link2, route: "/tools/amazon-connect" },
   { id: "connect-printer", label: "Connect Printer", icon: Printer },
   { id: "shipment-preferences", label: "Shipment Preferences", icon: PackageCheck },
-  { id: "email-center", label: "Email Center", icon: Mail, route: "/tools/email-center" },
   { id: "support", label: "Support", icon: HeadphonesIcon },
 ] as const;
 

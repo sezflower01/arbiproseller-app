@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useModuleAccess } from "@/hooks/useModuleAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +59,8 @@ interface FilterGroup {
 const ALL = "__ALL__";
 
 export default function EmailCenter() {
+  const { user, loading: authLoading } = useAuth();
+  const { isAdmin, loading: accessLoading } = useModuleAccess();
   const [accounts, setAccounts] = useState<string[]>([]);
   const [activeAccount, setActiveAccount] = useState<string>(ALL); // ALL or specific email
   const [loading, setLoading] = useState(true);
@@ -355,9 +360,11 @@ export default function EmailCenter() {
     }
   }
 
-  if (loading) {
+  if (authLoading || accessLoading || loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isAdmin) return <Navigate to="/tools" replace />;
 
   const isAll = activeAccount === ALL;
 
