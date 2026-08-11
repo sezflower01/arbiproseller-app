@@ -561,7 +561,14 @@ export default function AiRuleBuilder({ settings, onChange, hideProfileSelector,
   // field values on every evaluation (see repricer-ai-evaluate/_presets.ts) —
   // so these fields are locked/read-only here rather than live-editable.
   // Only CUSTOM rules (no preset) actually respect manual edits to them.
-  const isPresetActive = settings.smart_profile !== 'CUSTOM';
+  //
+  // Also locked for non-admins even when smart_profile IS 'CUSTOM': the
+  // "Advanced Custom" creation entry point is admin-only (RuleBuilder.tsx's
+  // picker grid), but the Edit button on an existing rule has no such check —
+  // a regular user opening a Custom rule an admin created earlier would
+  // otherwise get full editing on these core-identity fields, defeating the
+  // point of gating Custom Rule creation at all.
+  const isPresetActive = settings.smart_profile !== 'CUSTOM' || !isAdmin;
 
   return (
     <div className="space-y-6">
