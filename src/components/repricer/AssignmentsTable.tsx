@@ -7918,7 +7918,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                               <Input
                                 type="number"
                                 step="0.01"
-                                className={`h-7 w-[80px] text-xs text-right bg-shipment-control text-white border-white/20 placeholder:text-white/40 focus:ring-2 focus:ring-primary ${
+                                className={`h-7 w-[105px] text-xs text-right bg-shipment-control text-white border-white/20 placeholder:text-white/40 focus:ring-2 focus:ring-primary ${
                                   setPriceDisabled ? "opacity-50 cursor-not-allowed " : ""
                                 }${
                                   (() => {
