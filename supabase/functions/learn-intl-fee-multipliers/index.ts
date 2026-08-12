@@ -743,13 +743,15 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("[learn-intl-fee-multipliers] fatal:", e);
     if (cronRunId) {
-      await supabase
-        .rpc("record_cron_run_finish", {
+      try {
+        await supabase.rpc("record_cron_run_finish", {
           p_id: cronRunId,
           p_status: "error",
           p_notes: String((e as Error).message || e).slice(0, 500),
-        })
-        .catch(() => {});
+        });
+      } catch {
+        // best-effort logging only -- must not mask the real error being returned below
+      }
     }
     return new Response(
       JSON.stringify({ ok: false, error: String((e as Error).message || e) }),
