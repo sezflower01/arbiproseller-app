@@ -29,11 +29,11 @@ async function main() {
   const targets = [
     {
       src: path.join(root, "extension"),
-      out: path.join(root, "public", "arbiproseller-extension.zip"),
+      out: path.join(root, "public", "inventorysprint-extension.zip"),
     },
     {
       src: path.join(root, "extension-create"),
-      out: path.join(root, "public", "arbiproseller-create-listing-extension.zip"),
+      out: path.join(root, "public", "inventorysprint-create-listing-extension.zip"),
     },
   ];
 
