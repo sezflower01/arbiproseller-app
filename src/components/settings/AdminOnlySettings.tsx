@@ -405,8 +405,8 @@ const ADMIN_SETTINGS_CARDS: StandaloneCard[] = [
   {
     title: "Chrome Extension — Amazon Analyzer",
     desc: "Floating ASIN scanner for Amazon pages: Buy Box, ROI, sellers, Keepa stability. Click to download the .zip.",
-    downloadUrl: "/arbiproseller-extension.zip",
-    downloadFilename: "arbiproseller-extension.zip",
+    downloadUrl: "/inventorysprint-extension.zip",
+    downloadFilename: "inventorysprint-extension.zip",
     Icon: ScanLine,
     accent: "from-blue-500/15 to-indigo-500/5 border-blue-400/30 text-blue-300",
     badge: "Admin",
@@ -414,8 +414,8 @@ const ADMIN_SETTINGS_CARDS: StandaloneCard[] = [
   {
     title: "Chrome Extension — Create Listing",
     desc: "Floating Create Listing form on Amazon pages: fetch product, validate, create on Amazon, save to Product Library.",
-    downloadUrl: "/arbiproseller-create-listing-extension.zip",
-    downloadFilename: "arbiproseller-create-listing-extension.zip",
+    downloadUrl: "/inventorysprint-create-listing-extension.zip",
+    downloadFilename: "inventorysprint-create-listing-extension.zip",
     Icon: FilePlus,
     accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
     badge: "Admin",

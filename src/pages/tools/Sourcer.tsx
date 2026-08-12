@@ -412,7 +412,7 @@ const Sourcer = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Sourcer — Find Profitable Products | ArbiProSeller</title>
+        <title>Sourcer — Find Profitable Products | InventorySprint</title>
         <meta
           name="description"
           content="Search Amazon by ASIN, UPC, or keywords. See live price, real fees, profit, ROI, offers, sales history, and price trend."

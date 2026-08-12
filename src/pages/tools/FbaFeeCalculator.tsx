@@ -6,7 +6,7 @@ const FbaFeeCalculator = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>FBA Fee Calculator | ArbiProSeller</title>
+        <title>FBA Fee Calculator | InventorySprint</title>
         <meta name="description" content="Calculate Amazon FBA fees for your products" />
       </Helmet>
       

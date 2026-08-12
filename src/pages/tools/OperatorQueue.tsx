@@ -11,7 +11,7 @@ export default function OperatorQueuePage() {
   return (
     <>
       <Helmet>
-        <title>Action queue — ArbiPro Seller</title>
+        <title>Action queue — InventorySprint</title>
         <meta
           name="description"
           content="The actions worth your time today, ranked by impact."

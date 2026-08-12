@@ -248,7 +248,7 @@ const WorldwideTracking = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Worldwide Package Tracking | ArbiProSeller</title>
+        <title>Worldwide Package Tracking | InventorySprint</title>
         <meta name="description" content="Track packages from multiple carriers worldwide including USPS, UPS, FedEx, DHL, Amazon, and more" />
       </Helmet>
       

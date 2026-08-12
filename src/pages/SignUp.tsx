@@ -92,8 +92,8 @@ export default function SignUp() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
       <Helmet>
-        <title>Sign Up - ArbiProSeller</title>
-        <meta name="description" content="Create your ArbiProSeller account and start your 60-day free trial." />
+        <title>Sign Up - InventorySprint</title>
+        <meta name="description" content="Create your InventorySprint account and start your 60-day free trial." />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-16 flex items-center justify-center px-4 py-12 relative z-10">
@@ -107,7 +107,7 @@ export default function SignUp() {
               <p className="text-gray-400">
                 We've received your request for <strong className="text-white">{email}</strong>.
                 Our team reviews every new account before activation — we'll send you an email
-                showing how to log in and start using <strong className="text-white">Inventory S.P.R.I.N.T.</strong>
+                showing how to log in and start using <strong className="text-white">InventorySprint</strong>
                 as soon as your account is approved.
               </p>
               <Link to="/">

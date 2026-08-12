@@ -206,10 +206,10 @@ export default function ResearchLeads() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0f1c3f] text-white">
       <Helmet>
-        <title>Research Leads · ArbiProSeller</title>
+        <title>Research Leads · InventorySprint</title>
         <meta
           name="description"
-          content="Private research database for past FBA Lead List items. Isolated from your live ArbiProSeller library."
+          content="Private research database for past FBA Lead List items. Isolated from your live InventorySprint library."
         />
       </Helmet>
       <Navbar />

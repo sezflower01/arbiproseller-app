@@ -355,7 +355,7 @@ const SupplierDiscovery = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
       <Helmet>
-        <title>Supplier Discovery — Find Retail Sources | ArbiProSeller</title>
+        <title>Supplier Discovery — Find Retail Sources | InventorySprint</title>
         <meta name="description" content="Discover and verify retail product sources for an ASIN. Resilient pipeline with bulk QA, saved sources, and ROI-ready candidate data." />
       </Helmet>
 

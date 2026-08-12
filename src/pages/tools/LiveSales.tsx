@@ -669,7 +669,7 @@ function resolveTimeRange(timeRange: TimeRangeKey): { rangeStart: string; rangeE
 }
 
 const LiveSales = ({
-  title = "ArbiPro Repricer in Action",
+  title = "InventorySprint Repricer in Action",
   onPeriodChange,
 }: {
   title?: string;

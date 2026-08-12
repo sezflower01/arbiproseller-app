@@ -41,7 +41,7 @@ export default function RepricerCheckedAsins() {
   return (
     <>
       <Helmet>
-        <title>Repricer Checked ASINs — ArbiProSeller</title>
+        <title>Repricer Checked ASINs — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

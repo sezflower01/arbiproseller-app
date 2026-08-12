@@ -15,7 +15,7 @@ const BlogRealAiDecisions = () => {
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Real AI Pricing Decisions from Live Amazon ASINs" />
         <meta property="og:description" content="Transparency into what an AI Amazon repricer does on live ASINs and why." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/real-ai-decisions-live-asins" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/real-ai-decisions-live-asins" />
         <meta name="twitter:title" content="Real AI Pricing Decisions from Live Amazon ASINs" />
         <meta name="twitter:description" content="Transparency into what an AI Amazon repricer does on live ASINs and why." />
         <script type="application/ld+json">{`
@@ -25,10 +25,10 @@ const BlogRealAiDecisions = () => {
             "headline": "Real AI Pricing Decisions from Live Amazon ASINs (What Actually Happens)",
             "description": "See real AI repricing decisions from live Amazon ASINs. Transparency into what an AI Amazon repricer does and why.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-04-15",
             "keywords": ["Amazon repricer AI", "AI repricer Amazon", "Amazon Buy Box repricer", "automated pricing Amazon", "best Amazon repricer", "Amazon repricing examples"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/real-ai-decisions-live-asins" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/real-ai-decisions-live-asins" }
           }
         `}</script>
       </Helmet>
@@ -319,7 +319,7 @@ const BlogRealAiDecisions = () => {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground text-lg">Sam Shomali</p>
-                    <p className="text-muted-foreground text-sm">Founder, ArbiProSeller</p>
+                    <p className="text-muted-foreground text-sm">Founder, InventorySprint</p>
                   </div>
                 </div>
 

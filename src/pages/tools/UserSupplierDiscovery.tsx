@@ -103,7 +103,7 @@ const UserSupplierDiscovery = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Supplier Discovery — ArbiProSeller</title>
+        <title>Supplier Discovery — InventorySprint</title>
         <meta name="description" content="Look up supplier candidates already discovered for any ASIN — no API credits required." />
       </Helmet>
       <Navbar />

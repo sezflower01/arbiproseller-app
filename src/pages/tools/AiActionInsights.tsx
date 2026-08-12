@@ -665,7 +665,7 @@ export default function AiActionInsights() {
   return (
     <>
       <Helmet>
-        <title>AI Action Insights | ArbiProSeller</title>
+        <title>AI Action Insights | InventorySprint</title>
         <meta name="description" content="See exactly how your repricer AI makes decisions — transparent reasoning for every ASIN." />
       </Helmet>
       <div className="min-h-screen bg-background flex flex-col">

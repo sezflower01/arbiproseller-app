@@ -73,13 +73,13 @@ const ChromeExtensionBanner = () => {
 
           <div className="flex flex-wrap justify-center gap-3 pt-2">
             <button
-              onClick={() => triggerDownload("/arbiproseller-extension.zip", "arbiproseller-extension.zip")}
+              onClick={() => triggerDownload("/inventorysprint-extension.zip", "inventorysprint-extension.zip")}
               className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-colors"
             >
               Download Analyzer Extension
             </button>
             <button
-              onClick={() => triggerDownload("/arbiproseller-create-listing-extension.zip", "arbiproseller-create-listing-extension.zip")}
+              onClick={() => triggerDownload("/inventorysprint-create-listing-extension.zip", "inventorysprint-create-listing-extension.zip")}
               className="px-5 py-2.5 rounded-xl border border-amber-400/30 hover:bg-white/5 text-white font-semibold text-sm transition-colors"
             >
               Download Create Listing Extension

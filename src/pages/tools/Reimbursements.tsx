@@ -329,7 +329,7 @@ const Reimbursements = () => {
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>FBA Reimbursements | ArbiProSeller</title>
+        <title>FBA Reimbursements | InventorySprint</title>
         <meta name="description" content="Track and claim Amazon FBA reimbursements for lost, damaged, and unreturned inventory" />
       </Helmet>
 

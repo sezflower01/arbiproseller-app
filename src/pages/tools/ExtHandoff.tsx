@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 /**
  * /tools/ext-handoff
  *
- * Bridges the user's Supabase session into the ArbiProSeller Chrome Extension.
+ * Bridges the user's Supabase session into the InventorySprint Chrome Extension.
  *
  * Flow:
  *   1. Extension popup opens this page (?ext=1).
@@ -80,13 +80,13 @@ export default function ExtHandoff() {
   return (
     <div className="min-h-screen bg-[#0f1c3f] text-white flex items-center justify-center p-6">
       <Helmet>
-        <title>Connect Extension · ArbiProSeller</title>
+        <title>Connect Extension · InventorySprint</title>
         <meta name="robots" content="noindex" />
       </Helmet>
       <main className="max-w-md w-full bg-[#15224a] border border-white/10 rounded-2xl p-8 shadow-2xl">
         <h1 className="text-2xl font-semibold mb-2">Connect Chrome Extension</h1>
         <p className="text-sm text-white/70 mb-6">
-          This page hands your Inventory S.P.R.I.N.T. session to the Chrome extension so
+          This page hands your InventorySprint session to the Chrome extension so
           it can show scanner data on Amazon product pages.
         </p>
 
@@ -137,7 +137,7 @@ export default function ExtHandoff() {
                 : `Sending session to extension… (attempt ${attempts})`}
             </div>
             <p className="text-xs text-white/50">
-              If nothing happens within 10 seconds, make sure the Inventory S.P.R.I.N.T.
+              If nothing happens within 10 seconds, make sure the InventorySprint
               extension is installed and enabled in <code>chrome://extensions</code>.
             </p>
           </div>

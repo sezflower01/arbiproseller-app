@@ -1,10 +1,10 @@
-# ArbiProSeller
+# InventorySprint
 
 > Amazon arbitrage software and AI repricer for FBA sellers — find profitable products, track suppliers, manage inventory and shipments, and auto-price listings in one platform.
 
 ## Pages
 
-- [Home](/): Overview of ArbiProSeller's all-in-one Amazon arbitrage platform.
+- [Home](/): Overview of InventorySprint's all-in-one Amazon arbitrage platform.
 - [Pricing](/pricing): Plans and the 60-day free autopilot trial.
 - [Download](/download): Download the desktop app for Windows and macOS.
 - [About](/about): Company background and mission.

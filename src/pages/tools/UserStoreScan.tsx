@@ -1627,7 +1627,7 @@ const UserStoreScan = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Store Scan — ArbiProSeller</title>
+        <title>Store Scan — InventorySprint</title>
         <meta name="description" content="Browse pre-scanned profitable supplier products curated by our team." />
       </Helmet>
       <Navbar />

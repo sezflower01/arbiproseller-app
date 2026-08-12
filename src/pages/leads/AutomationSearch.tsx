@@ -251,7 +251,7 @@ const AutomationSearch = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Automation Search | ArbiProSeller</title>
+        <title>Automation Search | InventorySprint</title>
         <meta name="description" content="Automated product research across Google and Amazon" />
       </Helmet>
 

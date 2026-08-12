@@ -150,7 +150,7 @@ export default function ResetPassword() {
     return (
       <div className="min-h-screen flex flex-col">
         <Helmet>
-          <title>Reset Password | ArbiProSeller</title>
+          <title>Reset Password | InventorySprint</title>
         </Helmet>
         <Navbar />
         <main className={`flex-grow pt-16 flex items-center justify-center px-4 py-12 relative overflow-hidden ${darkBg}`}>
@@ -169,7 +169,7 @@ export default function ResetPassword() {
     return (
       <div className="min-h-screen flex flex-col">
         <Helmet>
-          <title>Reset Password | ArbiProSeller</title>
+          <title>Reset Password | InventorySprint</title>
         </Helmet>
         <Navbar />
         <main className={`flex-grow pt-16 flex items-center justify-center px-4 py-12 relative overflow-hidden ${darkBg}`}>
@@ -199,7 +199,7 @@ export default function ResetPassword() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Reset Password | ArbiProSeller</title>
+        <title>Reset Password | InventorySprint</title>
       </Helmet>
       <Navbar />
       <main className={`flex-grow pt-16 flex items-center justify-center px-4 py-12 relative overflow-hidden ${darkBg}`}>

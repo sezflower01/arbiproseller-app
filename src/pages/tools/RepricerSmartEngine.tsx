@@ -43,7 +43,7 @@ export default function RepricerSmartEngine() {
   return (
     <>
       <Helmet>
-        <title>Repricer Smart Engine — ArbiProSeller</title>
+        <title>Repricer Smart Engine — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

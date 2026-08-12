@@ -66,7 +66,7 @@ const BlogArbitrageVsWholesaleRepricing = () => {
           property="og:description"
           content="Wholesale repricing protects margin in stable markets. Arbitrage repricing has to survive chaotic ones. Here's the difference."
         />
-        <meta property="og:url" content="https://arbiproseller.com/blog/arbitrage-vs-wholesale-repricing" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/arbitrage-vs-wholesale-repricing" />
         <meta name="twitter:title" content="Why Online Arbitrage Sellers Need Smarter Repricing Than Wholesale" />
         <meta
           name="twitter:description"
@@ -79,10 +79,10 @@ const BlogArbitrageVsWholesaleRepricing = () => {
             "headline": "Why Online Arbitrage Sellers Need Smarter Repricing Than Wholesale Sellers",
             "description": "Wholesale repricing protects margin in stable markets. Arbitrage repricing has to survive chaotic ones. Here's why they can't share the same engine.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-05-13",
             "keywords": ["online arbitrage repricer", "wholesale repricer", "Amazon repricing strategy", "volatility repricing"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/arbitrage-vs-wholesale-repricing" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/arbitrage-vs-wholesale-repricing" }
           }
         `}</script>
       </Helmet>
@@ -108,7 +108,7 @@ const BlogArbitrageVsWholesaleRepricing = () => {
             <div className="max-w-3xl mx-auto text-center">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm font-medium mb-6">
                 <Zap className="w-4 h-4" />
-                ArbiProSeller Blog
+                InventorySprint Blog
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
                 Why Online Arbitrage Sellers Need{" "}
@@ -294,11 +294,11 @@ const BlogArbitrageVsWholesaleRepricing = () => {
           </div>
         </section>
 
-        {/* Why we built ArbiProSeller differently */}
+        {/* Why we built InventorySprint differently */}
         <section className="py-16 bg-slate-900/50">
           <div className="container mx-auto px-4 max-w-4xl">
             <h2 className="text-3xl font-bold text-white text-center mb-3">
-              This Is Why We Built ArbiProSeller Differently
+              This Is Why We Built InventorySprint Differently
             </h2>
             <p className="text-slate-400 text-center mb-10 max-w-2xl mx-auto">
               Wholesale repricing and Arbitrage repricing aren't the same problem.
@@ -330,7 +330,7 @@ const BlogArbitrageVsWholesaleRepricing = () => {
 
             <div className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-slate-900 to-blue-950/40 p-8">
               <p className="text-slate-300 mb-5">
-                That's why ArbiProSeller includes advanced behaviors most repricers don't:
+                That's why InventorySprint includes advanced behaviors most repricers don't:
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {arbiFeatures.map((f) => (

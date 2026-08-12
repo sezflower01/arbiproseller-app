@@ -41,7 +41,7 @@ export default function RepricerActivityLog() {
   return (
     <>
       <Helmet>
-        <title>Repricer Activity Log — ArbiProSeller</title>
+        <title>Repricer Activity Log — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

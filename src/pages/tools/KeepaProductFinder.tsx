@@ -607,7 +607,7 @@ const KeepaProductFinder = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Product Finder | ArbiProSeller</title>
+        <title>Product Finder | InventorySprint</title>
         <meta name="description" content="Search imported Amazon products by ASIN, title, brand, and category" />
       </Helmet>
       <Navbar />

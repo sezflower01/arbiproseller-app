@@ -41,7 +41,7 @@ export default function RepricerRuleBehavior() {
   return (
     <>
       <Helmet>
-        <title>Repricer Rule Behavior — ArbiProSeller</title>
+        <title>Repricer Rule Behavior — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

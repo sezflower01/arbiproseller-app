@@ -41,7 +41,7 @@ export default function RepricerSimulation() {
   return (
     <>
       <Helmet>
-        <title>Repricer Simulation — ArbiProSeller</title>
+        <title>Repricer Simulation — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

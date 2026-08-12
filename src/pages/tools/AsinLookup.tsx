@@ -6,7 +6,7 @@ const AsinLookup = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>ASIN Title & Image Lookup | ArbiProSeller</title>
+        <title>ASIN Title & Image Lookup | InventorySprint</title>
         <meta name="description" content="Look up product title and images by ASIN" />
       </Helmet>
       

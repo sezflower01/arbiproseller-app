@@ -342,7 +342,7 @@ export default function InventoryReview() {
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>Inventory Review Queue · ArbiPro Seller (Admin)</title>
+        <title>Inventory Review Queue · InventorySprint (Admin)</title>
         <meta name="description" content="Admin-only backend safety queue for genuinely ambiguous inventory cases. Not user-facing." />
       </Helmet>
 

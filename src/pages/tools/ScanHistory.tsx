@@ -114,7 +114,7 @@ export default function ScanHistory() {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
       <Helmet>
-        <title>Scan History | ArbiProSeller</title>
+        <title>Scan History | InventorySprint</title>
         <meta name="description" content="All barcodes you scanned from the mobile UPC scanner." />
       </Helmet>
 

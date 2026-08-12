@@ -156,7 +156,7 @@ const FetchListingPrice = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Fetch Listing Price | ArbiProSeller</title>
+        <title>Fetch Listing Price | InventorySprint</title>
         <meta name="description" content="Compare Amazon listing prices across US, Canada, Mexico, and Brazil marketplaces" />
       </Helmet>
       

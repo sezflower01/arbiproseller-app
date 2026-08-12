@@ -545,7 +545,7 @@ export default function MobileScanDetail() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)] text-white">
       <Helmet>
-        <title>Scan Detail | ArbiProSeller Mobile</title>
+        <title>Scan Detail | InventorySprint Mobile</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
       </Helmet>
 

@@ -79,7 +79,7 @@ export default function CompleteProfile() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Complete Your Profile | ArbiProSeller</title>
+        <title>Complete Your Profile | InventorySprint</title>
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-16 flex items-center justify-center px-4 py-12">

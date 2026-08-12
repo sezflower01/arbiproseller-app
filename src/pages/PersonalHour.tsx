@@ -711,7 +711,7 @@ const PersonalHour = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-cyan-50 via-blue-50 to-teal-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
       <Helmet>
-        <title>PersonalHour Settlement | ArbiProSeller</title>
+        <title>PersonalHour Settlement | InventorySprint</title>
         <meta name="description" content="Track and manage PersonalHour Amazon FBM orders and settlements" />
       </Helmet>
       

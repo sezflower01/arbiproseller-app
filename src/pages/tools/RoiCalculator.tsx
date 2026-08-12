@@ -105,7 +105,7 @@ const RoiCalculator = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>ROI Calculator | ArbiProSeller</title>
+        <title>ROI Calculator | InventorySprint</title>
         <meta name="description" content="Calculate your return on investment for Amazon FBA products" />
       </Helmet>
       

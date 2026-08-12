@@ -253,7 +253,7 @@ const TargetRoiPrice = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-primary/5">
       <Helmet>
-        <title>Target ROI Price Calculator | ArbiProSeller</title>
+        <title>Target ROI Price Calculator | InventorySprint</title>
         <meta
           name="description"
           content="Multi-currency ROI target calculator for Amazon FBA products across USA, Canada, Mexico, and Brazil"

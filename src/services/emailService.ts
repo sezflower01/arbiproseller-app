@@ -51,7 +51,7 @@ export async function sendOrderConfirmationEmail(customerEmail: string, customer
     emailType: "order-confirmation",
     orderDetails: {
       amount: amount || 29900,
-      productName: "ArbiProSeller Lifetime License"
+      productName: "InventorySprint Lifetime License"
     }
   });
 }

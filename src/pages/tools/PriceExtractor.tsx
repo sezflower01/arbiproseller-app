@@ -245,7 +245,7 @@ const PriceExtractor = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
       <Helmet>
-        <title>Universal Price Extractor — ArbiProSeller</title>
+        <title>Universal Price Extractor — InventorySprint</title>
         <meta name="description" content="Extract product prices from any URL with a layered pipeline: structured data, selectors, hydration state, and AI fallback." />
       </Helmet>
 

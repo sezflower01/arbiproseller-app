@@ -151,7 +151,7 @@ export default function RepricerMonitor() {
   return (
     <>
       <Helmet>
-        <title>Repricer Monitor - ArbiPro Seller</title>
+        <title>Repricer Monitor - InventorySprint</title>
       </Helmet>
       <div className="dark min-h-screen flex flex-col bg-[hsl(222,84%,4.9%)] text-white">
         <Navbar />

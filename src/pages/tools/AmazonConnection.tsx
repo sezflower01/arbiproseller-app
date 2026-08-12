@@ -166,7 +166,7 @@ export default function AmazonConnection() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Amazon SP-API Connection | ArbiProSeller</title>
+        <title>Amazon SP-API Connection | InventorySprint</title>
         <meta name="description" content="Manage your Amazon Selling Partner API credentials securely." />
       </Helmet>
       <Navbar />

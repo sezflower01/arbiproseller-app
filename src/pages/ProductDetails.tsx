@@ -19,9 +19,9 @@ const ProductDetails = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Product Features - ArbiProSeller Database Software</title>
-        <meta name="description" content="Detailed features of ArbiProSeller including product research, supplier management, inventory tracking, and more." />
-        <link rel="canonical" href="https://arbiproseller.com/product-details" />
+        <title>Product Features - InventorySprint Database Software</title>
+        <meta name="description" content="Detailed features of InventorySprint including product research, supplier management, inventory tracking, and more." />
+        <link rel="canonical" href="https://inventorysprint.com/product-details" />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-16">

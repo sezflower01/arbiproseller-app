@@ -112,7 +112,7 @@ const BlogProductLibrary = () => {
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Why Amazon Sellers Keep Starting Over — Product Library Fix" />
         <meta property="og:description" content="How a Product Library helps Amazon FBA sellers track costs, suppliers, and reorder profitably." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/product-library-amazon-sellers" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/product-library-amazon-sellers" />
         <meta name="twitter:title" content="Why Amazon Sellers Keep Starting Over — Product Library Fix" />
         <meta name="twitter:description" content="How a Product Library helps Amazon FBA sellers track costs, suppliers, and reorder profitably." />
         <script type="application/ld+json">{`
@@ -122,10 +122,10 @@ const BlogProductLibrary = () => {
             "headline": "Why Most Amazon Sellers Keep Starting Over — And How a Product Library Changes Everything",
             "description": "Stop sourcing from scratch. Learn how a Product Library helps Amazon FBA sellers track costs, suppliers, and profitability.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-04-15",
             "keywords": ["Amazon product library", "online arbitrage", "Amazon FBA sourcing", "supplier management"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/product-library-amazon-sellers" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/product-library-amazon-sellers" }
           }
         `}</script>
       </Helmet>
@@ -144,7 +144,7 @@ const BlogProductLibrary = () => {
             <div className="max-w-3xl mx-auto text-center">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm font-medium mb-6">
                 <ClipboardList className="w-4 h-4" />
-                ArbiProSeller Blog
+                InventorySprint Blog
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
                 Why Most Amazon Sellers <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">Keep Starting Over</span> — And How a Product Library Changes Everything

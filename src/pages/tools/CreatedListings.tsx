@@ -2008,7 +2008,7 @@ export default function CreatedListings() {
   return (
     <>
       <Helmet>
-        <title>Product Library - ArbiPro Seller</title>
+        <title>Product Library - InventorySprint</title>
         <meta
           name="description"
           content="View and manage your manually created Amazon listings"

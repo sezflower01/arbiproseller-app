@@ -479,7 +479,7 @@ const PrintingWithoutPDF = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Printing Without PDF | ArbiProSeller</title>
+        <title>Printing Without PDF | InventorySprint</title>
         <meta name="description" content="Print ASIN barcode labels directly from browser" />
       </Helmet>
       
@@ -546,14 +546,14 @@ const PrintingWithoutPDF = () => {
                         <p className="font-medium">Quick Setup:</p>
                         <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                           <li>Download the Print Client (requires .NET 8 Runtime)</li>
-                          <li>Extract and run <code className="bg-muted px-1 py-0.5 rounded text-xs">ArbiProSeller.PrintClient.exe</code></li>
+                          <li>Extract and run <code className="bg-muted px-1 py-0.5 rounded text-xs">InventorySprint.PrintClient.exe</code></li>
                           <li>Keep it running while printing labels</li>
                         </ol>
                       </div>
                       <div className="flex flex-wrap gap-2 pt-2">
                         <Button asChild size="sm">
                           <a 
-                            href="https://github.com/ArbiProSeller/print-client/releases/latest" 
+                            href="https://github.com/InventorySprint/print-client/releases/latest" 
                             target="_blank" 
                             rel="noopener noreferrer"
                           >

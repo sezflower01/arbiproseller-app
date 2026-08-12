@@ -41,7 +41,7 @@ export default function RepricerWorkers() {
   return (
     <>
       <Helmet>
-        <title>Workers — ArbiProSeller</title>
+        <title>Workers — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

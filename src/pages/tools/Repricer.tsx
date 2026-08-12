@@ -100,7 +100,7 @@ export default function Repricer() {
   return (
     <>
       <Helmet>
-        <title>Advanced Repricer - ArbiPro Seller</title>
+        <title>Advanced Repricer - InventorySprint</title>
         <meta
           name="description"
           content="Advanced Amazon repricer with competitor monitoring and automated pricing rules"

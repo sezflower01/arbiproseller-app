@@ -211,7 +211,7 @@ export default function ConnectPrinterSettings() {
               </div>
 
               <p className="text-xs text-gray-500 mt-4">
-                A native Mac app (<code className="text-[11px] bg-black/30 px-1 py-0.5 rounded">ArbiProSellerPrintMac</code>) is on the roadmap. In the meantime, browser printing works reliably for all label sizes and printers.
+                A native Mac app (<code className="text-[11px] bg-black/30 px-1 py-0.5 rounded">InventorySprintPrintMac</code>) is on the roadmap. In the meantime, browser printing works reliably for all label sizes and printers.
               </p>
             </div>
           </div>

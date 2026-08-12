@@ -138,8 +138,8 @@ export default function Login() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
       <Helmet>
-        <title>Log In - Access Your Free Tools | ArbiProSeller</title>
-        <meta name="description" content="Log in to your ArbiProSeller account to access free seller tools." />
+        <title>Log In - Access Your Free Tools | InventorySprint</title>
+        <meta name="description" content="Log in to your InventorySprint account to access free seller tools." />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-16 flex items-center justify-center px-4 py-12 relative z-10">

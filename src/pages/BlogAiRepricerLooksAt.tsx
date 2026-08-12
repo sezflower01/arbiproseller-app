@@ -42,7 +42,7 @@ const BlogAiRepricerLooksAt = () => {
         <meta property="og:type" content="article" />
         <meta property="og:title" content="What an AI Amazon Repricer Checks Before Changing Price" />
         <meta property="og:description" content="The 10 signals an AI Amazon repricer analyzes before every price change — Buy Box, profit, inventory, competition, timing, and more." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/what-ai-repricer-looks-at" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/what-ai-repricer-looks-at" />
         <meta name="twitter:title" content="What an AI Amazon Repricer Checks Before Changing Price" />
         <meta name="twitter:description" content="The 10 signals an AI Amazon repricer analyzes before every price change." />
         <script type="application/ld+json">{`
@@ -52,10 +52,10 @@ const BlogAiRepricerLooksAt = () => {
             "headline": "What an AI Repricer Actually Looks At Before Changing Your Price",
             "description": "Discover the 10 signals an AI Amazon repricer analyzes before every price change.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-04-15",
             "keywords": ["AI repricer signals", "Amazon repricer", "Buy Box strategy", "automated pricing"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/what-ai-repricer-looks-at" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/what-ai-repricer-looks-at" }
           }
         `}</script>
       </Helmet>
@@ -74,7 +74,7 @@ const BlogAiRepricerLooksAt = () => {
             <div className="max-w-3xl mx-auto text-center">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm font-medium mb-6">
                 <Brain className="w-4 h-4" />
-                ArbiProSeller Blog
+                InventorySprint Blog
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
                 What an AI Repricer <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Actually Looks At</span> Before Changing Your Price

@@ -41,7 +41,7 @@ export default function RepricerAutomationStatus() {
   return (
     <>
       <Helmet>
-        <title>Repricer Automation Status — ArbiProSeller</title>
+        <title>Repricer Automation Status — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

@@ -6,7 +6,7 @@ const BreakEvenCalculator = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Break-even Calculator | ArbiProSeller</title>
+        <title>Break-even Calculator | InventorySprint</title>
         <meta name="description" content="Calculate break-even points for your Amazon FBA products" />
       </Helmet>
       

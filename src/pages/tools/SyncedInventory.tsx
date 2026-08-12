@@ -2058,7 +2058,7 @@ export default function SyncedInventory() {
   return (
     <>
       <Helmet>
-        <title>Inventory - ArbiPro Seller</title>
+        <title>Inventory - InventorySprint</title>
         <meta
           name="description"
           content="View your synced Amazon FBA inventory with ASIN, SKU, FNSKU tracking and supplier information"

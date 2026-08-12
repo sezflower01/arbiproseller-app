@@ -1325,7 +1325,7 @@ export default function Inventory() {
   return (
     <>
       <Helmet>
-        <title>Inventory Management - ArbiPro Seller</title>
+        <title>Inventory Management - InventorySprint</title>
         <meta
           name="description"
           content="Manage your Amazon FBA inventory with ASIN, SKU, FNSKU tracking and supplier information"

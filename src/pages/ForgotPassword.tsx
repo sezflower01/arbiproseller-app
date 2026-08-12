@@ -58,7 +58,7 @@ export default function ForgotPassword() {
     return (
       <div className="min-h-screen flex flex-col">
         <Helmet>
-          <title>Check Your Email | ArbiProSeller</title>
+          <title>Check Your Email | InventorySprint</title>
         </Helmet>
         <Navbar />
         <main className="flex-grow pt-16 flex items-center justify-center px-4 relative overflow-hidden bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
@@ -89,8 +89,8 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Forgot Password | ArbiProSeller</title>
-        <meta name="description" content="Reset your ArbiProSeller account password" />
+        <title>Forgot Password | InventorySprint</title>
+        <meta name="description" content="Reset your InventorySprint account password" />
       </Helmet>
       <Navbar />
       <main className="flex-grow pt-16 flex items-center justify-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">

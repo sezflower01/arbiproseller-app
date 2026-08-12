@@ -66,7 +66,7 @@ export default function SellerAnalyzer() {
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>Seller Storefront Analyzer | ArbiProSeller</title>
+        <title>Seller Storefront Analyzer | InventorySprint</title>
         <meta name="description" content="Analyze any Amazon seller storefront — brands, categories, listings and live offers." />
       </Helmet>
 

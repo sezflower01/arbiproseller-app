@@ -9,27 +9,27 @@ const BlogWhatRepricerDoes = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>What Really Happens When ArbiPro Repricer Is Running | InventorySprint</title>
-        <meta name="description" content="See what ArbiPro Repricer actually does behind the scenes. Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning explained." />
-        <meta name="keywords" content="Amazon repricer, ArbiPro Repricer, AI repricer Amazon, automated pricing, Buy Box strategy, Amazon FBA repricer, profit protection repricer, inventory sprint, amazon inventory, inventory management amazon" />
+        <title>What Really Happens When InventorySprint Repricer Is Running | InventorySprint</title>
+        <meta name="description" content="See what InventorySprint Repricer actually does behind the scenes. Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning explained." />
+        <meta name="keywords" content="Amazon repricer, InventorySprint Repricer, AI repricer Amazon, automated pricing, Buy Box strategy, Amazon FBA repricer, profit protection repricer, inventory sprint, amazon inventory, inventory management amazon" />
         <link rel="canonical" href="https://inventorysprint.com/blog/what-repricer-does" />
         <meta property="og:type" content="article" />
-        <meta property="og:title" content="What Really Happens When ArbiPro Repricer Is Running" />
+        <meta property="og:title" content="What Really Happens When InventorySprint Repricer Is Running" />
         <meta property="og:description" content="Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning explained." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/what-repricer-does" />
-        <meta name="twitter:title" content="What Really Happens When ArbiPro Repricer Is Running" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/what-repricer-does" />
+        <meta name="twitter:title" content="What Really Happens When InventorySprint Repricer Is Running" />
         <meta name="twitter:description" content="Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning." />
         <script type="application/ld+json">{`
           {
             "@context": "https://schema.org",
             "@type": "BlogPosting",
-            "headline": "What Really Happens When ArbiPro Repricer Is Running",
-            "description": "See what ArbiPro Repricer actually does behind the scenes. Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning.",
+            "headline": "What Really Happens When InventorySprint Repricer Is Running",
+            "description": "See what InventorySprint Repricer actually does behind the scenes. Real-time monitoring, profit protection, inventory-aware decisions, and adaptive learning.",
             "author": { "@type": "Person", "name": "Bassam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-04-15",
-            "keywords": ["Amazon repricer", "ArbiPro Repricer", "AI repricer", "Buy Box strategy", "profit protection"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/what-repricer-does" }
+            "keywords": ["Amazon repricer", "InventorySprint Repricer", "AI repricer", "Buy Box strategy", "profit protection"],
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/what-repricer-does" }
           }
         `}</script>
       </Helmet>
@@ -48,10 +48,10 @@ const BlogWhatRepricerDoes = () => {
             <div className="max-w-3xl mx-auto text-center">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm font-medium mb-6">
                 <Brain className="w-4 h-4" />
-                ArbiProSeller Blog
+                InventorySprint Blog
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-                What Really Happens When <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">ArbiPro Repricer</span> Is Running
+                What Really Happens When <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">InventorySprint Repricer</span> Is Running
               </h1>
               <div className="flex items-center justify-center gap-4 text-blue-200/70 text-sm">
                 <span>By <strong className="text-white">Bassam Shomali</strong></span>
@@ -102,13 +102,13 @@ const BlogWhatRepricerDoes = () => {
                 <div className="p-2 bg-blue-500/10 rounded-lg">
                   <Brain className="w-6 h-6 text-blue-500" />
                 </div>
-                <h2 className="text-2xl md:text-3xl font-bold text-foreground m-0">Let's look at how ArbiPro Repricer actually works</h2>
+                <h2 className="text-2xl md:text-3xl font-bold text-foreground m-0">Let's look at how InventorySprint Repricer actually works</h2>
               </div>
               <p className="text-lg text-muted-foreground leading-relaxed mb-4">
                 Instead of listing features, imagine this:
               </p>
               <p className="text-lg text-foreground font-semibold mb-4">
-                You turn on ArbiPro Repricer… and walk away.
+                You turn on InventorySprint Repricer… and walk away.
               </p>
               <p className="text-lg text-muted-foreground leading-relaxed mb-8">
                 What happens next?
@@ -139,7 +139,7 @@ const BlogWhatRepricerDoes = () => {
                 ))}
               </div>
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4 mb-8">
-                <p className="text-blue-300 font-medium m-0">👉 ArbiPro Repricer doesn't check once — it watches continuously.</p>
+                <p className="text-blue-300 font-medium m-0">👉 InventorySprint Repricer doesn't check once — it watches continuously.</p>
               </div>
 
               {/* Decision making */}
@@ -159,7 +159,7 @@ const BlogWhatRepricerDoes = () => {
                 <p className="text-lg text-foreground italic m-0">"Lower price. Match. Win."</p>
               </blockquote>
               <p className="text-lg text-muted-foreground leading-relaxed mb-4">
-                But ArbiPro Repricer <strong className="text-foreground">pauses and evaluates</strong>:
+                But InventorySprint Repricer <strong className="text-foreground">pauses and evaluates</strong>:
               </p>
               <div className="bg-muted/50 rounded-xl p-6 mb-8 space-y-3">
                 {[
@@ -206,7 +206,7 @@ const BlogWhatRepricerDoes = () => {
                 From the outside, it might look like nothing happened.
               </p>
               <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4 mb-8">
-                <p className="text-green-300 font-medium m-0">👉 But in reality: ArbiPro Repricer just protected your profit.</p>
+                <p className="text-green-300 font-medium m-0">👉 But in reality: InventorySprint Repricer just protected your profit.</p>
               </div>
 
               {/* Profit Extraction */}
@@ -235,7 +235,7 @@ const BlogWhatRepricerDoes = () => {
                 Now the system asks: <em className="text-foreground">"Can we make more here?"</em>
               </p>
               <p className="text-lg text-muted-foreground leading-relaxed mb-4">
-                So ArbiPro Repricer carefully raises your price. Not aggressively. Not randomly.
+                So InventorySprint Repricer carefully raises your price. Not aggressively. Not randomly.
               </p>
               <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-4 mb-8">
                 <p className="text-emerald-300 font-medium m-0">👉 Just enough to stay competitive. Same sales… more profit per sale 💰</p>
@@ -252,7 +252,7 @@ const BlogWhatRepricerDoes = () => {
                 This isn't a one-time decision.
               </p>
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4 mb-8">
-                <p className="text-blue-300 font-medium m-0">👉 ArbiPro Repricer keeps evaluating continuously.</p>
+                <p className="text-blue-300 font-medium m-0">👉 InventorySprint Repricer keeps evaluating continuously.</p>
               </div>
 
               {/* Pattern Recognition */}
@@ -304,7 +304,7 @@ const BlogWhatRepricerDoes = () => {
                 </div>
               </div>
               <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4 mb-8">
-                <p className="text-purple-300 font-medium m-0">👉 ArbiPro Repricer becomes more focused over time.</p>
+                <p className="text-purple-300 font-medium m-0">👉 InventorySprint Repricer becomes more focused over time.</p>
               </div>
 
               {/* Inventory */}
@@ -357,7 +357,7 @@ const BlogWhatRepricerDoes = () => {
                 </div>
               </div>
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4 mb-8">
-                <p className="text-blue-300 font-medium m-0">👉 ArbiPro Repricer adapts to both.</p>
+                <p className="text-blue-300 font-medium m-0">👉 InventorySprint Repricer adapts to both.</p>
               </div>
 
               {/* Timing */}
@@ -402,7 +402,7 @@ const BlogWhatRepricerDoes = () => {
               </p>
               <div className="bg-muted/50 rounded-xl p-6 mb-6 space-y-3">
                 {[
-                  "What ArbiPro Repricer saw",
+                  "What InventorySprint Repricer saw",
                   "What it decided",
                   "Why it made that decision",
                   "What it chose not to do"
@@ -434,7 +434,7 @@ const BlogWhatRepricerDoes = () => {
                 Not randomly.
               </p>
               <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-4 mb-8">
-                <p className="text-violet-300 font-medium m-0">👉 ArbiPro Repricer simply does more of what works… and less of what doesn't.</p>
+                <p className="text-violet-300 font-medium m-0">👉 InventorySprint Repricer simply does more of what works… and less of what doesn't.</p>
               </div>
 
               {/* Everything together */}
@@ -463,7 +463,7 @@ const BlogWhatRepricerDoes = () => {
                 ))}
               </div>
               <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20 rounded-xl p-6 mb-8">
-                <p className="text-xl text-foreground font-semibold m-0">👉 This is no longer just a repricer. ArbiPro Repricer is a decision system.</p>
+                <p className="text-xl text-foreground font-semibold m-0">👉 This is no longer just a repricer. InventorySprint Repricer is a decision system.</p>
               </div>
 
               {/* Final thought */}
@@ -473,7 +473,7 @@ const BlogWhatRepricerDoes = () => {
                   A basic repricer follows rules.
                 </p>
                 <p className="text-lg text-white font-semibold mb-6">
-                  ArbiPro Repricer makes decisions.
+                  InventorySprint Repricer makes decisions.
                 </p>
                 <p className="text-lg text-muted-foreground mb-2">
                   Because success doesn't come from always lowering price or always chasing the Buy Box.
@@ -491,7 +491,7 @@ const BlogWhatRepricerDoes = () => {
                 </p>
                 <p className="text-muted-foreground italic mb-4">"Is my repricer working?"</p>
                 <p className="text-lg text-white font-semibold">
-                  And start realizing: ArbiPro Repricer is doing exactly what you would do — just faster, and all the time.
+                  And start realizing: InventorySprint Repricer is doing exactly what you would do — just faster, and all the time.
                 </p>
                 <p className="text-muted-foreground mt-6">— Bassam Shomali</p>
               </div>
@@ -499,7 +499,7 @@ const BlogWhatRepricerDoes = () => {
               {/* CTA */}
               <div className="text-center mt-12 mb-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl p-8 md:p-10">
                 <h3 className="text-2xl md:text-3xl font-bold text-white mb-4">
-                  🚀 Ready to see ArbiPro Repricer in action?
+                  🚀 Ready to see InventorySprint Repricer in action?
                 </h3>
                 <p className="text-blue-100 text-lg mb-6">
                   Start your 60-day free trial — no credit card required.
@@ -523,7 +523,7 @@ const BlogWhatRepricerDoes = () => {
                   </Link>
                   <Link to="/blog/repricer-features" className="group block p-4 bg-muted/50 rounded-xl hover:bg-muted/70 transition-colors">
                     <h4 className="font-semibold text-foreground group-hover:text-blue-500 transition-colors">Every Feature Inside Our AI Repricer</h4>
-                    <p className="text-sm text-muted-foreground mt-1">Complete feature breakdown of the ArbiPro system.</p>
+                    <p className="text-sm text-muted-foreground mt-1">Complete feature breakdown of the InventorySprint system.</p>
                   </Link>
                 </div>
               </div>

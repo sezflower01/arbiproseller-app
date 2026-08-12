@@ -15,7 +15,7 @@ const BlogAiRepricer = () => {
         <meta property="og:type" content="article" />
         <meta property="og:title" content="How an AI Amazon Repricer Works (Real Examples)" />
         <meta property="og:description" content="See real pricing decisions, Buy Box strategies, and how AI improves profit automatically." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/ai-repricer-behind-the-scenes" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/ai-repricer-behind-the-scenes" />
         <meta name="twitter:title" content="How an AI Amazon Repricer Works (Real Examples)" />
         <meta name="twitter:description" content="See real pricing decisions, Buy Box strategies, and how AI improves profit automatically." />
         <script type="application/ld+json">{`
@@ -25,10 +25,10 @@ const BlogAiRepricer = () => {
             "headline": "How an AI Amazon Repricer Actually Works (Real Examples, No Guessing)",
             "description": "Learn how an AI Amazon repricer actually works. See real pricing decisions, Buy Box strategies, and how AI improves profit automatically.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-04-15",
             "keywords": ["Amazon repricer AI", "AI repricer Amazon", "Amazon Buy Box repricer", "automated pricing Amazon", "best Amazon repricer"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/ai-repricer-behind-the-scenes" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/ai-repricer-behind-the-scenes" }
           }
         `}</script>
       </Helmet>
@@ -47,7 +47,7 @@ const BlogAiRepricer = () => {
             <div className="max-w-3xl mx-auto text-center">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm font-medium mb-6">
                 <Brain className="w-4 h-4" />
-                ArbiProSeller Blog
+                InventorySprint Blog
               </div>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
                 How an AI Amazon Repricer <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Actually Works</span> (Real Examples, No Guessing)
@@ -344,7 +344,7 @@ const BlogAiRepricer = () => {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground text-lg">Sam Shomali</p>
-                    <p className="text-muted-foreground text-sm">Founder, ArbiProSeller</p>
+                    <p className="text-muted-foreground text-sm">Founder, InventorySprint</p>
                   </div>
                 </div>
 

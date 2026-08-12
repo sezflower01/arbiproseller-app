@@ -41,7 +41,7 @@ export default function RepricerChangeHistory() {
   return (
     <>
       <Helmet>
-        <title>Repricer Change History — ArbiProSeller</title>
+        <title>Repricer Change History — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

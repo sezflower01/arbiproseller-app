@@ -2505,7 +2505,7 @@ export default function ShipmentBuilder() {
     const updated: ShipmentDraftState = {
       ...entry,
       status: "completed",
-      syncStatusNote: "Marked completed in Inventory S.P.R.I.N.T.",
+      syncStatusNote: "Marked completed in InventorySprint",
       updatedAt: new Date().toISOString(),
     };
     setShipmentLibrary((current) => upsertShipmentRecord(current, updated, user?.id));
@@ -4378,7 +4378,7 @@ export default function ShipmentBuilder() {
   } else if (hasAmazonPlanAccepted) {
     workflowHeading = "Amazon accepted the first step";
     workflowBody =
-      "Inventory S.P.R.I.N.T. successfully submitted the initial shipment plan to Amazon, but the automatic transfer was not fully completed.";
+      "InventorySprint successfully submitted the initial shipment plan to Amazon, but the automatic transfer was not fully completed.";
     workflowHint =
       "Finish the remaining process in Seller Central, or complete the missing Amazon API steps later when supported.";
   } else if (isInvalidMskuFailure) {
@@ -4629,10 +4629,10 @@ export default function ShipmentBuilder() {
   return (
     <div className="dark min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)] relative overflow-hidden">
       <Helmet>
-        <title>FBA Shipment Builder | ArbiProSeller</title>
+        <title>FBA Shipment Builder | InventorySprint</title>
         <meta
           name="description"
-          content="Build and create your FBA shipment in ArbiProSeller, then finish the final Amazon review in Seller Central."
+          content="Build and create your FBA shipment in InventorySprint, then finish the final Amazon review in Seller Central."
         />
       </Helmet>
 
@@ -5139,7 +5139,7 @@ export default function ShipmentBuilder() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Shipment history</CardTitle>
-                    <CardDescription>Internal visibility for what was drafted, synced, and completed in Inventory S.P.R.I.N.T.</CardDescription>
+                    <CardDescription>Internal visibility for what was drafted, synced, and completed in InventorySprint</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {syncedShipments.length === 0 ? (
@@ -5207,7 +5207,7 @@ export default function ShipmentBuilder() {
                           </div>
                           <div className="rounded-md border border-white/10 bg-shipment-control text-white p-3">
                             <p className="text-white/70">Sync status</p>
-                            <p className="mt-1 font-medium">{focusedShipment.syncStatusNote ?? "Tracked inside Inventory S.P.R.I.N.T."}</p>
+                            <p className="mt-1 font-medium">{focusedShipment.syncStatusNote ?? "Tracked inside InventorySprint"}</p>
                           </div>
                         </div>
                         <div className="rounded-md border border-white/10 bg-shipment-row-alt text-white p-3">

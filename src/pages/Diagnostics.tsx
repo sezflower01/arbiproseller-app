@@ -228,10 +228,10 @@ export default function Diagnostics() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Diagnostics - ArbiProSeller</title>
+        <title>Diagnostics - InventorySprint</title>
         <meta
           name="description"
-          content="Connectivity diagnostics for ArbiProSeller authentication."
+          content="Connectivity diagnostics for InventorySprint authentication."
         />
       </Helmet>
 

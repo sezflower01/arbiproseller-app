@@ -388,7 +388,7 @@ export default function FbaEligibilityIssues() {
   return (
     <>
       <Helmet>
-        <title>FBA Eligibility Issues — ArbiProSeller</title>
+        <title>FBA Eligibility Issues — InventorySprint</title>
         <meta name="description" content="Every listing exposed to Amazon's manufacturer-barcode / brand-registry restriction, blocked or not yet." />
       </Helmet>
       <Navbar />

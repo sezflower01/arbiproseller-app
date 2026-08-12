@@ -282,7 +282,7 @@ const MyDatabaseProducts = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>My Database Products | ArbiProSeller</title>
+        <title>My Database Products | InventorySprint</title>
         <meta name="description" content="Your permanent personal database of ASINs delivered from Find Products." />
       </Helmet>
       <Navbar />

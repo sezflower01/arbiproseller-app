@@ -237,7 +237,7 @@ const BlogRepricerFeatures = () => {
         <meta property="og:type" content="article" />
         <meta property="og:title" content="Every Feature Inside Our Amazon AI Repricer" />
         <meta property="og:description" content="Live sales tracking, Buy Box intelligence, profit protection, multi-marketplace support, and smart engine learning." />
-        <meta property="og:url" content="https://arbiproseller.com/blog/repricer-features" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/repricer-features" />
         <meta name="twitter:title" content="Every Feature Inside Our Amazon AI Repricer" />
         <meta name="twitter:description" content="Live sales tracking, Buy Box intelligence, profit protection, and smart engine learning." />
         <script type="application/ld+json">
@@ -245,12 +245,12 @@ const BlogRepricerFeatures = () => {
             "@context": "https://schema.org",
             "@type": "BlogPosting",
             headline: "Every Feature Inside Our Amazon AI Repricer",
-            description: "A comprehensive breakdown of every feature in the ArbiProSeller AI repricer — from live sales and Buy Box intelligence to profit protection and smart learning.",
+            description: "A comprehensive breakdown of every feature in the InventorySprint AI repricer — from live sales and Buy Box intelligence to profit protection and smart learning.",
             author: { "@type": "Person", name: "Sam Shomali" },
-            publisher: { "@type": "Organization", name: "ArbiProSeller" },
+            publisher: { "@type": "Organization", name: "InventorySprint" },
             datePublished: "2025-07-15",
             dateModified: "2025-07-15",
-            mainEntityOfPage: { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/repricer-features" },
+            mainEntityOfPage: { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/repricer-features" },
           })}
         </script>
       </Helmet>

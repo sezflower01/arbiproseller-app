@@ -55,7 +55,7 @@ export default function RepricerAnalytics() {
   return (
     <>
       <Helmet>
-        <title>Repricer Analytics - ArbiPro Seller</title>
+        <title>Repricer Analytics - InventorySprint</title>
       </Helmet>
       <div className="dark min-h-screen flex flex-col bg-[hsl(222,84%,4.9%)] text-white">
         <Navbar />

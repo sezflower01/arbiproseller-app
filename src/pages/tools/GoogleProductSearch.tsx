@@ -86,7 +86,7 @@ const GoogleProductSearch = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Google Product Search | ArbiProSeller</title>
+        <title>Google Product Search | InventorySprint</title>
         <meta name="description" content="Look up an ASIN and search Google Shopping for the product" />
       </Helmet>
       <Navbar />

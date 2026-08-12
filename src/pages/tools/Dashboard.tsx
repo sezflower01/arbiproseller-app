@@ -943,8 +943,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#0f1c3f]">
       <Helmet>
-        <title>Dashboard · ArbiProSeller</title>
-        <meta name="description" content="Your ArbiProSeller command center: profit, inventory, repricing, shipments and alerts in one glance." />
+        <title>Dashboard · InventorySprint</title>
+        <meta name="description" content="Your InventorySprint command center: profit, inventory, repricing, shipments and alerts in one glance." />
       </Helmet>
       <Navbar />
 

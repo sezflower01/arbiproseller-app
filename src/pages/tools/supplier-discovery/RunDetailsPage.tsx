@@ -254,7 +254,7 @@ const RunDetailsPage = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
       <Helmet>
-        <title>Run {run.asin} — Supplier Discovery | ArbiProSeller</title>
+        <title>Run {run.asin} — Supplier Discovery | InventorySprint</title>
         <meta name="description" content="Detailed view of a Supplier Discovery run with full candidate breakdown, statuses, and saved sources." />
       </Helmet>
 

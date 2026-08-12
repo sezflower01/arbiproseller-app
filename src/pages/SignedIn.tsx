@@ -11,8 +11,8 @@ const SignedIn = () => {
   return (
     <div>
       <Helmet>
-        <title>You are logged in | ArbiProSeller</title>
-        <meta name="description" content="You are logged in to ArbiProSeller. Continue to your dashboard." />
+        <title>You are logged in | InventorySprint</title>
+        <meta name="description" content="You are logged in to InventorySprint. Continue to your dashboard." />
         <link rel="canonical" href={`${window.location.origin}/auth/signed-in`} />
       </Helmet>
 

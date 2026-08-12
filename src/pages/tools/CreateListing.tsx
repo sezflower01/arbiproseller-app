@@ -745,7 +745,7 @@ const CreateListing = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[hsl(222,84%,4.9%)] via-[hsl(230,50%,10%)] to-[hsl(260,50%,8%)]">
       <Helmet>
-        <title>Create Amazon Listing | ArbiProSeller</title>
+        <title>Create Amazon Listing | InventorySprint</title>
         <meta name="description" content="Create Amazon FBA listings with inventory tracking" />
       </Helmet>
       

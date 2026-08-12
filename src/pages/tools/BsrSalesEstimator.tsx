@@ -91,7 +91,7 @@ const BsrSalesEstimator = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>BSR to Sales Estimator | ArbiProSeller</title>
+        <title>BSR to Sales Estimator | InventorySprint</title>
         <meta name="description" content="Estimate Amazon sales volume from Best Seller Rank (BSR). Free tool for Amazon sellers to forecast monthly sales by category and marketplace." />
       </Helmet>
       

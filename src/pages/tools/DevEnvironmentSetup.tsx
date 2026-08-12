@@ -107,7 +107,7 @@ export default function DevEnvironmentSetup() {
   return (
     <>
       <Helmet>
-        <title>Dev Environment Setup — ArbiProSeller</title>
+        <title>Dev Environment Setup — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

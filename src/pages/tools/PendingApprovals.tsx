@@ -71,7 +71,7 @@ export default function PendingApprovals() {
 
   return (
     <div className="container mx-auto py-8 space-y-6">
-      <Helmet><title>Pending Approvals - ArbiProSeller</title></Helmet>
+      <Helmet><title>Pending Approvals - InventorySprint</title></Helmet>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Pending Approvals</h1>

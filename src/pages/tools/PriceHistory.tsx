@@ -259,7 +259,7 @@ const PriceHistory = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Price History | ArbiProSeller</title>
+        <title>Price History | InventorySprint</title>
         <meta name="description" content="Track ASIN price changes over time with historical charts and sales data." />
       </Helmet>
 

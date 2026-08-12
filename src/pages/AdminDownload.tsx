@@ -7,7 +7,7 @@ import { Download, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 const ADMIN_DOWNLOAD_URL =
-  "https://mstibdszibcheodvnprm.supabase.co/storage/v1/object/sign/access/Setup_ArbiProSeller.exe?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iODE0YWYxZi1jYzk3LTQ2MTAtOTc1ZC03ZjY4YWMxNGY1MjQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhY2Nlc3MvU2V0dXBfQXJiaVByb1NlbGxlci5leGUiLCJpYXQiOjE3NzQ1ODc1MjcsImV4cCI6MjAyNjg3NTUyN30.VT9dF4S4XUvteaL7Q6zjGhW19OmhLbIlDtKX7qR_ohU";
+  "https://mstibdszibcheodvnprm.supabase.co/storage/v1/object/sign/access/Setup_InventorySprint.exe?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iODE0YWYxZi1jYzk3LTQ2MTAtOTc1ZC03ZjY4YWMxNGY1MjQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhY2Nlc3MvU2V0dXBfQXJiaVByb1NlbGxlci5leGUiLCJpYXQiOjE3NzQ1ODc1MjcsImV4cCI6MjAyNjg3NTUyN30.VT9dF4S4XUvteaL7Q6zjGhW19OmhLbIlDtKX7qR_ohU";
 
 const AdminDownload = () => {
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ const AdminDownload = () => {
           <ShieldCheck className="mx-auto h-16 w-16 text-primary" />
           <h1 className="text-3xl font-bold">Admin Download</h1>
           <p className="text-muted-foreground">
-            Download the full Inventory S.P.R.I.N.T. installer with SP-API integration.
+            Download the full InventorySprint installer with SP-API integration.
           </p>
           <Button
             size="lg"
@@ -71,7 +71,7 @@ const AdminDownload = () => {
             onClick={() => window.open(ADMIN_DOWNLOAD_URL, "_blank")}
           >
             <Download className="mr-2" size={24} />
-            Download Setup_ArbiProSeller.exe
+            Download Setup_InventorySprint.exe
           </Button>
         </div>
       </main>

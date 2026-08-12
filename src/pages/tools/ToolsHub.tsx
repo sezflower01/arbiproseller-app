@@ -307,7 +307,7 @@ const ToolsHub = () => {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
 
       <Helmet>
-        <title>ArbiProSeller Platform Modules</title>
+        <title>InventorySprint Platform Modules</title>
         <meta
           name="description"
           content="Categorized core modules to manage and scale your Amazon FBA business — inventory, finance, shipments, repricing, sourcing and more."
@@ -322,10 +322,10 @@ const ToolsHub = () => {
           <div className="hidden md:block text-center mb-12">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 text-primary text-sm font-medium mb-6">
               <Warehouse className="h-4 w-4" />
-              <span>Inventory S.P.R.I.N.T. Platform</span>
+              <span>InventorySprint Platform</span>
             </div>
             <h1 className="text-5xl md:text-6xl font-bold mb-6">
-              <span className="text-white">Inventory S.P.R.I.N.T. </span>
+              <span className="text-white">InventorySprint </span>
               <span className="bg-gradient-to-r from-primary via-blue-400 to-purple-400 bg-clip-text text-transparent">
                 Platform Modules
               </span>

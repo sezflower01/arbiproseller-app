@@ -182,7 +182,7 @@ export default function ProductAnalyzer() {
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>Product Analyzer | ArbiProSeller</title>
+        <title>Product Analyzer | InventorySprint</title>
         <meta name="description" content="Full SellerAmp-style product analysis with charts, offers, BSR history, and profit calculator." />
       </Helmet>
 

@@ -753,7 +753,7 @@ const LabelPrinting = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Label Printing Tool | ArbiProSeller</title>
+        <title>Label Printing Tool | InventorySprint</title>
         <meta name="description" content="Print ASIN barcode labels for thermal printers" />
       </Helmet>
       

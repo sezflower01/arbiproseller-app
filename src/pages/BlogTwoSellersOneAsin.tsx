@@ -35,7 +35,7 @@ const BlogTwoSellersOneAsin = () => {
           property="og:description"
           content="Why the same product can be an opportunity for one seller and a disaster for another."
         />
-        <meta property="og:url" content="https://arbiproseller.com/blog/two-sellers-one-asin" />
+        <meta property="og:url" content="https://inventorysprint.com/blog/two-sellers-one-asin" />
         <meta name="twitter:title" content="Two Amazon Sellers, One ASIN — Two Right Decisions" />
         <meta
           name="twitter:description"
@@ -48,10 +48,10 @@ const BlogTwoSellersOneAsin = () => {
             "headline": "Two Amazon Sellers, One ASIN — And Completely Different Decisions",
             "description": "Same ASIN, same Buy Box, same profit — opposite decisions. Why product analysis must understand the seller's business model.",
             "author": { "@type": "Person", "name": "Sam Shomali" },
-            "publisher": { "@type": "Organization", "name": "ArbiProSeller" },
+            "publisher": { "@type": "Organization", "name": "InventorySprint" },
             "datePublished": "2026-05-13",
             "keywords": ["Amazon arbitrage vs wholesale", "Amazon sourcing", "Buy Box volatility", "Amazon product analysis"],
-            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://arbiproseller.com/blog/two-sellers-one-asin" }
+            "mainEntityOfPage": { "@type": "WebPage", "@id": "https://inventorysprint.com/blog/two-sellers-one-asin" }
           }
         `}</script>
       </Helmet>
@@ -423,11 +423,11 @@ const BlogTwoSellersOneAsin = () => {
                   <Target className="w-6 h-6 text-amber-500" />
                 </div>
                 <h2 className="text-2xl md:text-3xl font-bold text-foreground m-0">
-                  The future we see for ArbiProSeller
+                  The future we see for InventorySprint
                 </h2>
               </div>
               <p className="text-lg text-muted-foreground mb-4">
-                At ArbiProSeller, we believe product analysis should understand
+                At InventorySprint, we believe product analysis should understand
                 the seller's strategy — not just the ASIN.
               </p>
               <p className="text-lg text-muted-foreground mb-6">

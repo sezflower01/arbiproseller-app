@@ -42,7 +42,7 @@ export default function RepricerAccountControl() {
   return (
     <>
       <Helmet>
-        <title>Repricer Account Control — ArbiProSeller</title>
+        <title>Repricer Account Control — InventorySprint</title>
       </Helmet>
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />

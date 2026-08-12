@@ -236,7 +236,7 @@ export default function DispositionManagement() {
       const reportError: string | null = data?.report_error ?? null;
       const statuses = data?.report_statuses || {};
 
-      // Source of truth: Amazon SP-API + ArbiProSeller cost contract.
+      // Source of truth: Amazon SP-API + InventorySprint cost contract.
       // CSV imports are now historical backfill only.
       if (reportError) {
         toast.error(`Amazon sync issue: ${reportError}`, {

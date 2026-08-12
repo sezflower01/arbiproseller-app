@@ -6,7 +6,7 @@ const UpcToAsin = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>UPC/EAN to ASIN Converter | ArbiProSeller</title>
+        <title>UPC/EAN to ASIN Converter | InventorySprint</title>
         <meta name="description" content="Convert UPC or EAN codes to ASIN" />
       </Helmet>
       
