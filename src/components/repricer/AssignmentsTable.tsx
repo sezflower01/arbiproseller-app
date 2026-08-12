@@ -5752,19 +5752,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
     }
   };
 
-  const getFulfillmentBadge = (item: InventoryWithAssignment) => {
-    const isFba = item.source?.includes("fba") || item.source === "amazon_sync";
-    return isFba ? (
-      <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
-        <Truck className="h-3 w-3 mr-1" />FBA
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
-        <Store className="h-3 w-3 mr-1" />FBM
-      </Badge>
-    );
-  };
-
   const getInventoryAge = (createdAt: string | null) => {
     if (!createdAt) return "—";
     const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
@@ -7562,7 +7549,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                 {item.title || "—"}
                               </div>
                               <div className="flex items-center gap-2">
-                                {getFulfillmentBadge(item)}
                                 <a
                                   href={`https://www.${marketplaceConfig.domain}/dp/${item.asin}`}
                                   target="_blank"
