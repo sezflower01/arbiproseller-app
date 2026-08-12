@@ -92,7 +92,13 @@ function fbaUnconfirmedHtml(elig, asin, mkCode) {
   const sell = stages.find((s) => String(s.stage || "").toLowerCase() === "sellability");
   const reason = sell?.reason || "Amazon returned an approval-required restriction for New condition in this marketplace.";
   const url = approvalUrlFor(asin, mkCode);
-  return `<strong>⚠️ Approval required for New condition</strong>
+  const m = MARKETPLACES[mkCode];
+  // Name the marketplace explicitly -- without this, the warning reads as if
+  // it could apply to whatever marketplace the user is currently focused on
+  // (e.g. the "$X · US" line at the top of the card), when it's actually
+  // scoped to whichever marketplace is selected in the Listing Details form.
+  const mkLabel = m ? ` in ${m.flag} ${mkCode}` : "";
+  return `<strong>⚠️ Approval required for New condition${mkLabel}</strong>
     <div style="margin-top:4px">${escapeHtml(reason)}</div>
     <div style="margin-top:6px"><a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:4px 10px;background:#f59e0b;color:#fff;border-radius:4px;text-decoration:none;font-weight:600;">Apply for approval →</a></div>`;
 }
@@ -207,9 +213,25 @@ window.addEventListener("message", (e) => {
     return;
   }
   if (d.type === "ASIN_CHANGED") {
-    state.marketplace = d.marketplace || "US";
+    const newMarketplace = d.marketplace || "US";
+    const marketplaceChanged = newMarketplace !== state.marketplace;
+    const asinChanged = !!(d.asin && d.asin !== state.asin);
+    state.marketplace = newMarketplace;
     $("apx-mkt").textContent = `${MARKETPLACES[state.marketplace]?.flag || ""} ${state.marketplace}`;
-    if (d.asin && d.asin !== state.asin) {
+    if (marketplaceChanged) {
+      const codes = getAuthorizedMarketplaceCodes();
+      if (codes.includes(state.marketplace) && state.selectedMarketplace !== state.marketplace) {
+        state.selectedMarketplace = state.marketplace;
+        const sel = $("apx-mkt-select");
+        if (sel) sel.value = state.marketplace;
+        // Only live re-check eligibility when it's the SAME asin -- a
+        // simultaneous asin change means the old eligibility data belongs to
+        // a different product entirely, and the user needs to Fetch again
+        // regardless (handled by the apx-fetch click handler below).
+        if (!asinChanged && state.asin && state.product) runNewFbaEligibilityGate(true);
+      }
+    }
+    if (asinChanged) {
       state.asin = d.asin;
       $("apx-asin").value = d.asin;
       newListing.bypass = false;
@@ -345,18 +367,27 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.arbipro_session) checkAuth();
 });
 
+// The set of marketplace codes the user is actually authorized to sell in.
+// Falls back to every known marketplace while state.marketplaces hasn't
+// loaded yet (e.g. an ASIN_CHANGED event racing ahead of loadMarketplaces'
+// background call) so auto-detection below isn't blocked by that race.
+function getAuthorizedMarketplaceCodes() {
+  return state.marketplaces.length
+    ? state.marketplaces
+        .map((m) => Object.keys(MARKETPLACES).find((c) => MARKETPLACES[c].id === m.marketplace_id))
+        .filter(Boolean)
+    : Object.keys(MARKETPLACES);
+}
+
 async function loadMarketplaces() {
   const r = await bg("ARBIPRO_LOAD_MARKETPLACES");
   if (!r?.ok) return;
   state.marketplaces = r.data?.marketplaces || [];
   state.primaryMkt = r.data?.primary || null;
   const sel = $("apx-mkt-select");
+  const previousSelection = state.selectedMarketplace;
   sel.innerHTML = "";
-  const codes = state.marketplaces.length
-    ? state.marketplaces
-        .map((m) => Object.keys(MARKETPLACES).find((c) => MARKETPLACES[c].id === m.marketplace_id))
-        .filter(Boolean)
-    : Object.keys(MARKETPLACES);
+  const codes = getAuthorizedMarketplaceCodes();
   for (const c of codes) {
     const m = MARKETPLACES[c];
     if (!m) continue;
@@ -364,10 +395,43 @@ async function loadMarketplaces() {
     opt.value = c; opt.textContent = `${m.flag} ${m.name}`;
     sel.appendChild(opt);
   }
-  const def = state.primaryMkt || codes[0] || "US";
+  // loadMarketplaces() can legitimately re-run after the user has already
+  // interacted with the panel (checkAuth() re-fires on every
+  // arbipro_session storage change -- sign in/out, and any background
+  // token refresh triggered by the bg() helper's auth-retry). A prior
+  // selection -- whether the user picked it manually or it came from
+  // auto-detection on an earlier run -- must be preserved across those
+  // re-runs; only fall through to a fresh default if there wasn't one yet,
+  // or the previous choice is no longer in the authorized list.
+  const def = (previousSelection && codes.includes(previousSelection))
+    ? previousSelection
+    // Prefer the marketplace actually detected from the Amazon page the
+    // user is browsing (state.marketplace, set from ASIN_CHANGED) over the
+    // saved primary-marketplace profile setting, as long as it's one the
+    // user is authorized to sell in. Falls back to the profile default
+    // otherwise.
+    : (state.marketplace && codes.includes(state.marketplace))
+      ? state.marketplace
+      : (state.primaryMkt || codes[0] || "US");
   sel.value = def;
   state.selectedMarketplace = def;
-  sel.addEventListener("change", () => { state.selectedMarketplace = sel.value; });
+  // loadMarketplaces() can legitimately run more than once per page load
+  // (checkAuth() re-runs on every arbipro_session storage change -- sign
+  // in, sign out, token refresh -- and calls this when signed in). The
+  // <select> element itself persists across those re-runs even though its
+  // <option>s get rebuilt, so a plain addEventListener here would stack a
+  // new listener on top of any prior one, firing the handler N times per
+  // actual change. Guard with a one-time flag instead.
+  if (!sel.dataset.changeListenerAttached) {
+    sel.dataset.changeListenerAttached = "1";
+    sel.addEventListener("change", () => {
+      state.selectedMarketplace = sel.value;
+      // Re-check eligibility for the newly selected marketplace so the
+      // approval warning doesn't keep showing stale data for the
+      // marketplace the user just switched away from.
+      if (state.asin && state.product) runNewFbaEligibilityGate(true);
+    });
+  }
 }
 
 /* ─── Suppliers ─── */
