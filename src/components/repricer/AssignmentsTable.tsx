@@ -817,9 +817,6 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
           ? clEnrich.unitCost
           : ((inv.cost != null && inv.cost > 0) ? inv.cost : null);
         const mp = assignment?.min_price_override ?? (targetMarketplace === "US" ? inv.min_price : null);
-        if (targetMarketplace !== "US" && assignment?.roi_at_min_percent != null) {
-          return assignment.roi_at_min_percent;
-        }
         const live = mp != null ? calcRoiAtPrice(effCost, effectiveFeesJson, Number(mp), initialFxRate ?? 1, targetMarketplace) : null;
         return live ?? assignment?.roi_at_min_percent ?? null;
       })(),
@@ -828,9 +825,6 @@ async function fetchRepricerData(userId: string, targetMarketplace: string): Pro
           ? clEnrich.unitCost
           : ((inv.cost != null && inv.cost > 0) ? inv.cost : null);
         const mp = assignment?.max_price_override ?? (targetMarketplace === "US" ? inv.max_price : null);
-        if (targetMarketplace !== "US" && assignment?.roi_at_max_percent != null) {
-          return assignment.roi_at_max_percent;
-        }
         const live = mp != null ? calcRoiAtPrice(effCost, effectiveFeesJson, Number(mp), initialFxRate ?? 1, targetMarketplace) : null;
         return live ?? assignment?.roi_at_max_percent ?? null;
       })(),
