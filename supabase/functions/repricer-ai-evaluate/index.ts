@@ -5126,7 +5126,12 @@ Deno.serve(async (req) => {
     let snapshot: any = null;
     let offers: any[] = [];
     let usedSpApi = false;
-    
+    // Raw pricingSource from the last repricer-sp-api-pricing response this
+    // cycle, if any call was actually attempted — used below to distinguish
+    // "genuinely throttled" from "never even tried" when persisting
+    // last_data_source for the Action Log UI.
+    let lastPricingSource: string | null = null;
+
     // Helper: build snapshot and offers from SP-API data object
     const buildFromSpApiData = (spData: any) => {
       // Only count this as "real" SP-API data when the live fetch actually
@@ -5137,6 +5142,7 @@ Deno.serve(async (req) => {
       // skipped the cached-snapshot fallback below and produced a fully
       // blank offer set, which forced DO_NOT_REPRICE even when a recent,
       // still-valid competitor snapshot existed.
+      lastPricingSource = spData.pricingSource ?? null;
       usedSpApi = spData.pricingSource !== 'empty';
 
       snapshot = {
@@ -5399,6 +5405,16 @@ Deno.serve(async (req) => {
         }
       }
     }
+
+    // Real per-cycle data-source diagnostic, persisted below alongside
+    // last_recommendation_reason so the Action Log UI's fetch-chain panel
+    // ("SP-API throttled" / "Market data ready") reflects what actually
+    // happened this evaluation instead of a column nothing used to write.
+    const dataSourceForDiagnostics: 'sp_api' | 'cache' | 'throttled' | 'none' =
+      usedSpApi ? 'sp_api'
+      : snapshot ? 'cache'
+      : lastPricingSource === 'empty' ? 'throttled'
+      : 'none';
 
     // Get previous Buy Box price for Smart Raise comparison (snapshot-to-snapshot)
     const { data: previousSnapshots } = await supabase
@@ -7559,6 +7575,15 @@ Deno.serve(async (req) => {
         last_evaluated_at: new Date().toISOString(),
         last_recommended_price: result.newPrice,
         last_recommendation_reason: result.reason,
+        // Real fetch-chain diagnostics for the Action Log UI — previously
+        // these columns existed but nothing wrote them, so the panel showed
+        // a frozen/legacy value forever regardless of what actually happened.
+        last_data_source: dataSourceForDiagnostics,
+        last_trigger_source: context.triggerSource ?? assignment.last_trigger_source ?? null,
+        // Only touch last_throttle_at when THIS cycle was actually throttled,
+        // so it keeps tracking "most recent real throttle event" over time
+        // instead of being blanked out by every unrelated successful cycle.
+        ...(dataSourceForDiagnostics === 'throttled' ? { last_throttle_at: new Date().toISOString() } : {}),
         // Clear skip reason on successful evaluation
         last_skip_reason: null,
         last_skip_lane: null,
