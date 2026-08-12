@@ -102,7 +102,7 @@ import { logSettingChange } from "@/lib/repricerChangeLog";
 
 import SuggestionReviewPanel from "./SuggestionReviewPanel";
 import SmartSuggestionBanner, { detectSuggestion } from "./SmartSuggestionBanner";
-import EvalModeBadge, { type EvalMode, type ActiveEvalMode } from "./EvalModeBadge";
+import { type EvalMode, type ActiveEvalMode } from "./EvalModeBadge";
 import ListingVerificationDialog from "./ListingVerificationDialog";
 import LiveSalesPopup from "./LiveSalesPopup";
 import { MinMaxPriceCells } from "./MinMaxPriceCells";
@@ -7668,26 +7668,6 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                                    🚫 Manual Restriction
                                  </Badge>
                                )}
-                              {/* Eval Mode Badge (admin only) */}
-                              {isAdmin && item.assignment_id && (
-                                <EvalModeBadge
-                                  assignmentId={item.assignment_id}
-                                  evalMode={item.eval_mode}
-                                  activeEvalMode={item.active_eval_mode}
-                                  evalModeReason={item.eval_mode_reason}
-                                  onUpdate={(newMode) => {
-                                    setItems(prev => prev.map(i =>
-                                      i.id === item.id
-                                        ? {
-                                            ...i,
-                                            eval_mode: newMode,
-                                            active_eval_mode: newMode === 'force_smart' ? 'smart' : newMode === 'force_basic' ? 'basic' : i.active_eval_mode,
-                                          }
-                                        : i
-                                    ));
-                                  }}
-                                />
-                              )}
                             </div>
                           </TableCell>
 
