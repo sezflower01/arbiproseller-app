@@ -566,23 +566,8 @@ Deno.serve(async (req) => {
 
   // Cron-lock so overlapping invocations don't double-write.
   let cronRunId: number | null = null;
-  try {
-    const { data: lockOk } = await supabase.rpc("try_acquire_cron_lock", {
-      p_job_name: "learn-intl-fee-multipliers",
-      p_ttl_seconds: 1800,
-    });
-    if (!lockOk) {
-      return new Response(
-        JSON.stringify({ ok: false, reason: "lock_busy" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    const { data: runId } = await supabase.rpc("record_cron_run_start", {
-      p_job: "learn-intl-fee-multipliers",
-      p_overlap_window_minutes: 30,
-    });
-    cronRunId = typeof runId === "number" ? runId : null;
 
+  async function runJob(): Promise<Response> {
     // Optional throttle. should_throttle_now() returns text ('ok' | 'throttle'
     // | 'skip'), not a boolean -- a prior `=== true` check here never matched
     // and silently never throttled anything. Compare against the actual
@@ -722,6 +707,39 @@ Deno.serve(async (req) => {
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
+  }
+
+  try {
+    const { data: lockOk } = await supabase.rpc("try_acquire_cron_lock", {
+      p_job_name: "learn-intl-fee-multipliers",
+      p_ttl_seconds: 1800,
+    });
+    if (!lockOk) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "lock_busy" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    // Lock was acquired above -- guarantee it's released on every exit path
+    // from here on (success, throttled, or the fatal error caught below),
+    // including if record_cron_run_start itself throws. Previously the lock
+    // was never released and only cleared via its 30-minute TTL, so the job
+    // could silently go dark for up to 30 minutes after any single run.
+    try {
+      const { data: runId } = await supabase.rpc("record_cron_run_start", {
+        p_job: "learn-intl-fee-multipliers",
+        p_overlap_window_minutes: 30,
+      });
+      cronRunId = typeof runId === "number" ? runId : null;
+
+      return await runJob();
+    } finally {
+      try {
+        await supabase.rpc("release_cron_lock", { p_job_name: "learn-intl-fee-multipliers" });
+      } catch (e) {
+        console.warn("[learn-intl-fee-multipliers] release_cron_lock failed:", (e as Error)?.message ?? e);
+      }
+    }
   } catch (e) {
     console.error("[learn-intl-fee-multipliers] fatal:", e);
     if (cronRunId) {
