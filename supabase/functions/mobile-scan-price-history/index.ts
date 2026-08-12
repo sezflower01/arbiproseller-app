@@ -313,43 +313,62 @@ async function resolveSellerNames(
       seller: slice.join(','),
     }).toString();
 
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(url.toString(), { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!res.ok) {
-        console.error('[mobile-scan-price-history] seller lookup failed', await keepaErrorMessage(res));
-        continue;
+    // Retry transient failures (429 rate-limit, timeout, network blip) before
+    // giving up — a single failed attempt here previously meant every seller
+    // ID in the batch fell straight back to displaying its raw ID with no
+    // second chance, even though Keepa's /seller endpoint is a shared
+    // per-account token bucket that routinely 429s under burst load.
+    const MAX_ATTEMPTS = 3;
+    let json: any = null;
+    let lastErrorMsg = '';
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+        const res = await fetch(url.toString(), { signal: ctrl.signal });
+        clearTimeout(t);
+        if (res.ok) {
+          json = await res.json();
+          break;
+        }
+        lastErrorMsg = await keepaErrorMessage(res);
+        console.warn(`[mobile-scan-price-history] seller lookup attempt ${attempt}/${MAX_ATTEMPTS} failed:`, lastErrorMsg);
+      } catch (e) {
+        lastErrorMsg = (e as Error).message;
+        console.warn(`[mobile-scan-price-history] seller fetch attempt ${attempt}/${MAX_ATTEMPTS} error:`, lastErrorMsg);
       }
-      const json = await res.json();
-      const sellers = json?.sellers || {};
-      for (const id of slice) {
-        const s = sellers[id];
-        const business = s?.sellerName || s?.businessName || null;
-        const storefront = s?.storefrontName || s?.sellerName || null;
-        const isAmazon = AMAZON_SELLER_IDS.has(id) || looksLikeAmazonName(business) || looksLikeAmazonName(storefront);
-        const display = isAmazon ? (business || storefront || 'Amazon.com') : (business || storefront || id);
-        // currentRating is 0-100 (% positive feedback); currentRatingCount is
-        // the seller's lifetime rating count. Both come from this SAME Keepa
-        // /seller call already being made for the name — no extra API cost.
-        const rating = Number.isFinite(s?.currentRating) ? s.currentRating : null;
-        const ratingCount = Number.isFinite(s?.currentRatingCount) ? s.currentRatingCount : null;
-        out[id] = { name: display, isAmazon, rating, ratingCount };
-        upserts.push({
-          seller_id: id,
-          marketplace,
-          business_name: business,
-          storefront_name: storefront,
-          is_amazon: isAmazon,
-          current_rating: rating,
-          current_rating_count: ratingCount,
-          fetched_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        });
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, attempt * 600));
       }
-    } catch (e) {
-      console.error('[mobile-scan-price-history] seller fetch error', (e as Error).message);
+    }
+    if (!json) {
+      console.error(`[mobile-scan-price-history] seller lookup exhausted ${MAX_ATTEMPTS} attempts:`, lastErrorMsg);
+      continue;
+    }
+    const sellers = json?.sellers || {};
+    for (const id of slice) {
+      const s = sellers[id];
+      const business = s?.sellerName || s?.businessName || null;
+      const storefront = s?.storefrontName || s?.sellerName || null;
+      const isAmazon = AMAZON_SELLER_IDS.has(id) || looksLikeAmazonName(business) || looksLikeAmazonName(storefront);
+      const display = isAmazon ? (business || storefront || 'Amazon.com') : (business || storefront || id);
+      // currentRating is 0-100 (% positive feedback); currentRatingCount is
+      // the seller's lifetime rating count. Both come from this SAME Keepa
+      // /seller call already being made for the name — no extra API cost.
+      const rating = Number.isFinite(s?.currentRating) ? s.currentRating : null;
+      const ratingCount = Number.isFinite(s?.currentRatingCount) ? s.currentRatingCount : null;
+      out[id] = { name: display, isAmazon, rating, ratingCount };
+      upserts.push({
+        seller_id: id,
+        marketplace,
+        business_name: business,
+        storefront_name: storefront,
+        is_amazon: isAmazon,
+        current_rating: rating,
+        current_rating_count: ratingCount,
+        fetched_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
     }
   }
 
