@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const REDIRECT_URI =
   "https://mstibdszibcheodvnprm.supabase.co/functions/v1/gmail-oauth-callback";
-const APP_RETURN = "https://arbiproseller.com/tools/email-center";
+const APP_RETURN = "https://inventorysprint.com/tools/email-center";
 
 function html(message: string, ok: boolean) {
   return `<!doctype html><meta charset="utf-8"><title>Gmail Connection</title>

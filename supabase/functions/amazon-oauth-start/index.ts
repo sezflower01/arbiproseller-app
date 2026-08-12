@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
     const origin: string =
       typeof body.origin === "string" && body.origin.startsWith("http")
         ? body.origin
-        : "https://arbiproseller.com";
+        : "https://inventorysprint.com";
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,

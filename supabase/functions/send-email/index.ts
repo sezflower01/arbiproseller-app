@@ -86,21 +86,21 @@ const handler = async (req: Request): Promise<Response> => {
     let html: string;
 
     if (emailType === "order-confirmation") {
-      subject = "Thank You for Your ArbiProSeller Purchase";
+      subject = "Thank You for Your InventorySprint Purchase";
       html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6D28D9; margin-bottom: 24px;">Thank You for Your Purchase!</h1>
           <p>Hello ${name},</p>
-          <p>We've received your payment of $${(orderDetails?.amount || 299) / 100} for ArbiProSeller.</p>
+          <p>We've received your payment of $${(orderDetails?.amount || 299) / 100} for InventorySprint.</p>
           <p>Your order is confirmed and your license key will be sent to this email address within 24 hours.</p>
           <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0;">
             <h2 style="color: #5B21B6; margin-top: 0;">Order Summary:</h2>
-            <p><strong>Product:</strong> ArbiProSeller Lifetime License</p>
+            <p><strong>Product:</strong> InventorySprint Lifetime License</p>
             <p><strong>Amount Paid:</strong> $${(orderDetails?.amount || 299) / 100}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
           <p>If you don't receive your license key within 24 hours, please check your spam folder or contact our support team.</p>
-          <p>Thank you for choosing ArbiProSeller!</p>
+          <p>Thank you for choosing InventorySprint!</p>
           <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
             This is an automated message, please do not reply directly to this email.
           </p>
@@ -111,24 +111,24 @@ const handler = async (req: Request): Promise<Response> => {
         throw new Error("License key is required for license-key email type");
       }
       
-      subject = "Your ArbiProSeller License Key";
+      subject = "Your InventorySprint License Key";
       html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6D28D9; margin-bottom: 24px;">Your License Key is Ready!</h1>
           <p>Hello ${name},</p>
-          <p>Thank you for purchasing ArbiProSeller. Your license key is now ready:</p>
+          <p>Thank you for purchasing InventorySprint. Your license key is now ready:</p>
           <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0; text-align: center;">
             <p style="font-family: monospace; font-size: 18px; font-weight: bold; color: #5B21B6; word-break: break-all;">${licenseKey}</p>
           </div>
           <h2 style="color: #5B21B6; margin-top: 32px;">How to Use Your License Key:</h2>
           <ol>
-            <li>Download the ArbiProSeller software from <a href="https://arbiproseller.com/download" style="color: #6D28D9;">our download page</a></li>
+            <li>Download the InventorySprint software from <a href="https://inventorysprint.com/download" style="color: #6D28D9;">our download page</a></li>
             <li>Install the application on your computer</li>
             <li>Launch the application and enter your license key when prompted</li>
             <li>Enjoy unlimited access to all features!</li>
           </ol>
           <p>If you encounter any issues with your license key, please contact our support team.</p>
-          <p>Thank you for choosing ArbiProSeller!</p>
+          <p>Thank you for choosing InventorySprint!</p>
           <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
             This is an automated message, please do not reply directly to this email.
           </p>
@@ -162,7 +162,7 @@ const handler = async (req: Request): Promise<Response> => {
           <h1 style="color: #6D28D9; margin-bottom: 24px;">Thanks for contacting us!</h1>
           <p>Hi ${name},</p>
           <p>Thank you for reaching out! We'll get back to you as soon as possible.</p>
-          <p>– The ArbiProSeller Team</p>
+          <p>– The InventorySprint Team</p>
           <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
             This is an automated message, please do not reply directly to this email.
           </p>

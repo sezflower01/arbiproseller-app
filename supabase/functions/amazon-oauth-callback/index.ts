@@ -82,7 +82,7 @@ serve(async (req: Request) => {
     const validatedOrigin: string =
       stateRow.origin && /^https?:\/\//.test(stateRow.origin)
         ? stateRow.origin
-        : "https://arbiproseller.com";
+        : "https://inventorysprint.com";
 
     // Single-use: burn the nonce now so a concurrent replay can't succeed even
     // if Amazon's response is slow.

@@ -69,7 +69,7 @@ serve(async (req) => {
     doc.setFontSize(24);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(37, 99, 235); // blue-600
-    doc.text("ArbiProSeller", margin, y);
+    doc.text("InventorySprint", margin, y);
 
     doc.setFontSize(28);
     doc.setTextColor(0, 0, 0);
@@ -112,7 +112,7 @@ serve(async (req) => {
     doc.setTextColor(40, 40, 40);
 
     const fromLines = [
-      "ArbiProSeller",
+      "InventorySprint",
       "support@inventorysprint.com",
     ];
     let fromY = y;

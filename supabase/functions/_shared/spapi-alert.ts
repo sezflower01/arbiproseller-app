@@ -155,7 +155,7 @@ export async function raiseSpapiAlert(opts: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "ArbiProSeller Alerts <onboarding@resend.dev>",
+        from: "InventorySprint Alerts <onboarding@resend.dev>",
         to: [ADMIN_EMAIL],
         subject,
         html,
@@ -228,7 +228,7 @@ export async function resolveSpapiAlerts(opts: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "ArbiProSeller Alerts <onboarding@resend.dev>",
+        from: "InventorySprint Alerts <onboarding@resend.dev>",
         to: [ADMIN_EMAIL],
         subject: `✅ SP-API connection recovered`,
         html: `

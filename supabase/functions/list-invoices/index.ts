@@ -125,7 +125,7 @@ serve(async (req) => {
           invoice_number: invoiceNumber,
           period_start: periodStartStr,
           period_end: periodEnd.toISOString().split("T")[0],
-          product_name: "ArbiProSeller",
+          product_name: "InventorySprint",
           amount: 0,
           currency: "USD",
           status: "paid",
