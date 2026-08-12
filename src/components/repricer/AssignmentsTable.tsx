@@ -7905,7 +7905,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                               oscillation cooldown by live timestamp, oscillation guard by reason-text
                               fallback (older rows without the timestamp populated), and the routine
                               between-moves cooldown. A manual Lock always takes precedence. */}
-                          <TableCell className="text-right">
+                          <TableCell className="text-right pr-4">
                             {(() => {
                               const reasonText = String(item.last_recommendation_reason || "").toLowerCase();
                               const oscillationTimestampActive = !!(item.oscillation_cooldown_until && new Date(item.oscillation_cooldown_until) > new Date());
