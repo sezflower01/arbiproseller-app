@@ -105,9 +105,25 @@
     iframe.style.height = `${panelState.collapsed ? SIZE.collapsedHeight : Math.min(SIZE.height, window.innerHeight - 32)}px`;
   }
 
+  const isExtensionContextValid = () => {
+    try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; }
+  };
+
+  let domObserver = null;
+  let contextInvalidated = false;
+  function handleContextInvalidated() {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    try { domObserver?.disconnect(); } catch {}
+    domObserver = null;
+    unmountPanel();
+    hideLauncher();
+  }
+
   let iframe = null;
   function mountPanel() {
     if (iframe) return iframe;
+    if (!isExtensionContextValid()) { handleContextInvalidated(); return null; }
     iframe = document.createElement("iframe");
     iframe.id = "arbipro-create-panel-frame";
     iframe.src = chrome.runtime.getURL("panel.html");
@@ -123,6 +139,7 @@
   let launcher = null;
   function ensureLauncher() {
     if (launcher) return launcher;
+    if (!isExtensionContextValid()) { handleContextInvalidated(); return null; }
     launcher = document.createElement("button");
     launcher.id = "arbipro-create-launcher";
     launcher.type = "button";
@@ -255,6 +272,7 @@
 
   let lastSent = null;
   function pushCurrentAsin(force = false) {
+    if (!isExtensionContextValid()) { handleContextInvalidated(); return; }
     const asin = detectAsin();
     const marketplace = detectMarketplace();
     const key = `${asin}|${marketplace}`;
@@ -273,7 +291,8 @@
     await loadState();
     // Capture supplier referrer at first paint — must run before any pushState.
     captureSourcingFromReferrer();
-    new MutationObserver(() => pushCurrentAsin()).observe(document.documentElement, { childList: true, subtree: true });
+    domObserver = new MutationObserver(() => pushCurrentAsin());
+    domObserver.observe(document.documentElement, { childList: true, subtree: true });
     if (panelState.hidden) ensureLauncher();
     pushCurrentAsin(true);
   })();
