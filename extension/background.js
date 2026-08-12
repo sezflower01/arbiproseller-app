@@ -180,6 +180,31 @@ async function invoke(fn, body) {
 }
 
 // PostgREST GET with auto-refresh on 401.
+// Cloudflare-in-front-of-Supabase transient error codes — worth a retry,
+// unlike a real 4xx/5xx from PostgREST itself.
+const RETRYABLE_STATUS = new Set([522, 523, 524]);
+async function fetchWithRetry(url, options, maxAttempts = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 async function restGet(path) {
   let s = await ensureFreshSession();
   const url = `${CFG.SUPABASE_URL}/rest/v1/${path}`;
@@ -187,11 +212,11 @@ async function restGet(path) {
     apikey: CFG.SUPABASE_ANON_KEY,
     Authorization: `Bearer ${s.access_token}`,
   };
-  let res = await fetch(url, { headers });
+  let res = await fetchWithRetry(url, { headers });
   if (res.status === 401) {
     s = await refreshToken();
     headers.Authorization = `Bearer ${s.access_token}`;
-    res = await fetch(url, { headers });
+    res = await fetchWithRetry(url, { headers });
   }
   const text = await res.text();
   let data; try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
@@ -209,11 +234,11 @@ async function restUpsert(table, row, onConflict) {
     "Content-Type": "application/json",
     Prefer: "return=representation,resolution=merge-duplicates",
   };
-  let res = await fetch(url, { method: "POST", headers, body: JSON.stringify(row) });
+  let res = await fetchWithRetry(url, { method: "POST", headers, body: JSON.stringify(row) });
   if (res.status === 401) {
     s = await refreshToken();
     headers.Authorization = `Bearer ${s.access_token}`;
-    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(row) });
+    res = await fetchWithRetry(url, { method: "POST", headers, body: JSON.stringify(row) });
   }
   const text = await res.text();
   let data; try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
@@ -231,11 +256,11 @@ async function restInsert(table, row) {
     "Content-Type": "application/json",
     Prefer: "return=representation",
   };
-  let res = await fetch(url, { method: "POST", headers, body: JSON.stringify(row) });
+  let res = await fetchWithRetry(url, { method: "POST", headers, body: JSON.stringify(row) });
   if (res.status === 401) {
     s = await refreshToken();
     headers.Authorization = `Bearer ${s.access_token}`;
-    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(row) });
+    res = await fetchWithRetry(url, { method: "POST", headers, body: JSON.stringify(row) });
   }
   const text = await res.text();
   let data; try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
