@@ -583,10 +583,13 @@ Deno.serve(async (req) => {
     });
     cronRunId = typeof runId === "number" ? runId : null;
 
-    // Optional throttle.
+    // Optional throttle. should_throttle_now() returns text ('ok' | 'throttle'
+    // | 'skip'), not a boolean -- a prior `=== true` check here never matched
+    // and silently never throttled anything. Compare against the actual
+    // string values instead (same pattern as prewarm-profit-loss-all).
     try {
-      const { data: throttled } = await supabase.rpc("should_throttle_now");
-      if (throttled === true) {
+      const { data: throttleState } = await supabase.rpc("should_throttle_now");
+      if (throttleState === "skip" || throttleState === "throttle") {
         if (cronRunId) {
           await supabase.rpc("record_cron_run_finish", {
             p_id: cronRunId,
@@ -594,7 +597,7 @@ Deno.serve(async (req) => {
           });
         }
         return new Response(
-          JSON.stringify({ ok: false, reason: "throttled" }),
+          JSON.stringify({ ok: false, reason: "throttled", throttled: throttleState }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           },
