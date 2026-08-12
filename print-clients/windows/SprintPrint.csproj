@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SprintPrint</AssemblyName>
-    <RootNamespace>ArbiProSeller.PrintClient</RootNamespace>
+    <RootNamespace>SprintPrint</RootNamespace>
 
     <!-- Self-contained single-file .exe publishing -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -21,8 +21,8 @@
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0</InformationalVersion>
     <Product>SprintPrint</Product>
-    <Company>ArbiProSeller</Company>
-    <Description>Local HTTP bridge that prints thermal labels (ZPL) from arbiproseller.com</Description>
+    <Company>InventorySprint</Company>
+    <Description>Local HTTP bridge that prints thermal labels (ZPL) from inventorysprint.com</Description>
   </PropertyGroup>
 
   <PropertyGroup>

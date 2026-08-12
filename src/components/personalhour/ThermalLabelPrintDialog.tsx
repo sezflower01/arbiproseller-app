@@ -629,7 +629,7 @@ export const ThermalLabelPrintDialog = ({ open, onOpenChange, labels }: ThermalL
                     </Button>
                     <Button type="button" size="sm" variant="outline" asChild>
                       <a
-                        href="https://github.com/arbiproseller/print-client#quick-start-end-user"
+                        href="https://github.com/sezflower01/arbiproseller-app/blob/main/print-clients/windows/README.md#quick-start-end-user"
                         target="_blank"
                         rel="noopener noreferrer"
                       >

@@ -13,7 +13,7 @@ echo.
 echo === Publishing self-contained Windows print client ===
 echo.
 
-dotnet publish ArbiProSeller.PrintClient.csproj ^
+dotnet publish SprintPrint.csproj ^
   -c Release ^
   -r win-x64 ^
   --self-contained true ^
