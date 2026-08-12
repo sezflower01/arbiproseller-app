@@ -4909,7 +4909,10 @@ Deno.serve(async (req) => {
     let feeCache: { fba_fee_fixed: number | null; referral_rate: number | null } | null = null;
     let inventoryAvailable: number | null = null;
     let inventoryReserved = 0;
-    
+    let inventoryInbound = 0;
+    let inventoryFnsku: string | null = null;
+    let inventorySource: string | null = null;
+
     // Build inventory query - prefer SKU+ASIN, fall back to ASIN-only
     const buildInventoryQuery = (fields: string) => {
       let query = supabase
@@ -4947,9 +4950,9 @@ Deno.serve(async (req) => {
     }
 
     if (targetCurrentPrice === undefined || targetCurrentPrice === null) {
-      const { data: inventoryItemRaw, error: invError } = await buildInventoryQuery('price, my_price, cost, fees_json, sku, available, reserved');
+      const { data: inventoryItemRaw, error: invError } = await buildInventoryQuery('price, my_price, cost, fees_json, sku, available, reserved, inbound, fnsku, source');
       const inventoryItem = inventoryItemRaw as any;
-      
+
       if (invError) {
         console.warn(`[repricer-ai-evaluate] Inventory query error for ${targetAsin}/${targetSku}:`, invError);
       }
@@ -5003,7 +5006,10 @@ Deno.serve(async (req) => {
 
       inventoryAvailable = inventoryItem?.available ?? inventoryAvailable;
       inventoryReserved = inventoryItem?.reserved ?? inventoryReserved;
-      
+      inventoryInbound = inventoryItem?.inbound ?? inventoryInbound;
+      inventoryFnsku = inventoryItem?.fnsku ?? inventoryFnsku;
+      inventorySource = inventoryItem?.source ?? inventorySource;
+
       // Manual override (set above) wins — only fall back to inventory.cost if no override
       if ((!unitCost || unitCost <= 0) && inventoryItem?.cost && inventoryItem.cost > 0) {
         unitCost = inventoryItem.cost;
@@ -5015,15 +5021,18 @@ Deno.serve(async (req) => {
       }
     } else {
       // Still fetch cost even if price is provided
-      const { data: inventoryItemRaw, error: invError } = await buildInventoryQuery('cost, fees_json, sku, available, reserved');
+      const { data: inventoryItemRaw, error: invError } = await buildInventoryQuery('cost, fees_json, sku, available, reserved, inbound, fnsku, source');
       const inventoryItem = inventoryItemRaw as any;
-      
+
       if (invError) {
         console.warn(`[repricer-ai-evaluate] Inventory query error for ${targetAsin}/${targetSku}:`, invError);
       }
-      
+
       inventoryAvailable = inventoryItem?.available ?? inventoryAvailable;
       inventoryReserved = inventoryItem?.reserved ?? inventoryReserved;
+      inventoryInbound = inventoryItem?.inbound ?? inventoryInbound;
+      inventoryFnsku = inventoryItem?.fnsku ?? inventoryFnsku;
+      inventorySource = inventoryItem?.source ?? inventorySource;
 
       // Manual override (set above) wins — only fall back to inventory.cost if no override
       if ((!unitCost || unitCost <= 0) && inventoryItem?.cost && inventoryItem.cost > 0) {
@@ -5948,8 +5957,16 @@ Deno.serve(async (req) => {
 
     // ── GROUND TRUTH FULFILLMENT TYPE ──
     // assignment.fulfillment_type can be stale (channel reclassified, hybrid listings,
-    // or wrong at onboarding). The live SP-API snapshot is the source of truth: find
-    // OUR offer (is_self / matching seller_id) and read its actual is_fba flag.
+    // or wrong at onboarding) — it's written once at assignment creation and never
+    // refreshed afterward. Resolve it in three tiers, most trustworthy first:
+    //   1. Live SP-API snapshot: find OUR offer (is_self / matching seller_id) and
+    //      read its actual is_fba flag.
+    //   2. Inventory hard evidence (FNSKU / FBA reserved+inbound qty / sync source)
+    //      — the same evidence-based classifier AssignmentsTable.tsx uses for
+    //      display. Used when tier 1 can't find our own offer in this cycle's
+    //      snapshot (e.g. a stale fallback snapshot from a non-SP-API source that
+    //      never tags any offer as "self").
+    //   3. The stored assignment.fulfillment_type column, only as a last resort.
     let liveOwnFulfillment: 'FBA' | 'FBM' | null = null;
     try {
       const _ownSellerId = sellerAuth?.seller_id;
@@ -5966,15 +5983,54 @@ Deno.serve(async (req) => {
           else if (f === 'FBM' || f === 'MFN') liveOwnFulfillment = 'FBM';
         }
       }
-      const assignmentFulfillment = (assignment?.fulfillment_type as 'FBA' | 'FBM' | undefined) ?? null;
-      if (liveOwnFulfillment && assignmentFulfillment && liveOwnFulfillment !== assignmentFulfillment) {
-        console.warn(`[FULFILLMENT_GROUND_TRUTH] asin=${targetAsin} assignment=${assignmentFulfillment} but live=${liveOwnFulfillment} — using LIVE (snapshot truth)`);
-      }
     } catch (e) {
-      console.warn(`[FULFILLMENT_GROUND_TRUTH] derivation failed for ${targetAsin}:`, e);
+      console.warn(`[FULFILLMENT_GROUND_TRUTH] live derivation failed for ${targetAsin}:`, e);
     }
+
+    // Tier 2: same hard-evidence rules as AssignmentsTable.tsx's fulfillment_type
+    // classifier (FNSKU presence / FBA reserved+inbound qty / sync source), kept
+    // in sync intentionally — this is the fallback for when tier 1 has no data.
+    let evidenceOwnFulfillment: 'FBA' | 'FBM' | null = null;
+    try {
+      const src = (inventorySource || '').toLowerCase();
+      const hasFnsku = !!(inventoryFnsku && String(inventoryFnsku).trim().length > 0);
+      const reservedOrInbound = (Number(inventoryReserved) || 0) + (Number(inventoryInbound) || 0);
+      const srcSaysFba = src === 'amazon_sync' || (src.includes('fba') && !src.includes('fbm'));
+      const srcSaysFbm = src === 'amazon_sync_fbm' || (src.includes('fbm') && !src.includes('fba'));
+      const hardFba = hasFnsku || reservedOrInbound > 0 || srcSaysFba;
+      const hardFbm = srcSaysFbm && !hasFnsku && reservedOrInbound === 0;
+      if (hardFba) evidenceOwnFulfillment = 'FBA';
+      else if (hardFbm) evidenceOwnFulfillment = 'FBM';
+    } catch (e) {
+      console.warn(`[FULFILLMENT_GROUND_TRUTH] evidence derivation failed for ${targetAsin}:`, e);
+    }
+
+    const assignmentFulfillment = (assignment?.fulfillment_type as 'FBA' | 'FBM' | undefined) ?? null;
     const effectiveOwnFulfillment: 'FBA' | 'FBM' | null =
-      liveOwnFulfillment ?? ((assignment?.fulfillment_type as 'FBA' | 'FBM') ?? null);
+      liveOwnFulfillment ?? evidenceOwnFulfillment ?? assignmentFulfillment;
+    const groundTruthSource = liveOwnFulfillment ? 'live_sp_api' : evidenceOwnFulfillment ? 'inventory_evidence' : 'stored_assignment';
+
+    // Self-heal: whenever a trustworthy tier (live or evidence) disagrees with the
+    // stored column, persist the correction so it stops drifting stale forever —
+    // previously this only logged a warning and re-derived the same fix every cycle.
+    if (
+      effectiveOwnFulfillment &&
+      groundTruthSource !== 'stored_assignment' &&
+      assignmentFulfillment &&
+      effectiveOwnFulfillment !== assignmentFulfillment &&
+      assignment?.id
+    ) {
+      console.warn(`[FULFILLMENT_GROUND_TRUTH] asin=${targetAsin} assignment=${assignmentFulfillment} but ${groundTruthSource}=${effectiveOwnFulfillment} — correcting stored value`);
+      try {
+        await supabase
+          .from('repricer_assignments')
+          .update({ fulfillment_type: effectiveOwnFulfillment })
+          .eq('id', assignment.id);
+        assignment.fulfillment_type = effectiveOwnFulfillment;
+      } catch (e) {
+        console.warn(`[FULFILLMENT_GROUND_TRUTH] failed to persist correction for ${targetAsin}:`, e);
+      }
+    }
 
     // Build pricing context
     const context: PricingContext = {
