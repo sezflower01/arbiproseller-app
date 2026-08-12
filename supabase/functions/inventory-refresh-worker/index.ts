@@ -70,6 +70,20 @@ Deno.serve(async (req) => {
 
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
+  // DB throttle guard — this job fires every minute; back off instead of
+  // piling onto an already-loaded database.
+  try {
+    const { data: throttleState } = await supa.rpc('should_throttle_now');
+    if (throttleState === 'skip' || throttleState === 'throttle') {
+      console.log(`[inventory-refresh-worker] DB_THROTTLE — skipping run (${throttleState})`);
+      return new Response(JSON.stringify({ message: 'Throttled — DB under load', throttled: throttleState }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (e) {
+    console.warn('[inventory-refresh-worker] should_throttle_now check failed (non-fatal):', (e as Error).message);
+  }
+
   const { withCronLock } = await import('../_shared/cron-lock.ts');
   const outcome = await withCronLock(supa as any, 'inventory-refresh-worker-1m', 110, async () => {
     const { data: claimed, error: claimErr } = await supa.rpc('dequeue_inventory_refresh', { p_limit: batchSize });

@@ -348,6 +348,20 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
+  // DB throttle guard — this job fires every minute; back off instead of
+  // piling onto an already-loaded database.
+  try {
+    const { data: throttleState } = await supabase.rpc('should_throttle_now');
+    if (throttleState === 'skip' || throttleState === 'throttle') {
+      console.log(`[validation-worker] DB_THROTTLE — skipping run (${throttleState})`);
+      return new Response(JSON.stringify({ message: 'Throttled — DB under load', throttled: throttleState }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (e) {
+    console.warn('[validation-worker] should_throttle_now check failed (non-fatal):', (e as Error).message);
+  }
+
   const { withCronLock } = await import('../_shared/cron-lock.ts');
   const outcome = await withCronLock(supabase as any, 'listing-validation-worker-1m', 110, async () => {
     const { data: due, error } = await supabase

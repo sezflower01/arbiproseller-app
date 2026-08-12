@@ -34,6 +34,21 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const sb = createClient(supabaseUrl, serviceKey);
 
+  // DB throttle guard — this job fires every minute; back off instead of
+  // piling onto an already-loaded database (same pattern as
+  // prewarm-profit-loss-all / learn-intl-fee-multipliers).
+  try {
+    const { data: throttleState } = await sb.rpc("should_throttle_now");
+    if (throttleState === "skip" || throttleState === "throttle") {
+      console.log(`[auto-turbo] DB_THROTTLE — skipping run (${throttleState})`);
+      return new Response(JSON.stringify({ message: "Throttled — DB under load", throttled: throttleState }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  } catch (e) {
+    console.warn("[auto-turbo] should_throttle_now check failed (non-fatal):", (e as Error).message);
+  }
+
   try {
     // === IDLE GUARD: Check if any unacted BB alerts exist before doing per-user work ===
     const { count: globalAlertCount } = await sb

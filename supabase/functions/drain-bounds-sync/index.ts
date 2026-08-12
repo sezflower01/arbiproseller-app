@@ -27,6 +27,20 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // DB throttle guard — this job fires every minute; back off instead of
+    // piling onto an already-loaded database.
+    try {
+      const { data: throttleState } = await supabase.rpc('should_throttle_now');
+      if (throttleState === 'skip' || throttleState === 'throttle') {
+        console.log(`[drain-bounds-sync] DB_THROTTLE — skipping run (${throttleState})`);
+        return new Response(JSON.stringify({ message: 'Throttled — DB under load', throttled: throttleState }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } catch (e) {
+      console.warn('[drain-bounds-sync] should_throttle_now check failed (non-fatal):', (e as Error).message);
+    }
+
     // Recover stuck 'processing' rows (older than 3 minutes) back to pending
     const stuckThreshold = new Date(Date.now() - 3 * 60_000).toISOString();
     await supabase

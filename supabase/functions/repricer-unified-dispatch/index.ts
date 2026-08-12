@@ -124,6 +124,21 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // DB throttle guard — this dispatcher runs on 2 shards every 3 minutes,
+    // each doing a per-user multi-query loop; back off instead of piling
+    // onto an already-loaded database.
+    try {
+      const { data: throttleState } = await supabase.rpc('should_throttle_now');
+      if (throttleState === 'skip' || throttleState === 'throttle') {
+        console.log(`[unified-dispatch] DB_THROTTLE — skipping run (${throttleState})`);
+        return new Response(JSON.stringify({ message: 'Throttled — DB under load', throttled: throttleState }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } catch (e) {
+      console.warn('[unified-dispatch] should_throttle_now check failed (non-fatal):', (e as Error).message);
+    }
+
     // ── PARALLEL DISPATCH: Determine worker shard from request body ──
     let workerShard = 'A';
     try {
