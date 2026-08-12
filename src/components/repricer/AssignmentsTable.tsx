@@ -7127,15 +7127,15 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                         </TooltipProvider>
                       </TableHead>
                       )}
-                      <TableHead className="w-8">Save</TableHead>
-                      <TableHead className="w-14 px-1">Img</TableHead>
-                      <TableHead className="min-w-[180px]">
-                        <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("title")}>
+                      <TableHead className="w-8 text-center">Save</TableHead>
+                      <TableHead className="w-14 px-1 text-center">Img</TableHead>
+                      <TableHead className="min-w-[180px] text-center">
+                        <button className="flex items-center justify-center w-full hover:text-foreground" onClick={() => toggleSort("title")}>
                           Title / ASIN<SortIcon column="title" />
                         </button>
                       </TableHead>
-                      <TableHead className="min-w-[80px]">
-                        <button className="flex items-center hover:text-foreground" onClick={() => toggleSort("sku")}>
+                      <TableHead className="min-w-[80px] text-center">
+                        <button className="flex items-center justify-center w-full hover:text-foreground" onClick={() => toggleSort("sku")}>
                           SKU<SortIcon column="sku" />
                         </button>
                       </TableHead>
@@ -7144,16 +7144,16 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           Qty<SortIcon column="available" />
                         </button>
                       </TableHead>
-                      <TableHead className="text-right min-w-[50px] px-1">
-                        <button className="flex items-center justify-end hover:text-foreground ml-auto" onClick={() => toggleSort("cost")}>
+                      <TableHead className="text-center min-w-[50px] px-1">
+                        <button className="flex items-center justify-center hover:text-foreground mx-auto" onClick={() => toggleSort("cost")}>
                           Cost<SortIcon column="cost" />
                         </button>
                       </TableHead>
-                      <TableHead className="text-right min-w-[55px] px-1">
+                      <TableHead className="text-center min-w-[55px] px-1">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <button className="flex items-center justify-end hover:text-foreground ml-auto cursor-help" onClick={() => toggleSort("min_price")}>
+                              <button className="flex items-center justify-center hover:text-foreground mx-auto cursor-help" onClick={() => toggleSort("min_price")}>
                                 Min<SortIcon column="min_price" />
                               </button>
                             </TooltipTrigger>
@@ -7164,7 +7164,7 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                         </TooltipProvider>
                       </TableHead>
                       {/* Min ROI% column header removed — duplicate of ROI at Min under Min Price */}
-                      <TableHead className="text-right min-w-[55px] px-1">
+                      <TableHead className="text-center min-w-[55px] px-1">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -7176,12 +7176,12 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           </Tooltip>
                         </TooltipProvider>
                       </TableHead>
-                      <TableHead className="text-right min-w-[70px] px-1">
-                        <button className="flex items-center justify-end hover:text-foreground ml-auto" onClick={() => toggleSort("price")}>
+                      <TableHead className="text-center min-w-[70px] px-1">
+                        <button className="flex items-center justify-center hover:text-foreground mx-auto" onClick={() => toggleSort("price")}>
                           Price<SortIcon column="price" />
                         </button>
                       </TableHead>
-                      <TableHead className="text-right min-w-[60px] px-1">
+                      <TableHead className="text-center min-w-[60px] px-1">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -7193,14 +7193,14 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
                           </Tooltip>
                         </TooltipProvider>
                       </TableHead>
-                      <TableHead className="min-w-[100px] px-1">Rule</TableHead>
-                      <TableHead className="text-right min-w-[60px] px-1">Low</TableHead>
-                      <TableHead className="text-right min-w-[60px] px-1">
-                        <button className="flex items-center justify-end hover:text-foreground ml-auto" onClick={() => toggleSort("buybox_price")}>
+                      <TableHead className="min-w-[100px] px-1 text-center">Rule</TableHead>
+                      <TableHead className="text-center min-w-[60px] px-1">Lowest</TableHead>
+                      <TableHead className="text-center min-w-[60px] px-1">
+                        <button className="flex items-center justify-center hover:text-foreground mx-auto" onClick={() => toggleSort("buybox_price")}>
                           BB<SortIcon column="buybox_price" />
                         </button>
                       </TableHead>
-                      <TableHead className="text-center min-w-[35px] px-1">Ofr</TableHead>
+                      <TableHead className="text-center min-w-[35px] px-1">Offers</TableHead>
                       {/* Today / 7d / 30d columns hidden — data still fetched & used by Replenish calc */}
                       {/* Replenish column hidden — available in Inventory page */}
                     </TableRow>
