@@ -25,7 +25,7 @@ export const BUSINESS_MODES: BusinessModeConfig[] = [
     label: "OA Seller",
     shortLabel: "OA",
     tagline: "Online Arbitrage — mixed SKUs, fast turnover",
-    description: "Optimized for mixed inventory, identical-box strategies, and placement-fee avoidance. This is the default Inventory S.P.R.I.N.T. workflow.",
+    description: "Optimized for mixed inventory, identical-box strategies, and placement-fee avoidance. This is the default InventorySprint workflow.",
     bullets: [
       "Mixed ASINs & low quantities",
       "Identical-box / SPD strategy",

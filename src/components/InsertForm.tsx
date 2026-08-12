@@ -84,7 +84,7 @@ const InsertForm = () => {
               <CardContent className="p-4">
                 <img 
                   src="/uploads/feab416c-eeba-4ac0-a628-36a52142fe5c.png" 
-                  alt="Inventory S.P.R.I.N.T. Insert Form Interface"
+                  alt="InventorySprint Insert Form Interface"
                   className="w-full h-auto rounded"
                 />
               </CardContent>

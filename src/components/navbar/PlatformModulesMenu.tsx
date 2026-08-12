@@ -304,7 +304,7 @@ export default function PlatformModulesMenu({ isAdmin }: PlatformModulesMenuProp
         <div className="mb-3 flex items-center justify-between gap-3 px-2 py-1.5">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary/80">
-              Inventory S.P.R.I.N.T. Platform
+              InventorySprint Platform
             </p>
             <p className="text-sm text-white/80">Source → Buy → Ship → Reprice → Profit</p>
           </div>

@@ -63,7 +63,7 @@ const DraftFeature = () => {
               <CardContent className="p-4">
                 <img 
                   src="/uploads/9a09276d-7903-4434-a295-973afdb7ff96.png" 
-                  alt="Inventory S.P.R.I.N.T. Draft Feature Interface"
+                  alt="InventorySprint Draft Feature Interface"
                   className="w-full h-auto rounded"
                 />
               </CardContent>

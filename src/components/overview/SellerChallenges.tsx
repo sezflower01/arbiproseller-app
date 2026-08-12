@@ -103,14 +103,14 @@ const SellerChallenges = () => {
           <DialogTrigger asChild>
             <img 
               src="/uploads/b3c3f94a-b4f7-4139-9abb-f9d17223d3d7.png" 
-              alt="Inventory S.P.R.I.N.T. Dashboard Interface"
+              alt="InventorySprint Dashboard Interface"
               className="w-full max-w-4xl h-auto rounded-lg shadow-lg cursor-zoom-in border border-gray-200"
             />
           </DialogTrigger>
           <DialogContent className="max-w-[95vw] w-full p-0 bg-transparent border-none">
             <img 
               src="/uploads/b3c3f94a-b4f7-4139-9abb-f9d17223d3d7.png" 
-              alt="Inventory S.P.R.I.N.T. Dashboard Interface (Zoomed)"
+              alt="InventorySprint Dashboard Interface (Zoomed)"
               className="w-full h-auto max-h-[95vh] object-contain"
             />
           </DialogContent>

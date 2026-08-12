@@ -74,14 +74,14 @@ const SumButtonFeature = () => {
                   <DialogTrigger asChild>
                     <img 
                       src="/uploads/ef05091d-f15c-4ee4-92fc-73bdfdb7f8ce.png" 
-                      alt="Inventory S.P.R.I.N.T. Dashboard showing various features including Calculate Total Cost"
+                      alt="InventorySprint Dashboard showing various features including Calculate Total Cost"
                       className="w-full h-auto rounded cursor-zoom-in"
                     />
                   </DialogTrigger>
                   <DialogContent className="max-w-[90vw] w-full p-0 bg-transparent border-none">
                     <img 
                       src="/uploads/ef05091d-f15c-4ee4-92fc-73bdfdb7f8ce.png" 
-                      alt="Inventory S.P.R.I.N.T. Dashboard (Zoomed)"
+                      alt="InventorySprint Dashboard (Zoomed)"
                       className="w-full h-auto max-h-[95vh] object-contain"
                     />
                   </DialogContent>

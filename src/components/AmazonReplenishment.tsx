@@ -98,14 +98,14 @@ const AmazonReplenishment = () => {
                   <DialogTrigger asChild>
                     <img 
                       src="/uploads/6b6aab2d-f4ee-4bb0-b378-491ebe4dc6ab.png" 
-                      alt="Inventory S.P.R.I.N.T. Amazon Replenishment Process"
+                      alt="InventorySprint Amazon Replenishment Process"
                       className="w-full h-auto rounded cursor-zoom-in"
                     />
                   </DialogTrigger>
                   <DialogContent className="max-w-[90vw] w-full p-0 bg-transparent border-none">
                     <img 
                       src="/uploads/6b6aab2d-f4ee-4bb0-b378-491ebe4dc6ab.png" 
-                      alt="Inventory S.P.R.I.N.T. Amazon Replenishment Process (Zoomed)"
+                      alt="InventorySprint Amazon Replenishment Process (Zoomed)"
                       className="w-full h-auto max-h-[95vh] object-contain"
                     />
                   </DialogContent>

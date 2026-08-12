@@ -68,7 +68,7 @@ const DraftHistory = () => {
                     <div className="relative group cursor-pointer">
                       <img 
                         src="/uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
-                        alt="Inventory S.P.R.I.N.T. Draft Management Interface"
+                        alt="InventorySprint Draft Management Interface"
                         className="w-full h-auto rounded group-hover:opacity-80 transition-opacity"
                       />
                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -82,7 +82,7 @@ const DraftHistory = () => {
                     </DialogHeader>
                     <img 
                       src="/uploads/ed190ec2-4208-4f10-b3f9-691ee94884c3.png" 
-                      alt="Enlarged Inventory S.P.R.I.N.T. Draft Management Interface"
+                      alt="Enlarged InventorySprint Draft Management Interface"
                       className="w-full h-auto rounded"
                     />
                   </DialogContent>

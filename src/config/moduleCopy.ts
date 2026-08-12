@@ -400,7 +400,7 @@ export function getModuleCopy(label: string, fallbackDescription: string): Modul
   const slug = slugify(label);
   const copy = MODULE_COPY[slug] || {};
   return {
-    tagline: copy.tagline || `${label} — built into Inventory S.P.R.I.N.T.`,
+    tagline: copy.tagline || `${label} — built into InventorySprint`,
     hero: copy.hero || fallbackDescription,
     bullets: copy.bullets || [
       "Built into the same workspace as your repricer & sourcing tools",
