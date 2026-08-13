@@ -395,7 +395,7 @@ Deno.serve(async (req) => {
       while (true) {
         const { data: page } = await supabase
           .from("repricer_assignments")
-          .select("id, asin, sku, marketplace, rule_id, is_enabled, min_price_override, max_price_override, roi_at_min_percent, roi_at_max_percent, last_applied_price, manual_paused, last_disabled_by")
+          .select("id, asin, sku, marketplace, rule_id, is_enabled, min_price_override, max_price_override, roi_at_min_percent, roi_at_max_percent, last_applied_price, manual_paused, last_disabled_by, intl_listing_status, marketplace_sellable, is_listing_inactive_not_buyable")
           .eq("user_id", userId)
           .eq("marketplace", marketplace)
           .range(start, start + EA_PAGE - 1);
@@ -561,6 +561,17 @@ Deno.serve(async (req) => {
       const existingAssignment = existingByKey.get(key);
       const existingManualPause = existingAssignment?.manual_paused === true || ['user', 'manual', 'seller', 'owner'].includes(String(existingAssignment?.last_disabled_by || '').toLowerCase());
       if (existingAssignment && existingManualPause) { skip(asin, sku, "manually_paused"); continue; }
+      // A listing already confirmed dead in this marketplace (existence check
+      // or pricing-suppression detector) must stay untouched here — this
+      // backfill/upsert path runs BEFORE step 7b's re-enable guard and was
+      // silently overwriting is_enabled=true for known-dead intl listings
+      // via finalIsEnabled, which never checks these signals at all.
+      const existingConfirmedDead = !!existingAssignment && marketplace !== "US" && (
+        existingAssignment.intl_listing_status === "NOT_FOUND" ||
+        existingAssignment.marketplace_sellable === false ||
+        existingAssignment.is_listing_inactive_not_buyable === true
+      );
+      if (existingConfirmedDead) { skip(asin, sku, "confirmed_dead_listing"); continue; }
       const inboundQtyForActivation = Number((item as any)?.inbound) || 0;
       const needsExistingBackfill = existingAssignment && (
         !existingAssignment.rule_id ||
