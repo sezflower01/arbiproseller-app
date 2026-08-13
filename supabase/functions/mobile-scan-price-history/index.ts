@@ -466,7 +466,12 @@ async function fetchLiveSpApiOffers(
     const match = offers.find((o: any) => Math.abs(Number(o.landed) - Number(buyBoxPrice)) < 0.01);
     if (match) match.isBuyBox = true;
   }
-  return { offers, buyBoxPrice };
+  // SP-API's GetItemOffers hard-caps the Offers array at 20 with no
+  // pagination available on this endpoint -- but Summary.TotalOfferCount
+  // still reports the true seller count, so surface it rather than let the
+  // panel silently imply only 20 sellers exist.
+  const totalOfferCount = typeof summary?.TotalOfferCount === 'number' ? summary.TotalOfferCount : offers.length;
+  return { offers, buyBoxPrice, totalOfferCount };
 }
 
 Deno.serve(async (req) => {
@@ -547,7 +552,7 @@ Deno.serve(async (req) => {
       try {
         const spLive = await fetchLiveSpApiOffers(admin, KEEPA_KEY, domainId, userRes.user.id, asin, marketplace);
         if (spLive) {
-          liveOffers = { count: spLive.offers.length, list: spLive.offers };
+          liveOffers = { count: spLive.offers.length, list: spLive.offers, totalCount: spLive.totalOfferCount };
           liveBuyBoxPrice = spLive.buyBoxPrice;
         }
       } catch (e) {
@@ -580,7 +585,7 @@ Deno.serve(async (req) => {
       try {
         const spLive = await fetchLiveSpApiOffers(admin, KEEPA_KEY, domainId, userRes.user.id, asin, marketplace);
         if (spLive) {
-          spOffers = { count: spLive.offers.length, list: spLive.offers };
+          spOffers = { count: spLive.offers.length, list: spLive.offers, totalCount: spLive.totalOfferCount };
           spBuyBox = spLive.buyBoxPrice;
         }
       } catch (e) {
@@ -616,7 +621,10 @@ Deno.serve(async (req) => {
       asin,
       stats: String(requestedDays),
       history: '1',
-      offers: '20',
+      // Keepa's max for this param (20-100 in steps of 20) -- was hardcoded
+      // to the minimum, silently truncating the fallback-path offer list at
+      // 20 even when a listing has more real competing sellers.
+      offers: '100',
       buybox: '1',
     }).toString();
 
@@ -807,6 +815,7 @@ Deno.serve(async (req) => {
     const offersPayload = {
       count: finalOffers.length,
       list: finalOffers,
+      totalCount: spLive?.totalOfferCount ?? finalOffers.length,
     };
 
     // Cache — keyed by cacheDaysKey (the "Since Listed" sentinel for that

@@ -963,6 +963,14 @@
     } else if (rState === "no_offers") {
       countLabel = "0 offers";
     }
+    // Amazon's own offers API caps at 20 sellers with no pagination — when
+    // that ceiling is hit, Summary.TotalOfferCount (surfaced as totalCount)
+    // reports the real number so this doesn't silently look like "that's all
+    // of them" when there are actually more.
+    const totalCount = state.history?.offers?.totalCount;
+    if (offers.length && typeof totalCount === "number" && totalCount > offers.length) {
+      countLabel += ` of ${totalCount} (Amazon API limit)`;
+    }
     $("apx-sellers-count").textContent = countLabel;
 
     list.innerHTML = "";
