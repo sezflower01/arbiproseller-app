@@ -11,6 +11,31 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// PostgREST caps unpaginated selects at ~1000 rows by default, silently
+// dropping the rest. Page through with .range() so every row is actually
+// considered (same pattern as cleanup-dead-assignments/index.ts).
+async function fetchAllRows(
+  supabase: any,
+  table: string,
+  select: string,
+  applyFilters: (q: any) => any,
+  pageSize = 1000,
+): Promise<any[]> {
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await applyFilters(
+      supabase.from(table).select(select).order("id", { ascending: true }),
+    ).range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 const MARKETPLACE_ID_MAP: Record<string, string> = {
   US: "ATVPDKIKX0DER",
   CA: "A2EUQ1WTGCTBG2",
@@ -1175,12 +1200,12 @@ Deno.serve(async (req) => {
     }
 
     // 7b. Re-enable disabled assignments where inventory now has stock
-    const { data: disabledWithStock } = await supabase
-      .from("repricer_assignments")
-        .select("id, asin, sku, rule_id, min_price_override, max_price_override, manual_paused, last_disabled_by, intl_listing_status, marketplace_sellable, is_listing_inactive_not_buyable")
-      .eq("user_id", userId)
-      .eq("marketplace", marketplace)
-      .eq("is_enabled", false);
+    const disabledWithStock = await fetchAllRows(
+      supabase,
+      "repricer_assignments",
+      "id, asin, sku, rule_id, min_price_override, max_price_override, manual_paused, last_disabled_by, intl_listing_status, marketplace_sellable, is_listing_inactive_not_buyable",
+      (q) => q.eq("user_id", userId).eq("marketplace", marketplace).eq("is_enabled", false),
+    );
 
     let reenabledCount = 0;
     if (disabledWithStock && disabledWithStock.length > 0) {
@@ -1256,13 +1281,12 @@ Deno.serve(async (req) => {
     // 7c. Cleanup: disable assignments with inverted min/max or deleted listings
     let cleanedUpCount = 0;
     let deduplicatedCount = 0;
-    const { data: allEnabled } = await supabase
-      .from("repricer_assignments")
-      .select("id, asin, sku, min_price_override, max_price_override, created_at")
-      .eq("user_id", userId)
-      .eq("marketplace", marketplace)
-      .eq("is_enabled", true)
-      .order("created_at", { ascending: false });
+    const allEnabled = await fetchAllRows(
+      supabase,
+      "repricer_assignments",
+      "id, asin, sku, min_price_override, max_price_override, created_at",
+      (q) => q.eq("user_id", userId).eq("marketplace", marketplace).eq("is_enabled", true),
+    );
 
     if (allEnabled && allEnabled.length > 0) {
       const invStatusMap = new Map<string, { available: number; reserved: number; inbound: number; status: string | null }>();
