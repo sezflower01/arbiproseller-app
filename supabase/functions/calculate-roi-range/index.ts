@@ -437,13 +437,46 @@ Deno.serve(async (req) => {
 
     // Cache results in repricer_assignments
     if (sku) {
+      const updatePayload: Record<string, any> = {
+        roi_at_min_percent: result.roi_at_min,
+        roi_at_max_percent: result.roi_at_max,
+        roi_range_updated_at: new Date().toISOString(),
+      };
+
+      // A successful ROI computation at BOTH min and max proves `cost` (a
+      // required input param above) was real and usable -- the exact thing
+      // auto-assign-bulk's activation_needs_cost error complains is missing.
+      // Deliberately narrow to ONLY that one error type: this function takes
+      // min_price/max_price as caller-supplied inputs and never re-checks
+      // Amazon's live listing price itself, so a successful calc here says
+      // nothing about activation_price_unavailable (auto-assign-bulk couldn't
+      // fetch a live price) or activation_bounds_unavailable -- clearing
+      // those here would be a false "resolved" signal. activation_no_default_rule
+      // is unrelated to cost/ROI entirely and is never touched.
+      const CLEARED_BY_ROI_SUCCESS = new Set([
+        'activation_needs_cost',
+      ]);
+      if (result.roi_at_min != null && result.roi_at_max != null) {
+        const { data: existingRow } = await supabase
+          .from('repricer_assignments')
+          .select('last_error_type, status')
+          .eq('user_id', userId)
+          .eq('sku', sku)
+          .eq('marketplace', marketplace)
+          .maybeSingle();
+        if (existingRow?.last_error_type && CLEARED_BY_ROI_SUCCESS.has(existingRow.last_error_type)) {
+          updatePayload.last_error_type = null;
+          updatePayload.last_error_message = null;
+          updatePayload.consecutive_failures = 0;
+          if (existingRow.status === 'needs_attention') {
+            updatePayload.status = 'active';
+          }
+        }
+      }
+
       const { error: updateError } = await supabase
         .from('repricer_assignments')
-        .update({
-          roi_at_min_percent: result.roi_at_min,
-          roi_at_max_percent: result.roi_at_max,
-          roi_range_updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('user_id', userId)
         .eq('sku', sku)
         .eq('marketplace', marketplace);
