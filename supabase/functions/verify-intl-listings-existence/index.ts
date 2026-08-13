@@ -221,6 +221,13 @@ async function markNotFound(
   sku: string,
   reason: string,
 ) {
+  // Also surface this in the Pricing Suppressions dashboard (is_pricing_suppression)
+  // so a dead listing caught by the existence check is visible there too, not
+  // just silently stopped in repricer_assignments. Reuses the reason/data this
+  // check already has in hand rather than firing a second live Listings API
+  // call per row — check-pricing-suppression-item's own issues[]-based check
+  // still runs on its normal cadence and will enrich this with real
+  // categories/severity/enforcement data once it does.
   await admin
     .from("repricer_assignments")
     .update({
@@ -233,6 +240,11 @@ async function markNotFound(
       last_disabled_by: null,
       last_disabled_reason: `Auto: SP-API ${marketplace} reports listing deleted/not-in-catalog (${reason})`.slice(0, 500),
       last_disabled_at: new Date().toISOString(),
+      is_pricing_suppression: true,
+      is_listing_inactive_not_buyable: true,
+      pricing_suppression_detected_at: new Date().toISOString(),
+      pricing_suppression_raw_code: "LISTING_NOT_BUYABLE",
+      pricing_suppression_raw_message: `Auto-detected via listing-existence check: SP-API ${marketplace} reports listing deleted/not-in-catalog (${reason})`.slice(0, 500),
     })
     .eq("user_id", userId)
     .eq("marketplace", marketplace)
