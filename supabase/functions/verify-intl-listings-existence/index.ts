@@ -100,8 +100,14 @@ function classifyStatuses(statusField: any): string[] {
   return arr.map((s) => String(s || "").toUpperCase()).filter(Boolean);
 }
 
+// Requires BUYABLE/ACTIVE specifically, NOT DISCOVERABLE alone. Verified
+// with real data (Aug 2026): DISCOVERABLE-without-BUYABLE listings in this
+// account's remote-fulfillment marketplaces overwhelmingly show zero real
+// sales going forward from whenever they lost BUYABLE, vs. a live control
+// group of BUYABLE-status listings that continue selling normally in the
+// same window. DISCOVERABLE alone is not a reliable "still sellable" signal.
 function summaryLooksAlive(statuses: string[]): boolean {
-  return statuses.some((s) => s === "BUYABLE" || s === "ACTIVE" || s === "DISCOVERABLE");
+  return statuses.some((s) => s === "BUYABLE" || s === "ACTIVE");
 }
 
 function issuesIndicateDeleted(issues: any[]): boolean {
@@ -395,6 +401,7 @@ Deno.serve(async (req) => {
             .select("id, asin, sku")
             .eq("user_id", userId)
             .eq("marketplace", marketplace)
+            .eq("sellability_review_hold", false)
             .or("intl_listing_status.is.null,intl_listing_status.neq.NOT_FOUND")
             .order("id", { ascending: true })
             .limit(batchLimit);
@@ -424,6 +431,7 @@ Deno.serve(async (req) => {
         .from("repricer_assignments")
         .select("user_id, marketplace, asin, sku, marketplace_checked_at")
         .neq("marketplace", "US")
+        .eq("sellability_review_hold", false)
         .or("intl_listing_status.is.null,intl_listing_status.neq.NOT_FOUND")
         .or(`marketplace_checked_at.is.null,marketplace_checked_at.lt.${staleCutoff}`)
         .order("marketplace_checked_at", { ascending: true, nullsFirst: true })
@@ -478,7 +486,7 @@ Deno.serve(async (req) => {
       sample_errors: sampleErrors,
       elapsed_ms: elapsedMs,
       criteria: {
-        exists: "Listings API 200 + status in [BUYABLE,ACTIVE,DISCOVERABLE] AND Catalog Items API confirms ASIN present in marketplace",
+        exists: "Listings API 200 + status in [BUYABLE,ACTIVE] AND Catalog Items API confirms ASIN present in marketplace",
         not_found: "Listings API 404, OR 200 with no summary for requested marketplaceId",
         suppressed: "Listings API 200 with dead status (INACTIVE/INCOMPLETE/empty) OR issue code 13013/LISTING_SUPPRESSED",
         catalog_missing: "Listings API says BUYABLE but Catalog Items API returns 404 / no summary for this marketplace — product detail page removed (e.g. Funko ASIN delisted on Amazon.ca)",

@@ -174,6 +174,23 @@ export interface SuppressionAssignmentRow {
   pricing_suppression_categories: string[] | null;
   pricing_suppression_enforcement_actions: string[] | null;
   pricing_suppression_severity: string | null;
+  is_listing_inactive_not_buyable: boolean | null;
+  listing_inactive_detected_at: string | null;
+}
+
+// A listing summary can report DISCOVERABLE (shows in search/browse) without
+// BUYABLE or ACTIVE (can actually be purchased) -- e.g. Amazon's "Fix Price
+// Alert" deactivation, which sets remote-fulfillment inventory to 0 in that
+// marketplace without generating an issues[] entry classifyIssues() would
+// catch. Distinct from is_pricing_suppression: that field is specifically
+// for the issues[]-based INVALID_PRICE+ERROR+LISTING_SUPPRESSED signal, and
+// the two can occur independently (a listing can have a real pricing issue
+// AND still show BUYABLE, or be not-buyable with no issue reported at all).
+function summaryLooksBuyable(summary: any): boolean {
+  const raw = summary?.status;
+  const statuses: string[] = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+    .map((s: any) => String(s || '').toUpperCase());
+  return statuses.some((s) => s === 'BUYABLE' || s === 'ACTIVE');
 }
 
 // Checks ONE assignment against Amazon and applies detect / two-strike-clear
@@ -218,6 +235,36 @@ export async function checkAndUpdateSuppressionForItem(params: {
         listing_issue_unknown_categories: unknownFlagged ? unknownCategories : null,
       };
 
+      // Independent of the issues[]-based pricing check above: a listing can
+      // report DISCOVERABLE without BUYABLE/ACTIVE (Amazon's "Fix Price
+      // Alert" deactivation is the known case) with no corresponding issues[]
+      // entry at all, so classifyIssues() alone never catches it. Detected
+      // and cleared the same single-strike way as is_pricing_suppression.
+      const matchedSummary = summaries.find((s: any) => s?.marketplaceId === marketplaceId);
+      const wasNotBuyable = a.is_listing_inactive_not_buyable === true;
+      const isNotBuyable = !!matchedSummary && !summaryLooksBuyable(matchedSummary);
+      const rawStatuses: string[] = (Array.isArray(matchedSummary?.status)
+        ? matchedSummary.status
+        : matchedSummary?.status ? [matchedSummary.status] : []
+      ).map((s: any) => String(s || '').toUpperCase());
+      const notBuyablePatch: any = isNotBuyable
+        ? {
+            is_listing_inactive_not_buyable: true,
+            listing_inactive_statuses: rawStatuses,
+            listing_inactive_detected_at: wasNotBuyable && a.listing_inactive_detected_at
+              ? a.listing_inactive_detected_at
+              : new Date().toISOString(),
+            listing_inactive_cleared_at: null,
+            listing_inactive_last_checked_at: new Date().toISOString(),
+          }
+        : wasNotBuyable
+          ? {
+              is_listing_inactive_not_buyable: false,
+              listing_inactive_cleared_at: new Date().toISOString(),
+              listing_inactive_last_checked_at: new Date().toISOString(),
+            }
+          : { listing_inactive_last_checked_at: new Date().toISOString() };
+
       if (pricingIssue) {
         const cats: string[] = pricingIssue.categories || [];
         const actions: string[] = (pricingIssue.enforcements?.actions || []).map((x: any) => x?.action).filter(Boolean);
@@ -227,6 +274,7 @@ export async function checkAndUpdateSuppressionForItem(params: {
           : new Date().toISOString();
         await supabase.from('repricer_assignments').update({
           ...unknownPatch,
+          ...notBuyablePatch,
           is_pricing_suppression: true,
           pricing_suppression_raw_code: String(pricingIssue.code || ''),
           pricing_suppression_raw_message: String(pricingIssue.message || ''),
@@ -267,6 +315,7 @@ export async function checkAndUpdateSuppressionForItem(params: {
         });
         await supabase.from('repricer_assignments').update({
           ...unknownPatch,
+          ...notBuyablePatch,
           is_pricing_suppression: false,
           pricing_suppression_raw_code: null,
           pricing_suppression_raw_message: null,
@@ -282,9 +331,10 @@ export async function checkAndUpdateSuppressionForItem(params: {
       } else {
         await supabase.from('repricer_assignments').update({
           ...unknownPatch,
+          ...notBuyablePatch,
           pricing_suppression_last_checked_at: new Date().toISOString(),
         }).eq('id', a.id);
-        action_taken = 'clean';
+        action_taken = isNotBuyable && !wasNotBuyable ? 'detected_not_buyable' : (wasNotBuyable && !isNotBuyable ? 'cleared_not_buyable' : 'clean');
       }
     }
   } catch (e: any) {

@@ -1166,7 +1166,7 @@ Deno.serve(async (req) => {
     // 7b. Re-enable disabled assignments where inventory now has stock
     const { data: disabledWithStock } = await supabase
       .from("repricer_assignments")
-        .select("id, asin, sku, rule_id, min_price_override, max_price_override, manual_paused, last_disabled_by")
+        .select("id, asin, sku, rule_id, min_price_override, max_price_override, manual_paused, last_disabled_by, intl_listing_status, marketplace_sellable, is_listing_inactive_not_buyable")
       .eq("user_id", userId)
       .eq("marketplace", marketplace)
       .eq("is_enabled", false);
@@ -1190,12 +1190,25 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Stock alone doesn't mean the listing is sellable in this marketplace —
+      // a row already confirmed dead (NOT_FOUND / not marketplace_sellable /
+      // flagged not-buyable) must stay disabled even if the shared US stock
+      // pool has units, otherwise this reconciliation step silently reverses
+      // the listing-existence sweep every 6h cron cycle.
+      const confirmedDead = (da: any): boolean => {
+        if (marketplace === "US") return false;
+        if (da.intl_listing_status === "NOT_FOUND") return true;
+        if (da.marketplace_sellable === false) return true;
+        if (da.is_listing_inactive_not_buyable === true) return true;
+        return false;
+      };
+
       const toReenable: { id: string; reason: string }[] = [];
       for (const da of disabledWithStock) {
         const tag = stockMap.get(`${da.asin}:${da.sku}`);
         const configured = !!da.rule_id && da.min_price_override != null && da.max_price_override != null;
         const manuallyPaused = da.manual_paused === true || ['user', 'manual', 'seller', 'owner'].includes(String(da.last_disabled_by || '').toLowerCase());
-        if (tag && configured && !manuallyPaused) {
+        if (tag && configured && !manuallyPaused && !confirmedDead(da)) {
           toReenable.push({ id: da.id, reason: tag === 'inbound_only' ? 'inbound_detected' : 'stock_detected' });
         }
       }
