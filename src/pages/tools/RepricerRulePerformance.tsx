@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { BarChart3 } from "lucide-react";
 import RulePerformancePanel from "@/components/repricer/RulePerformancePanel";
+import MatchedCohortPanel from "@/components/repricer/MatchedCohortPanel";
 
 export default function RepricerRulePerformance() {
   const { user } = useAuth();
@@ -56,6 +57,7 @@ export default function RepricerRulePerformance() {
             </p>
           </div>
           <RulePerformancePanel />
+          <MatchedCohortPanel />
         </main>
         <Footer />
       </div>
