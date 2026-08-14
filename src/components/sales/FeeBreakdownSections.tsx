@@ -192,17 +192,27 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
     });
   }, []);
 
-  // Every FEC row can come from a different marketplace (US/CA/MX/BR/...),
-  // each in its own native currency, with no conversion applied anywhere
-  // upstream. Summing raw native values across marketplaces would silently
-  // add e.g. USD + CAD together as if they were the same currency — convert
-  // each row to the seller's home currency individually, via USD cross-rate
-  // (fx_rates is USD-anchored: 1 USD = rate units of quote currency).
+  // Two distinct sources feed this component, in two different currency
+  // states -- do not treat them the same way:
+  //  - financial_events_cache / fba_inbound_fees rows are already USD at
+  //    ingestion (convertToUSD in fetch-profit-loss/index.ts and
+  //    sync-inbound-fees/index.ts). Converting these by marketplace again
+  //    (the previous behavior of this function) was a second, erroneous
+  //    conversion that shrunk non-US amounts by the FX rate a second time.
+  //  - sales_orders.shipping_label_fee (used by the pending-FBM list below)
+  //    is genuinely still in the order's native marketplace currency --
+  //    sync-fbm-label-cost/index.ts writes SP-API's raw CurrencyAmount with
+  //    no conversion. This one still needs the native -> USD step.
+  //
+  // Both then apply the same USD -> seller's home display currency step.
+  const usdToHomeCurrency = useCallback((amountUsd: number): number => {
+    return homeCurrency === "USD" ? amountUsd : amountUsd * (fxRates[homeCurrency] || 1);
+  }, [fxRates, homeCurrency]);
   const toHomeCurrency = useCallback((amount: number, mkt: string | null | undefined): number => {
     const nativeCurrency = getCurrencyForMarketplace(String(mkt || homeMarketplace || "US").toUpperCase());
     const usd = nativeCurrency === "USD" ? amount : amount / (fxRates[nativeCurrency] || 1);
-    return homeCurrency === "USD" ? usd : usd * (fxRates[homeCurrency] || 1);
-  }, [fxRates, homeCurrency, homeMarketplace]);
+    return usdToHomeCurrency(usd);
+  }, [fxRates, homeMarketplace, usdToHomeCurrency]);
 
   const fetchRows = useCallback(async () => {
     if (!user?.id || !rangeStart || !rangeEnd) return;
@@ -308,10 +318,9 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
             fba_fees: null,
             fba_inbound_fees: fee.fee_amount,
           } as FecRow,
-          // fba_inbound_fees has no real per-row marketplace column (tagged
-          // homeMarketplace above as a placeholder), so this conversion is a
-          // no-op today — kept for consistency if that ever changes.
-          val: toHomeCurrency(Number(fee.fee_amount || 0), homeMarketplace),
+          // fee_amount is already USD (sync-inbound-fees converts at
+          // ingestion) -- only the USD -> home-display-currency step applies.
+          val: usdToHomeCurrency(Number(fee.fee_amount || 0)),
         })).filter((x) => x.val !== 0);
         const total = items.reduce((s, x) => s + x.val, 0);
         return { cat, items, total };
@@ -334,10 +343,9 @@ export default function FeeBreakdownSections({ rangeStart, rangeEnd, label, dark
           } else if (cat.sourceKey) {
             val = Number(r[cat.sourceKey] || 0);
           }
-          // Each row can be from a different marketplace/currency — convert
-          // individually before summing, rather than adding raw native
-          // values across currencies as if they were all the same.
-          return { row: r, val: toHomeCurrency(val, r.marketplace) };
+          // val is already USD (financial_events_cache is pre-converted at
+          // ingestion) -- only the USD -> home-display-currency step applies.
+          return { row: r, val: usdToHomeCurrency(val) };
         })
         .filter((x) => x.val !== 0);
       const total = items.reduce((s, x) => s + x.val, 0);

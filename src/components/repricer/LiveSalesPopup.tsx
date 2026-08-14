@@ -443,10 +443,14 @@ const LiveSalesPopup = ({ open, onOpenChange, marketplace: initialMarketplace = 
               if (!day || day < cutoffDate || day > todayStr) continue;
               // Net out Amazon promotional rebates (lightning deals, marketplace
               // coupons) so per-ASIN revenue matches Sellerboard net of promo.
-              const grossNative = Math.abs(Number(row.sales || 0));
-              const promoNative = Math.abs(Number(row.promotional_rebates || 0));
-              const netNative = Math.max(0, grossNative - promoNative);
-              const rev = toUsd(netNative, resolvedMp);
+              // financial_events_cache.sales/promotional_rebates are already
+              // USD (fetch-profit-loss converts at ingestion) -- do NOT run
+              // this through toUsd(), which is for native-currency
+              // sales_orders fields only. Doing so here divided non-US rows
+              // by the marketplace FX rate a second time.
+              const gross = Math.abs(Number(row.sales || 0));
+              const promo = Math.abs(Number(row.promotional_rebates || 0));
+              const rev = Math.max(0, gross - promo);
               const entry = fecDayMap.get(day) || { units: 0, revenue: 0 };
               entry.units += 1;
               entry.revenue += rev;

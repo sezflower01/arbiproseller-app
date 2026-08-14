@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Package, Download, Loader2, Calculator, RefreshCw, Search, Trash2, CalendarIcon, ReceiptText, AlertTriangle, WifiOff, Star } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Package, Download, Loader2, Calculator, RefreshCw, Search, Trash2, CalendarIcon, ReceiptText, AlertTriangle, WifiOff, Star, Info } from "lucide-react";
 import OrdersCostEditor from "@/components/profitloss/OrdersCostEditor";
 import CogsAdjustmentsPanel from "@/components/profitloss/CogsAdjustmentsPanel";
 // HybridPLPanel removed — Monthly P&L Breakdown is the single P&L display.
 import MonthlyPLBreakdown from "@/components/profitloss/MonthlyPLBreakdown";
 import SoFecParityBanner from "@/components/profitloss/SoFecParityBanner";
+import InternationalMarketplaceProfitPanel from "@/components/profitloss/InternationalMarketplaceProfitPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { useModuleAccess } from "@/hooks/useModuleAccess";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
@@ -2146,6 +2147,16 @@ export default function ProfitLoss() {
           );
         })()}
 
+        {/* International Marketplace Profit — always visible, independent of
+            the ALL/US/CA/MX/BR filter below. This is the third distinct P&L
+            concept: marketplace-attributable costs only, no US overhead. */}
+        <div className="mb-8">
+          <InternationalMarketplaceProfitPanel
+            year={selectedYear}
+            marketplaces={PL_ACTIVE_MARKETPLACES.filter((m) => m !== "US")}
+          />
+        </div>
+
         {/* Date Range Selector */}
         <Card className="mb-8">
           <CardHeader>
@@ -2192,6 +2203,21 @@ export default function ProfitLoss() {
                 </span>
               )}
             </div>
+            {/* Three distinct P&L concepts, per explicit request: US Full P&L
+                (complete business incl. overhead) vs. All Marketplaces
+                (consolidated company total, same overhead) vs. International
+                Marketplace Profit (its own always-visible panel below --
+                marketplace-attributable costs only, no US overhead). This
+                note exists so the ALL/US/CA/MX/BR buttons above aren't
+                mistaken for that third concept. */}
+            <p className="mb-4 text-xs text-muted-foreground flex items-start gap-1.5">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              {marketplaceFilter === "US"
+                ? "US Full P&L: your complete business profitability, including Operating Expenses (Salary, Rent, Subscriptions, etc.) and Inventory Damage & Loss."
+                : marketplaceFilter === "ALL"
+                ? "All Marketplaces: the full consolidated company P&L — Amazon activity and COGS across every marketplace, plus company-wide Operating Expenses and Inventory Damage & Loss. Those two are whole-business overhead, not specific to any international marketplace — see \"International Marketplace Profit\" below for a channel-only view."
+                : `${marketplaceFilter}-only view below shows Amazon activity and COGS for ${marketplaceFilter} exactly as filtered — Operating Expenses and Inventory Damage & Loss are account-wide figures with no per-marketplace data behind them, so they aren't meaningful to attribute here. For a clean marketplace-only profit number, see "International Marketplace Profit" below.`}
+            </p>
             <div className="flex flex-wrap items-end gap-4">
               {/* Period Type Dropdown */}
               <div className="space-y-2">
