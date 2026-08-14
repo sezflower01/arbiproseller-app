@@ -18,6 +18,7 @@ export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   MATCH_BUYBOX: "Match Buy Box",
   MATCH_LOWEST: "Match Lowest",
   SMART_MATCH: "Smart Match",
+  MOMENTUM_SMART: "Momentum Smart",
 };
 
 export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
@@ -112,6 +113,40 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
     skip_lower_when_bb_owner: true,
     stock_overlay_enabled: true,
     only_raise_when_buybox_owner: true,
+  },
+  // MOMENTUM_SMART: hybrid of MOMENTUM_BUILDER (margin-raising intelligence)
+  // and SMART_MATCH (fast, low-risk Buy Box recovery). Deliberately NOT a
+  // single interpolated cooldown — the whole point is asymmetric reaction:
+  //   - losing the Buy Box  -> react fast (cooldown_minutes_losing_bb),
+  //     matching Smart Match's urgency, because sales are at risk.
+  //   - holding the Buy Box -> react slow (cooldown_minutes_winning_bb),
+  //     because a profitable position doesn't need to be disturbed.
+  // cooldown_minutes is the fallback baseline for the "stable" tier (neither
+  // clearly winning nor losing) and for any code path not yet updated to
+  // read the losing/winning split.
+  // require_market_supported_raise gates enable_smart_raise: a raise only
+  // fires when the underlying competitor floor (lowest FBA), not just the
+  // Buy Box price, has also risen -- avoids raising into a price no
+  // competitor actually follows, which is how Momentum Builder alone can
+  // lose the Buy Box to its own decision rather than a competitor's.
+  MOMENTUM_SMART: {
+    undercut_amount: 0.00,
+    enable_smart_raise: true,
+    require_market_supported_raise: true,
+    raise_trigger_percent: 1.5,
+    max_raise_step_dollars: 0.75,
+    max_raise_step_percent: 4,
+    enable_monopoly_mode: true,
+    monopoly_mode_type: "conservative",
+    monopoly_cooldown_minutes: 60,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    cooldown_minutes_losing_bb: 8,
+    cooldown_minutes_winning_bb: 20,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+    ignore_fbm_unless_buybox_owner: true,
   },
 };
 

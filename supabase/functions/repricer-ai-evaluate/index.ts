@@ -686,6 +686,11 @@ interface PricingContext {
   maxStepAmount: number;
   maxStepPercent: number;
   cooldownMinutes: number;
+  // Asymmetric-cooldown override (MOMENTUM_SMART preset). null = not set,
+  // engine falls back to the single cooldownMinutes value above for every
+  // tier, matching every other preset's existing behavior unchanged.
+  cooldownMinutesLosingBb: number | null;
+  cooldownMinutesWinningBb: number | null;
   competitorDropCount: number;
   competitorDropBuckets: { recent0_10: number; recent10_30: number; recent30_60: number };
   recentDownwardMoves: { count: number; totalDelta: number }; // drop budget tracking
@@ -736,6 +741,19 @@ interface PricingContext {
       price2hr: number | null;
       price6hr: number | null;
     };
+    // Rolling window: historical lowest-FBA (competitor floor) prices at the
+    // SAME intervals as rollingBuyboxPrices, used only when
+    // requireMarketSupportedRaise is true (MOMENTUM_SMART) to confirm a BB
+    // price rise is backed by the actual competitor floor also rising, not
+    // just a Buy Box price move no competitor is really following.
+    rollingLowestFbaPrices: {
+      price30min: number | null;
+      price2hr: number | null;
+      price6hr: number | null;
+    };
+    // MOMENTUM_SMART gate: require the competitor floor to have risen
+    // alongside the Buy Box before enable_smart_raise fires.
+    requireMarketSupportedRaise: boolean;
     // Gap-close percentage (0-1, e.g. 0.15 = close 15% of gap per cycle)
     gapCloseRatio: number;
     // Lowest eligible competitor price (for raise-at-buybox detection)
@@ -924,7 +942,7 @@ function computeAiWinSalesBoosterPrice(
     lowestOverallPrice, offersCount, isOnlySeller, isBuyboxEligible, isBuyboxSuppressed,
     isBackordered, conditionIsUsed, minPrice, maxPrice, undercutAmount,
     maxStepAmount, maxStepPercent, competeWithAmazon, competeWithFba, competeWithFbm,
-    lastRepricedAt, cooldownMinutes, intelligence, smartRaise, stockGatedMaximize
+    lastRepricedAt, cooldownMinutes, cooldownMinutesLosingBb, cooldownMinutesWinningBb, intelligence, smartRaise, stockGatedMaximize
   } = context;
     const money = (amount: number | null | undefined) => formatMoney(amount, context.currencyCode || 'USD');
 
@@ -1119,18 +1137,25 @@ function computeAiWinSalesBoosterPrice(
   
   let adaptiveCooldownMinutes: number;
   let cooldownTier: string;
-  
+  // MOMENTUM_SMART asymmetric baseline: react fast while losing the Buy Box
+  // (defense), slow while holding it (no reason to disturb a profitable
+  // position). Only overrides the *baseline* each tier falls back to when
+  // recent competitor-drop activity is low (dropCount < 3) — the existing
+  // drop-count acceleration above still applies on top unchanged.
+  const losingBbBaseline = cooldownMinutesLosingBb ?? cooldownMinutes;
+  const winningBbBaseline = cooldownMinutesWinningBb ?? cooldownMinutes;
+
   if (isBuyboxSuppressed) {
-    adaptiveCooldownMinutes = dropCount >= 10 ? 0 : dropCount >= 6 ? 0.5 : dropCount >= 3 ? 1 : Math.min(cooldownMinutes, 3);
+    adaptiveCooldownMinutes = dropCount >= 10 ? 0 : dropCount >= 6 ? 0.5 : dropCount >= 3 ? 1 : Math.min(losingBbBaseline, 3);
     cooldownTier = 'suppressed_bb';
   } else if (isLosingBbClose) {
-    adaptiveCooldownMinutes = dropCount >= 10 ? 0 : dropCount >= 6 ? 0.5 : dropCount >= 3 ? 1 : Math.min(cooldownMinutes, 3);
+    adaptiveCooldownMinutes = dropCount >= 10 ? 0 : dropCount >= 6 ? 0.5 : dropCount >= 3 ? 1 : Math.min(losingBbBaseline, 3);
     cooldownTier = 'losing_bb_close';
   } else if (isLosingBuybox) {
-    adaptiveCooldownMinutes = dropCount >= 10 ? 1 : dropCount >= 6 ? 2 : dropCount >= 3 ? 3 : cooldownMinutes;
+    adaptiveCooldownMinutes = dropCount >= 10 ? 1 : dropCount >= 6 ? 2 : dropCount >= 3 ? 3 : losingBbBaseline;
     cooldownTier = 'losing_bb_far';
   } else if (isBbOwner) {
-    const rawAdaptive = dropCount >= 10 ? 1 : dropCount >= 6 ? 2 : dropCount >= 3 ? 3 : cooldownMinutes;
+    const rawAdaptive = dropCount >= 10 ? 1 : dropCount >= 6 ? 2 : dropCount >= 3 ? 3 : winningBbBaseline;
     adaptiveCooldownMinutes = Math.max(rawAdaptive, 1);
     cooldownTier = 'winning_bb';
   } else {
@@ -1309,17 +1334,44 @@ function computeAiWinSalesBoosterPrice(
     if (rolling.price2hr) referencePoints.push({ label: '2hr_ago', price: rolling.price2hr });
     if (rolling.price6hr) referencePoints.push({ label: '6hr_ago', price: rolling.price6hr });
 
+    // MOMENTUM_SMART gate: a Buy Box rise only counts as a real market move
+    // if the underlying competitor floor rose alongside it at that SAME
+    // reference point — otherwise this is Amazon's BB price drifting with
+    // nobody actually following, and raising into it is how Momentum
+    // Builder alone can lose the Buy Box to its own decision. No floor data
+    // for a reference point (e.g. previous_snapshot has none fetched) is
+    // treated as unsupported, not as a free pass.
+    const floorRollingByLabel: Record<string, number | null> = {
+      previous_snapshot: null,
+      '30min_ago': smartRaise.rollingLowestFbaPrices?.price30min ?? null,
+      '2hr_ago': smartRaise.rollingLowestFbaPrices?.price2hr ?? null,
+      '6hr_ago': smartRaise.rollingLowestFbaPrices?.price6hr ?? null,
+    };
+
     // Find the best (oldest) reference that shows a meaningful rise
     let bestRef: { label: string; price: number; increasePercent: number } | null = null;
     for (const ref of referencePoints) {
       if (ref.price > 0 && buyboxPrice > ref.price) {
         const pct = ((buyboxPrice - ref.price) / ref.price) * 100;
         if (pct >= smartRaise.triggerPercent) {
-          if (!bestRef || pct > bestRef.increasePercent) {
+          let marketSupported = true;
+          if (smartRaise.requireMarketSupportedRaise) {
+            const floorRef = floorRollingByLabel[ref.label] ?? null;
+            marketSupported = Boolean(
+              lowestFbaPrice && lowestFbaPrice > 0 && floorRef && floorRef > 0 && lowestFbaPrice > floorRef,
+            );
+            if (!marketSupported) {
+              console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate: ${ref.label} shows BB +${pct.toFixed(1)}% but competitor floor unsupported (floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
+            }
+          }
+          if (marketSupported && (!bestRef || pct > bestRef.increasePercent)) {
             bestRef = { ...ref, increasePercent: pct };
           }
         }
       }
+    }
+    if (bestRef && smartRaise.requireMarketSupportedRaise) {
+      guardsApplied.push('market_supported_raise_confirmed');
     }
 
     const eligibleRaiseAnchor = smartRaise.lowestEligibleCompetitorPrice;
@@ -3162,7 +3214,7 @@ function computeAiWinSalesBoosterPrice(
     const actualGap = currentPrice - buyboxPrice; // positive = we are above BB
     const gapSufficient = actualGap >= fbmCompetitiveGap || currentPrice <= buyboxPrice;
     
-    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH'];
+    const conservativeProfiles = ['PROFIT_EXTRACTOR', 'MOMENTUM_BUILDER', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH', 'MOMENTUM_SMART'];
     const aggressiveProfilesFbm = ['VELOCITY_DOMINATOR'];
     const isConservative = conservativeProfiles.includes(currentSmartProfile);
     const isAggressive = aggressiveProfilesFbm.includes(currentSmartProfile);
@@ -5440,13 +5492,19 @@ Deno.serve(async (req) => {
     const rollingBuyboxPrices: { price30min: number | null; price2hr: number | null; price6hr: number | null } = {
       price30min: null, price2hr: null, price6hr: null,
     };
-    
-    // Single query: get the oldest snapshot within each window bracket
+    // Same intervals, competitor-floor side — only consumed when
+    // requireMarketSupportedRaise is set (MOMENTUM_SMART); harmless/unused
+    // read otherwise.
+    const rollingLowestFbaPrices: { price30min: number | null; price2hr: number | null; price6hr: number | null } = {
+      price30min: null, price2hr: null, price6hr: null,
+    };
+
+    // Single query per interval, both series: get the oldest snapshot within each window bracket
     for (const interval of rollingIntervals) {
       const cutoff = new Date(now.getTime() - interval.offsetMs).toISOString();
       const { data: rollingSnap } = await supabase
         .from('repricer_competitor_snapshots')
-        .select('buybox_price')
+        .select('buybox_price, lowest_fba_price')
         .eq('user_id', userId)
         .eq('asin', targetAsin)
         .eq('marketplace', targetMarketplace)
@@ -5455,9 +5513,12 @@ Deno.serve(async (req) => {
         .order('fetched_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      
+
       if (rollingSnap?.buybox_price) {
         (rollingBuyboxPrices as any)[interval.key] = rollingSnap.buybox_price;
+      }
+      if (rollingSnap?.lowest_fba_price) {
+        (rollingLowestFbaPrices as any)[interval.key] = rollingSnap.lowest_fba_price;
       }
     }
     
@@ -6081,6 +6142,8 @@ Deno.serve(async (req) => {
       maxStepAmount: rule.max_step_amount || 0.50,
       maxStepPercent: rule.max_step_percent || 5,
       cooldownMinutes: rule.cooldown_minutes || 15,
+      cooldownMinutesLosingBb: rule.cooldown_minutes_losing_bb != null ? Number(rule.cooldown_minutes_losing_bb) : null,
+      cooldownMinutesWinningBb: rule.cooldown_minutes_winning_bb != null ? Number(rule.cooldown_minutes_winning_bb) : null,
       competitorDropCount,
       competitorDropBuckets,
       recentDownwardMoves,
@@ -6251,6 +6314,8 @@ Deno.serve(async (req) => {
           previousBuyboxPrice,
           isBuyboxOwner,
           rollingBuyboxPrices,
+          rollingLowestFbaPrices,
+          requireMarketSupportedRaise: rule.require_market_supported_raise === true,
           gapCloseRatio: effectiveGapCloseRatio,
           lowestEligibleCompetitorPrice: nextCompAbove,
           isEligibleLaneFbmOnly: useFbmLaneOnly,
@@ -6270,6 +6335,7 @@ Deno.serve(async (req) => {
               case 'MATCH_LOWEST': return 0;
               case 'SMART_MATCH': return 0;
               case 'VELOCITY_DOMINATOR': return 4;
+              case 'MOMENTUM_SMART': return 1.5;
               case 'MOMENTUM_BUILDER':
               default: return 2;
             }
@@ -6305,10 +6371,12 @@ Deno.serve(async (req) => {
       forceMode: (body as any).force_mode ?? null,
     };
 
-    // Inject state tracking into context for engine use
-    (context as any)._consecutiveFailedUndercuts = assignment.consecutive_failed_undercuts || 0;
-    (context as any)._lastPriceDirection = assignment.last_price_direction || null;
-    (context as any)._directionChangedAt = assignment.direction_changed_at || null;
+    // Inject state tracking into context for engine use. assignment is null
+    // on the ruleId-only (no assignmentId) call path -- default to "no prior
+    // state" rather than crash.
+    (context as any)._consecutiveFailedUndercuts = assignment?.consecutive_failed_undercuts || 0;
+    (context as any)._lastPriceDirection = assignment?.last_price_direction || null;
+    (context as any)._directionChangedAt = assignment?.direction_changed_at || null;
 
     // === POSITION PROOF — answers "am I the lowest?" definitively ===
     const userSellerId = sellerAuth?.seller_id;
@@ -7316,7 +7384,7 @@ Deno.serve(async (req) => {
         // FBM→FBM non-aggressive cap: never raise above the real FBM Buy Box
         const peIsFbmSeller = context.yourFulfillmentType === 'FBM';
         const peBbIsFbm = (buyboxSellerType as any) === 'FBM' || buyboxSellerType === null || (buyboxSellerType as any) === 'unknown';
-        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH'];
+        const peNonAggressiveProfiles = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH', 'MOMENTUM_SMART'];
         const peCurrentProfile = rule.smart_profile || 'CUSTOM';
         const peIsFbmFbmCapped = peIsFbmSeller && peBbIsFbm && peNonAggressiveProfiles.includes(peCurrentProfile) && peBbPrice && peBbPrice > 0;
         

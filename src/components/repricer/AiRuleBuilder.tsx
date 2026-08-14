@@ -31,11 +31,11 @@ import { toast } from "sonner";
 // section was removed. The recommended values are still saved for every rule
 // via the hardcoded fallbacks in RuleBuilder.tsx's save logic.
 
-export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'PROFIT_EXTRACTOR' | 'MATCH_BUYBOX' | 'MATCH_LOWEST' | 'SMART_MATCH';
+export type SmartProfile = 'VELOCITY_DOMINATOR' | 'MOMENTUM_BUILDER' | 'PROFIT_EXTRACTOR' | 'MATCH_BUYBOX' | 'MATCH_LOWEST' | 'SMART_MATCH' | 'MOMENTUM_SMART';
 
 // Profiles hidden by default (advanced/high-risk) — unlockable via toggle
 const ADVANCED_PROFILES: SmartProfile[] = ['VELOCITY_DOMINATOR'];
-const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH'];
+const DEFAULT_PROFILES: SmartProfile[] = ['MOMENTUM_BUILDER', 'PROFIT_EXTRACTOR', 'MATCH_BUYBOX', 'MATCH_LOWEST', 'SMART_MATCH', 'MOMENTUM_SMART'];
 
 // Behavior metrics per profile for the summary card
 const PROFILE_BEHAVIOR: Record<SmartProfile, { salesSpeed: number; marginProtection: number; raiseAggression: number; bbDefense: number; riskLevel: number; tags: string[] }> = {
@@ -45,6 +45,10 @@ const PROFILE_BEHAVIOR: Record<SmartProfile, { salesSpeed: number; marginProtect
   MATCH_BUYBOX: { salesSpeed: 3, marginProtection: 4, raiseAggression: 0, bbDefense: 3, riskLevel: 2, tags: ['Predictable pricing', 'No undercutting', 'Buy Box parity'] },
   MATCH_LOWEST: { salesSpeed: 4, marginProtection: 3, raiseAggression: 0, bbDefense: 3, riskLevel: 3, tags: ['Predictable pricing', 'No undercutting', 'Lowest-offer parity'] },
   SMART_MATCH: { salesSpeed: 4, marginProtection: 4, raiseAggression: 0, bbDefense: 4, riskLevel: 2, tags: ['Predictable pricing', 'No undercutting', 'Buy Box recapture'] },
+  // Fast defense (8min baseline) like Smart Match, opportunistic raise like
+  // Momentum Builder gated to only fire on market-confirmed moves — bbDefense
+  // and raiseAggression both sit a notch above Smart Match's pure-defense 4/0.
+  MOMENTUM_SMART: { salesSpeed: 4, marginProtection: 4, raiseAggression: 2, bbDefense: 5, riskLevel: 3, tags: ['Contested + occasionally uncontested', 'Hybrid strategy', 'Adaptive'] },
 };
 
 export const SMART_PROFILES: { value: SmartProfile; label: string; description: string; bestFor: string; salesStars: number; profitStars: number; icon: string; recommended?: boolean; advanced?: boolean; badge?: string; badgeColor?: string; microLabel?: string; keyDiff?: string; legacy?: boolean; safetyScore?: number; salesImpactLabel?: string; salesImpactDesc?: string; salesImpactLevel?: 'strong' | 'balanced' | 'lower' | 'clearance'; undercutNote?: string }[] = [
@@ -66,6 +70,13 @@ export const SMART_PROFILES: { value: SmartProfile; label: string; description: 
   // same margin tradeoff as Match Lowest) whenever it's recapturing. 3 reflects the
   // blended reality rather than only the best-case half of its behavior.
   { value: 'SMART_MATCH', label: 'Smart Match', description: 'Matches the Buy Box when you already have it, switches to matching the lowest FBA seller when you don’t — never undercuts either way.', bestFor: 'When you want the right anchor picked for you, without chasing a price war', salesStars: 4, profitStars: 3, icon: '🧭', safetyScore: 8, salesImpactLabel: 'Balanced Sales', salesImpactDesc: 'Recaptures the Buy Box when you lose it, holds position when you already have it', salesImpactLevel: 'balanced', microLabel: 'Match whichever price is right, automatically' },
+  // Hybrid: Smart Match's fast, asymmetric defense (react in ~8min while
+  // losing the Buy Box, ~20min while holding it — no reason to disturb a
+  // profitable position) plus Momentum Builder's opportunistic raise, but
+  // gated so a raise only fires when the competitor floor confirms the
+  // market actually moved, not just the Buy Box price drifting alone.
+  { value: 'MOMENTUM_SMART', label: 'Momentum Smart', description: 'Defends the Buy Box fast like Smart Match, raises price only when competitors confirm the move like Momentum Builder.', bestFor: 'Listings that swing between contested and uncontested — one rule for both', salesStars: 4, profitStars: 4, icon: '⚡', safetyScore: 8, salesImpactLabel: 'Strong Sales', salesImpactDesc: 'Fast Buy Box recovery when contested, cautious margin capture when the market gives room', salesImpactLevel: 'strong', microLabel: 'Defend aggressively, raise cautiously',
+    undercutNote: '$0.00 — never undercuts. Reacts in ~8 min while losing the Buy Box, ~20 min while holding it, and only raises price when the competitor floor rose too, not just the Buy Box price.' },
 ];
 
 // Profile key → UI label mapping (canonical source of truth)
@@ -76,6 +87,7 @@ export const PROFILE_KEY_TO_LABEL: Record<string, string> = {
   MATCH_BUYBOX: 'Match Buy Box',
   MATCH_LOWEST: 'Match Lowest',
   SMART_MATCH: 'Smart Match',
+  MOMENTUM_SMART: 'Momentum Smart',
 };
 
 // Profile preset configurations - these override specific settings
@@ -197,6 +209,35 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
     ignore_fbm_unless_buybox_owner: false,
     target_anchor: 'smart_recapture',
   },
+  // MOMENTUM_SMART: hybrid of MOMENTUM_BUILDER (raise intelligence) and
+  // SMART_MATCH (fast, low-risk recovery). Deliberately asymmetric, not a
+  // single interpolated cooldown — fast (8min baseline) while losing the
+  // Buy Box, slow (20min) while holding it. require_market_supported_raise
+  // gates the raise: only fires when the competitor floor, not just the Buy
+  // Box price, also rose. Kept in exact sync with the backend copy in
+  // repricer-ai-evaluate/_presets.ts (both written together, unlike the
+  // other presets here which have historically drifted from their backend
+  // counterparts — see that file's header comment).
+  MOMENTUM_SMART: {
+    undercut_amount: 0.00,
+    enable_smart_raise: true,
+    require_market_supported_raise: true,
+    raise_trigger_percent: 1.5,
+    max_raise_step_dollars: 0.75,
+    max_raise_step_percent: 4,
+    enable_monopoly_mode: true,
+    monopoly_mode_type: 'conservative',
+    monopoly_cooldown_minutes: 60,
+    use_ai_tuning: true,
+    cooldown_minutes: 10,
+    cooldown_minutes_losing_bb: 8,
+    cooldown_minutes_winning_bb: 20,
+    skip_lower_when_bb_owner: true,
+    stock_overlay_enabled: true,
+    only_raise_when_buybox_owner: true,
+    ignore_fbm_unless_buybox_owner: true,
+    target_anchor: 'smart_recapture',
+  },
 };
 
 export interface AiRuleSettings {
@@ -225,6 +266,12 @@ export interface AiRuleSettings {
   max_step_amount: number;
   max_step_percent: number;
   cooldown_minutes: number;
+  // MOMENTUM_SMART asymmetric cooldown — optional, only set by that preset.
+  // undefined/null means "use cooldown_minutes for every tier" (every other
+  // preset's existing behavior, unchanged).
+  cooldown_minutes_losing_bb?: number | null;
+  cooldown_minutes_winning_bb?: number | null;
+  require_market_supported_raise?: boolean;
   // AI tuning
   use_ai_tuning: boolean;
   // Profit Guard settings
