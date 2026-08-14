@@ -1865,6 +1865,10 @@ Deno.serve(async (req) => {
         }
 
         if (submitSuccess) {
+          // Stamped on every raise regardless of preset -- only presets with
+          // post_raise_cooldown_hours set (MOMENTUM_SMART V2) actually read
+          // it back to gate further raises.
+          const wasRaise = myCurrentPriceCents != null && targetCents > myCurrentPriceCents;
           const successUpdate: Record<string, any> = {
             last_applied_price: targetCents / 100,
             last_applied_at: new Date().toISOString(),
@@ -1872,6 +1876,7 @@ Deno.serve(async (req) => {
             last_recommended_price: targetCents / 100,
             last_recommendation_reason: isAiWinSalesBooster ? targetReason : null,
             no_change_streak: 0, // Reset streak on successful price change
+            ...(wasRaise ? { last_raise_at: new Date().toISOString() } : {}),
           };
           // Clear restock flag on successful snap-back application
           if (restockReentryActive) {

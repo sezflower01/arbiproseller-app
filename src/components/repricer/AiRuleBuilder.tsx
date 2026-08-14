@@ -218,10 +218,15 @@ export const PROFILE_PRESETS: Record<SmartProfile, Partial<AiRuleSettings>> = {
   // repricer-ai-evaluate/_presets.ts (both written together, unlike the
   // other presets here which have historically drifted from their backend
   // counterparts — see that file's header comment).
+  // V2: tightened after real Rule Performance data (5/43 raises lost BB vs
+  // Momentum Builder's 0/175 over the same window) — see backend _presets.ts
+  // for the full writeup, kept in sync here deliberately.
   MOMENTUM_SMART: {
     undercut_amount: 0.00,
     enable_smart_raise: true,
     require_market_supported_raise: true,
+    min_floor_support_ratio: 0.5,
+    post_raise_cooldown_hours: 2,
     raise_trigger_percent: 1.5,
     max_raise_step_dollars: 0.75,
     max_raise_step_percent: 4,
@@ -272,6 +277,8 @@ export interface AiRuleSettings {
   cooldown_minutes_losing_bb?: number | null;
   cooldown_minutes_winning_bb?: number | null;
   require_market_supported_raise?: boolean;
+  min_floor_support_ratio?: number | null;
+  post_raise_cooldown_hours?: number | null;
   // AI tuning
   use_ai_tuning: boolean;
   // Profit Guard settings

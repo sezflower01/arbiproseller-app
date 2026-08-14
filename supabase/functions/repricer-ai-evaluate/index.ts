@@ -754,6 +754,16 @@ interface PricingContext {
     // MOMENTUM_SMART gate: require the competitor floor to have risen
     // alongside the Buy Box before enable_smart_raise fires.
     requireMarketSupportedRaise: boolean;
+    // V2: null = "floor rose at all" (original behavior). Set = floor's rise
+    // must be at least this fraction of the Buy Box's rise at the same
+    // reference point (e.g. 0.5 = floor must cover at least half the BB's
+    // move) -- filters out a BB price drift with no real competitor backing.
+    minFloorSupportRatio: number | null;
+    // V2: null = no cooldown (original behavior). Set = block another raise
+    // attempt on this assignment for this many hours after ANY raise,
+    // regardless of outcome -- read alongside lastRaiseAt below.
+    postRaiseCooldownHours: number | null;
+    lastRaiseAt: string | null;
     // Gap-close percentage (0-1, e.g. 0.15 = close 15% of gap per cycle)
     gapCloseRatio: number;
     // Lowest eligible competitor price (for raise-at-buybox detection)
@@ -1322,6 +1332,16 @@ function computeAiWinSalesBoosterPrice(
   } else if (smartRaise.enabled && currentPrice && buyboxPrice && hasLowerFbmCompetitor) {
     console.log(`[Smart Raise] BLOCKED: lower FBM competitor $${fbmMarketAnchorPrice?.toFixed(2)} exists below current $${currentPrice.toFixed(2)} — FBM competes with lowest FBM first`);
     guardsApplied.push('fbm_lower_competitor_blocks_raise');
+  } else if (
+    smartRaise.enabled && currentPrice && buyboxPrice
+    && smartRaise.postRaiseCooldownHours != null && smartRaise.lastRaiseAt
+    && (Date.now() - new Date(smartRaise.lastRaiseAt).getTime()) < smartRaise.postRaiseCooldownHours * 3600000
+  ) {
+    // V2: block stacking another raise on this assignment until there's been
+    // time to observe whether the last one actually held the Buy Box.
+    const remainingMin = Math.ceil((smartRaise.postRaiseCooldownHours * 3600000 - (Date.now() - new Date(smartRaise.lastRaiseAt).getTime())) / 60000);
+    console.log(`[Smart Raise] POST_RAISE_COOLDOWN: last raise ${smartRaise.lastRaiseAt}, ${remainingMin}min remaining of ${smartRaise.postRaiseCooldownHours}h cooldown — blocking further raises`);
+    guardsApplied.push('post_raise_cooldown_active');
   } else if (smartRaise.enabled && currentPrice && buyboxPrice) {
     // Build raise offset context for conditional match/undercut decisions
     console.log(`[Raise Offset] policy=${_raiseOffset.reason} offset=$${_raiseOffset.offset.toFixed(2)} (profile=${_raiseSmartProfile}, fulfillment=${context.yourFulfillmentType}, bbOwner=${context.smartRaise.isBuyboxOwner}, fbaCount=${intelligence.fbaCompetitorCount}, price=$${currentPrice.toFixed(2)})`);
@@ -1357,11 +1377,23 @@ function computeAiWinSalesBoosterPrice(
           let marketSupported = true;
           if (smartRaise.requireMarketSupportedRaise) {
             const floorRef = floorRollingByLabel[ref.label] ?? null;
-            marketSupported = Boolean(
-              lowestFbaPrice && lowestFbaPrice > 0 && floorRef && floorRef > 0 && lowestFbaPrice > floorRef,
-            );
-            if (!marketSupported) {
-              console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate: ${ref.label} shows BB +${pct.toFixed(1)}% but competitor floor unsupported (floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
+            const hasFloorData = Boolean(lowestFbaPrice && lowestFbaPrice > 0 && floorRef && floorRef > 0);
+            const floorIncrease = hasFloorData ? lowestFbaPrice! - floorRef! : 0;
+            const bbIncrease = buyboxPrice - ref.price;
+            if (smartRaise.minFloorSupportRatio != null) {
+              // V2: floor's rise must cover at least this fraction of the BB's
+              // rise -- "did the market move, or just the Buy Box price."
+              const requiredFloorIncrease = bbIncrease * smartRaise.minFloorSupportRatio;
+              marketSupported = hasFloorData && floorIncrease >= requiredFloorIncrease;
+              if (!marketSupported) {
+                console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate (v2 ratio=${smartRaise.minFloorSupportRatio}): ${ref.label} shows BB +$${bbIncrease.toFixed(2)} but floor only rose $${floorIncrease.toFixed(2)} (need >=$${requiredFloorIncrease.toFixed(2)}, floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
+              }
+            } else {
+              // V1 behavior: floor just needs to have risen at all.
+              marketSupported = hasFloorData && floorIncrease > 0;
+              if (!marketSupported) {
+                console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate: ${ref.label} shows BB +${pct.toFixed(1)}% but competitor floor unsupported (floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
+              }
             }
           }
           if (marketSupported && (!bestRef || pct > bestRef.increasePercent)) {
@@ -6316,6 +6348,9 @@ Deno.serve(async (req) => {
           rollingBuyboxPrices,
           rollingLowestFbaPrices,
           requireMarketSupportedRaise: rule.require_market_supported_raise === true,
+          minFloorSupportRatio: rule.min_floor_support_ratio != null ? Number(rule.min_floor_support_ratio) : null,
+          postRaiseCooldownHours: rule.post_raise_cooldown_hours != null ? Number(rule.post_raise_cooldown_hours) : null,
+          lastRaiseAt: assignment?.last_raise_at ?? null,
           gapCloseRatio: effectiveGapCloseRatio,
           lowestEligibleCompetitorPrice: nextCompAbove,
           isEligibleLaneFbmOnly: useFbmLaneOnly,

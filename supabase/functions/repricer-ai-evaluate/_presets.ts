@@ -129,10 +129,21 @@ export const PROFILE_PRESETS: Record<string, Record<string, any>> = {
   // Buy Box price, has also risen -- avoids raising into a price no
   // competitor actually follows, which is how Momentum Builder alone can
   // lose the Buy Box to its own decision rather than a competitor's.
+  // V2 (tightened after real Rule Performance data showed 5/43 raises,
+  // 11.6%, lost the Buy Box afterward vs Momentum Builder's 0/175 over the
+  // same window): the market-supported gate is no longer satisfied by "the
+  // floor rose at all" -- it now requires the floor's rise to be at least
+  // min_floor_support_ratio of the Buy Box's rise (was the market actually
+  // moving, or just the BB price alone), plus a post_raise_cooldown_hours
+  // block on stacking further raises before there's evidence the last one
+  // held. Losing/winning cooldown and monopoly mode are unchanged -- this
+  // only makes the raise DECISION more selective, not the defense speed.
   MOMENTUM_SMART: {
     undercut_amount: 0.00,
     enable_smart_raise: true,
     require_market_supported_raise: true,
+    min_floor_support_ratio: 0.5,
+    post_raise_cooldown_hours: 2,
     raise_trigger_percent: 1.5,
     max_raise_step_dollars: 0.75,
     max_raise_step_percent: 4,
