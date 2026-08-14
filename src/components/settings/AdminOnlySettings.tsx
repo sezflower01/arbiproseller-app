@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, Terminal, Mail, type LucideIcon } from "lucide-react";
+import { Radio, LayoutDashboard, Sun, ListChecks, Activity, Stethoscope, Shield, ShieldCheck, FilePlus, FileText, Receipt, AlertTriangle, Printer, Package, Globe, Search, LineChart, Target, ScanLine, RefreshCw, FlaskConical, Store, Link2, FolderTree, TrendingUp, Users, Plug, Database, HeartPulse, Brain, TestTubes, Sparkles, Clock, Server, Terminal, Mail, BarChart3, type LucideIcon } from "lucide-react";
 
 type StandaloneCard = {
   title: string;
@@ -324,6 +324,13 @@ const REPRICER_ADMIN_CARDS: StandaloneCard[] = [
     path: "/tools/repricer/rule-behavior",
     Icon: FlaskConical,
     accent: "from-violet-500/15 to-purple-500/5 border-violet-400/30 text-violet-300",
+  },
+  {
+    title: "Rule Performance",
+    desc: "Per-preset Buy Box %, units/revenue/profit-per-day, ROI, ASP, and raise-safety — built to monitor Momentum Smart against its siblings.",
+    path: "/tools/repricer/rule-performance",
+    Icon: BarChart3,
+    accent: "from-emerald-500/15 to-teal-500/5 border-emerald-400/30 text-emerald-300",
   },
   {
     title: "Checked ASINs",
