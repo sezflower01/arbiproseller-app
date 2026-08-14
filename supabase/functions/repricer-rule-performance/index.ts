@@ -318,8 +318,11 @@ Deno.serve(async (req) => {
           lost_bb_after_pct: raiseDenom > 0 ? Math.round((raiseStats.lostBbAfter / raiseDenom) * 1000) / 10 : null,
           no_snapshot_data: raiseStats.noSnapshotData,
           // "attempted" = decision cycles where the engine reached mode=SMART_RAISE
-          // (from repricer_ai_decisions), whether or not the price change was
-          // actually submitted. Always >= submitted.
+          // (from repricer_ai_decisions) -- NOT a superset of "submitted": a
+          // submitted raise can come from other code paths too (monopoly mode,
+          // BB-owner protection, etc.), so these two counts can diverge in
+          // either direction. "attempted" is specifically about the Smart Raise
+          // branch this preset's V2 gates (cooldown/floor-ratio) actually guard.
           attempted: raiseSafety.raiseAttempts,
           blocked_by_cooldown: raiseSafety.cooldownBlocks,
           rejected_floor_support: raiseSafety.floorRejects,
