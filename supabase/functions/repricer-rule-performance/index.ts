@@ -36,6 +36,25 @@ const PAGE_SIZE = 1000;
 const RAISE_LOOKBACK_HOURS = 3;
 const RAISE_LOOKAHEAD_HOURS = 12;
 
+// Momentum Smart V2 (tightened market-supported-raise ratio + post-raise
+// cooldown) went live at this deploy -- the git commit timestamp of
+// "Momentum Smart V2: tighten the raise gate, don't abandon the strategy"
+// (a10fb14), converted to UTC. There is no per-row historical flag that
+// distinguishes "was this specific decision/raise/sale evaluated under V1 or
+// V2 rules" -- smart_profile has said MOMENTUM_SMART the whole time, and the
+// preset's actual field values are re-applied fresh from _presets.ts on
+// every evaluation (see index.ts's "APPLY SMART PROFILE PRESETS" step),
+// never read back from what's stored on the rule row. A day-level cutover
+// against each row's own day/timestamp is the best available split, and is
+// exactly the same kind of approximation the existing
+// "orders attributed to CURRENT rule" methodology note already accepts.
+const MOMENTUM_SMART_V2_CUTOVER = '2026-08-14T02:34:20.000Z';
+
+function splitMomentumSmart(baseProfile: string, atIso: string): string {
+  if (baseProfile !== 'MOMENTUM_SMART') return baseProfile;
+  return atIso >= MOMENTUM_SMART_V2_CUTOVER ? 'MOMENTUM_SMART_V2' : 'MOMENTUM_SMART_V1';
+}
+
 async function fetchAllRows(
   supabase: any,
   table: string,
@@ -100,9 +119,19 @@ Deno.serve(async (req) => {
     };
     for (const a of assignments) {
       const profile = ruleToProfile.get(a.rule_id) || 'CUSTOM';
+      // skuToProfile feeds the raise->BB-loss check below, which is itself
+      // per-raise-timestamp-split -- keep the base "MOMENTUM_SMART" label
+      // here and let splitMomentumSmart(_, raise.created_at) do the split.
       skuToProfile.set(`${a.asin}::${a.sku}::${a.marketplace}`, profile);
       if (!a.is_enabled) continue;
-      const bucket = ensureBb(profile);
+      // last_buybox_status is a live snapshot, not a historical trend -- it
+      // always reflects whatever logic is deployed RIGHT NOW, which for any
+      // MOMENTUM_SMART assignment is V2 (the preset is re-applied fresh from
+      // _presets.ts on every evaluation, never read back from stored rule
+      // columns). There is no meaningful way to split "current BB status"
+      // into V1 vs V2, so it is reported entirely under V2.
+      const bbProfile = profile === 'MOMENTUM_SMART' ? 'MOMENTUM_SMART_V2' : profile;
+      const bucket = ensureBb(bbProfile);
       if (a.last_buybox_status === 'winning' || a.last_buybox_status === 'owned') bucket.winning++;
       else if (a.last_buybox_status === 'losing') bucket.losing++;
       else bucket.unknown++;
@@ -123,13 +152,14 @@ Deno.serve(async (req) => {
       return profileTotals.get(p)!;
     };
     for (const row of (salesAgg || [])) {
-      const t = ensureTotals(row.smart_profile || 'CUSTOM');
+      const day = String(row.order_day);
+      const profile = splitMomentumSmart(row.smart_profile || 'CUSTOM', `${day}T00:00:00.000Z`);
+      const t = ensureTotals(profile);
       const qty = Number(row.units) || 0;
       const revenue = Number(row.revenue) || 0;
       const cost = Number(row.cost) || 0;
       const fees = Number(row.fees) || 0;
       t.units += qty; t.revenue += revenue; t.cost += cost; t.fees += fees; t.orders += Number(row.order_count) || 0;
-      const day = String(row.order_day);
       if (!t.byDay.has(day)) t.byDay.set(day, { units: 0, revenue: 0, profit: 0 });
       const d = t.byDay.get(day)!;
       d.units += qty; d.revenue += revenue; d.profit += (revenue - cost - fees);
@@ -213,8 +243,9 @@ Deno.serve(async (req) => {
 
     for (const raise of raisesToCheck) {
       const key = `${raise.asin}::${raise.sku}::${raise.marketplace}`;
-      const profile = skuToProfile.get(key);
-      if (!profile) continue;
+      const baseProfile = skuToProfile.get(key);
+      if (!baseProfile) continue;
+      const profile = splitMomentumSmart(baseProfile, raise.created_at);
       const stats = ensureRaises(profile);
       stats.totalRaises++;
 
@@ -236,8 +267,31 @@ Deno.serve(async (req) => {
       if (wasWinning && !stillWinning) stats.lostBbAfter++;
     }
 
+    // 4b. Raise-safety events (raise attempts logged, cooldown blocks, floor
+    // rejections) from repricer_ai_decisions -- grouped server-side (same
+    // high-volume-table reasoning as the sales/raises RPCs above), day-split
+    // client-side so MOMENTUM_SMART can be broken into V1/V2 like everything else.
+    const { data: raiseSafetyAgg, error: raiseSafetyErr } = await supabase.rpc('repricer_rule_perf_raise_safety', {
+      p_user_id: userId, p_since: since,
+    });
+    if (raiseSafetyErr) throw raiseSafetyErr;
+    type RaiseSafetyTotals = { raiseAttempts: number; cooldownBlocks: number; floorRejects: number };
+    const profileRaiseSafety = new Map<string, RaiseSafetyTotals>();
+    const ensureRaiseSafety = (p: string) => {
+      if (!profileRaiseSafety.has(p)) profileRaiseSafety.set(p, { raiseAttempts: 0, cooldownBlocks: 0, floorRejects: 0 });
+      return profileRaiseSafety.get(p)!;
+    };
+    for (const row of (raiseSafetyAgg || [])) {
+      const day = String(row.decision_day);
+      const profile = splitMomentumSmart(row.smart_profile || 'CUSTOM', `${day}T00:00:00.000Z`);
+      const s = ensureRaiseSafety(profile);
+      s.raiseAttempts += Number(row.raise_attempts) || 0;
+      s.cooldownBlocks += Number(row.cooldown_blocks) || 0;
+      s.floorRejects += Number(row.floor_rejects) || 0;
+    }
+
     // 5. Assemble per-profile response
-    const allProfiles = new Set<string>([...profileBb.keys(), ...profileTotals.keys(), ...profileRaises.keys()]);
+    const allProfiles = new Set<string>([...profileBb.keys(), ...profileTotals.keys(), ...profileRaises.keys(), ...profileRaiseSafety.keys()]);
     const results = [...allProfiles].map((profile) => {
       const bb = profileBb.get(profile) || { winning: 0, losing: 0, unknown: 0 };
       const bbDenom = bb.winning + bb.losing;
@@ -245,6 +299,7 @@ Deno.serve(async (req) => {
       const profit = totals.revenue - totals.cost - totals.fees;
       const raiseStats = profileRaises.get(profile) || { totalRaises: 0, lostBbAfter: 0, noSnapshotData: 0 };
       const raiseDenom = raiseStats.totalRaises - raiseStats.noSnapshotData;
+      const raiseSafety = profileRaiseSafety.get(profile) || { raiseAttempts: 0, cooldownBlocks: 0, floorRejects: 0 };
       return {
         smart_profile: profile,
         buybox: { winning: bb.winning, losing: bb.losing, unknown: bb.unknown, win_rate_pct: bbDenom > 0 ? Math.round((bb.winning / bbDenom) * 1000) / 10 : null },
@@ -254,11 +309,20 @@ Deno.serve(async (req) => {
         roi_pct: totals.cost > 0 ? Math.round((profit / totals.cost) * 1000) / 10 : null,
         avg_selling_price: totals.units > 0 ? Math.round((totals.revenue / totals.units) * 100) / 100 : null,
         raises: {
+          // "submitted" = actually applied (repricer_price_actions, new_price > old_price).
+          // "total" is kept as an alias of submitted for older frontend callers.
+          submitted: raiseStats.totalRaises,
           total: raiseStats.totalRaises,
           checked: raiseDenom,
           lost_bb_after: raiseStats.lostBbAfter,
           lost_bb_after_pct: raiseDenom > 0 ? Math.round((raiseStats.lostBbAfter / raiseDenom) * 1000) / 10 : null,
           no_snapshot_data: raiseStats.noSnapshotData,
+          // "attempted" = decision cycles where the engine reached mode=SMART_RAISE
+          // (from repricer_ai_decisions), whether or not the price change was
+          // actually submitted. Always >= submitted.
+          attempted: raiseSafety.raiseAttempts,
+          blocked_by_cooldown: raiseSafety.cooldownBlocks,
+          rejected_floor_support: raiseSafety.floorRejects,
         },
         order_count: totals.orders,
         daily_breakdown: [...totals.byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, d]) => ({
@@ -273,7 +337,8 @@ Deno.serve(async (req) => {
       results,
       raises_checked: raisesToCheck.length,
       raises_check_capped_at: RAISE_CHECK_LIMIT,
-      methodology_note: 'Orders are attributed to whichever rule/preset the ASIN+SKU+marketplace assignment is CURRENTLY on (via a SQL join, unattributed orders are silently excluded by that join), not whichever preset was active at the time of each historical sale — a listing that recently switched presets will have some trailing sales misattributed to the new one. "Raises that lost BB" compares the Buy Box owner in the nearest competitor snapshot before vs. after each price raise (lookback 3h / lookahead 12h); raises with no snapshot in that window are excluded from the percentage, not counted as losses. Raise checking is capped at the most recent N raises for performance.',
+      momentum_smart_v2_cutover: MOMENTUM_SMART_V2_CUTOVER,
+      methodology_note: 'Orders are attributed to whichever rule/preset the ASIN+SKU+marketplace assignment is CURRENTLY on (via a SQL join, unattributed orders are silently excluded by that join), not whichever preset was active at the time of each historical sale — a listing that recently switched presets will have some trailing sales misattributed to the new one. "Raises that lost BB" compares the Buy Box owner in the nearest competitor snapshot before vs. after each price raise (lookback 3h / lookahead 12h); raises with no snapshot in that window are excluded from the percentage, not counted as losses. Raise checking is capped at the most recent N raises for performance. MOMENTUM_SMART is split into MOMENTUM_SMART_V1 (before the tightened floor-support-ratio + 2h post-raise cooldown gates went live) and MOMENTUM_SMART_V2 (after), split day-by-day against momentum_smart_v2_cutover — there is no per-row historical flag for this, since the preset\'s field values are re-applied fresh from the current deployed code on every evaluation rather than read back from the rule row, so this is the same kind of best-available approximation as the order-attribution caveat above, not an exact backtest. Buy Box win-rate is a live snapshot (not a trend), so it is reported entirely under V2 regardless of window.',
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e: any) {
     console.error('[repricer-rule-performance] error:', e?.message || e);

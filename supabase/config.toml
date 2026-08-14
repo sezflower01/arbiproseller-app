@@ -439,4 +439,3 @@ verify_jwt = false
 
 [functions.debug-load-snapshot]
 verify_jwt = false
-
