@@ -12,6 +12,10 @@ import {
   PROFILE_PRESETS,
   USER_CONTROLLED_FIELDS,
 } from './_presets.ts';
+import {
+  evaluatePostRaiseCooldown,
+  evaluateMarketSupportedRaise,
+} from './_v2gates.ts';
 import { scoreMarketVolatility, wasMoveProductive } from '../_shared/marketVolatility.ts';
 import { resolveMinRoiEnabled } from '../_shared/min-roi-enabled.ts';
 import { isInternalCaller } from '../_shared/require-internal.ts';
@@ -1040,6 +1044,12 @@ function computeAiWinSalesBoosterPrice(
     fbmMarketAnchorPrice && fbmMarketAnchorPrice > 0 &&
     fbmMarketAnchorPrice < currentPrice - 0.004
   );
+  // V2: block stacking another raise on this assignment until there's been
+  // time to observe whether the last one actually held the Buy Box.
+  const postRaiseCooldown = evaluatePostRaiseCooldown({
+    lastRaiseAt: smartRaise.lastRaiseAt,
+    postRaiseCooldownHours: smartRaise.postRaiseCooldownHours,
+  });
   // LOWEST_SELLER MODE: when our FBM listing has a lower same-fulfillment competitor,
   // hard-disable smart_raise (no eligible_gap_recovery_raise / no smart_raise / no
   // FBA fallback). The engine must always chase the lowest FBM seller using
@@ -1332,15 +1342,8 @@ function computeAiWinSalesBoosterPrice(
   } else if (smartRaise.enabled && currentPrice && buyboxPrice && hasLowerFbmCompetitor) {
     console.log(`[Smart Raise] BLOCKED: lower FBM competitor $${fbmMarketAnchorPrice?.toFixed(2)} exists below current $${currentPrice.toFixed(2)} — FBM competes with lowest FBM first`);
     guardsApplied.push('fbm_lower_competitor_blocks_raise');
-  } else if (
-    smartRaise.enabled && currentPrice && buyboxPrice
-    && smartRaise.postRaiseCooldownHours != null && smartRaise.lastRaiseAt
-    && (Date.now() - new Date(smartRaise.lastRaiseAt).getTime()) < smartRaise.postRaiseCooldownHours * 3600000
-  ) {
-    // V2: block stacking another raise on this assignment until there's been
-    // time to observe whether the last one actually held the Buy Box.
-    const remainingMin = Math.ceil((smartRaise.postRaiseCooldownHours * 3600000 - (Date.now() - new Date(smartRaise.lastRaiseAt).getTime())) / 60000);
-    console.log(`[Smart Raise] POST_RAISE_COOLDOWN: last raise ${smartRaise.lastRaiseAt}, ${remainingMin}min remaining of ${smartRaise.postRaiseCooldownHours}h cooldown — blocking further raises`);
+  } else if (smartRaise.enabled && currentPrice && buyboxPrice && postRaiseCooldown.active) {
+    console.log(`[Smart Raise] POST_RAISE_COOLDOWN: last raise ${smartRaise.lastRaiseAt}, ${postRaiseCooldown.remainingMinutes}min remaining of ${smartRaise.postRaiseCooldownHours}h cooldown — blocking further raises`);
     guardsApplied.push('post_raise_cooldown_active');
   } else if (smartRaise.enabled && currentPrice && buyboxPrice) {
     // Build raise offset context for conditional match/undercut decisions
@@ -1370,6 +1373,7 @@ function computeAiWinSalesBoosterPrice(
 
     // Find the best (oldest) reference that shows a meaningful rise
     let bestRef: { label: string; price: number; increasePercent: number } | null = null;
+    let anyMarketSupportRejected = false;
     for (const ref of referencePoints) {
       if (ref.price > 0 && buyboxPrice > ref.price) {
         const pct = ((buyboxPrice - ref.price) / ref.price) * 100;
@@ -1377,23 +1381,15 @@ function computeAiWinSalesBoosterPrice(
           let marketSupported = true;
           if (smartRaise.requireMarketSupportedRaise) {
             const floorRef = floorRollingByLabel[ref.label] ?? null;
-            const hasFloorData = Boolean(lowestFbaPrice && lowestFbaPrice > 0 && floorRef && floorRef > 0);
-            const floorIncrease = hasFloorData ? lowestFbaPrice! - floorRef! : 0;
-            const bbIncrease = buyboxPrice - ref.price;
-            if (smartRaise.minFloorSupportRatio != null) {
-              // V2: floor's rise must cover at least this fraction of the BB's
-              // rise -- "did the market move, or just the Buy Box price."
-              const requiredFloorIncrease = bbIncrease * smartRaise.minFloorSupportRatio;
-              marketSupported = hasFloorData && floorIncrease >= requiredFloorIncrease;
-              if (!marketSupported) {
-                console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate (v2 ratio=${smartRaise.minFloorSupportRatio}): ${ref.label} shows BB +$${bbIncrease.toFixed(2)} but floor only rose $${floorIncrease.toFixed(2)} (need >=$${requiredFloorIncrease.toFixed(2)}, floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
-              }
-            } else {
-              // V1 behavior: floor just needs to have risen at all.
-              marketSupported = hasFloorData && floorIncrease > 0;
-              if (!marketSupported) {
-                console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate: ${ref.label} shows BB +${pct.toFixed(1)}% but competitor floor unsupported (floor_ref=${floorRef ?? 'null'}, floor_now=${lowestFbaPrice ?? 'null'}) — skipping this reference`);
-              }
+            const check = evaluateMarketSupportedRaise({
+              buyboxPrice, refPrice: ref.price,
+              lowestFbaPrice, floorRefPrice: floorRef,
+              minFloorSupportRatio: smartRaise.minFloorSupportRatio,
+            });
+            marketSupported = check.supported;
+            if (!marketSupported) {
+              anyMarketSupportRejected = true;
+              console.log(`[Smart Raise] MARKET_SUPPORTED_RAISE gate (ratio=${smartRaise.minFloorSupportRatio ?? 'v1_any_rise'}): ${ref.label} ${check.reason} — skipping this reference`);
             }
           }
           if (marketSupported && (!bestRef || pct > bestRef.increasePercent)) {
@@ -1404,6 +1400,12 @@ function computeAiWinSalesBoosterPrice(
     }
     if (bestRef && smartRaise.requireMarketSupportedRaise) {
       guardsApplied.push('market_supported_raise_confirmed');
+    } else if (anyMarketSupportRejected) {
+      // Distinct from "no BB rise at all" -- this fires specifically when a
+      // BB rise existed but the competitor floor didn't back it up, so the
+      // raise-safety dashboard can count floor-support rejections separately
+      // from cooldown blocks and from cycles with no raise signal at all.
+      guardsApplied.push('market_supported_raise_rejected');
     }
 
     const eligibleRaiseAnchor = smartRaise.lowestEligibleCompetitorPrice;
@@ -7822,6 +7824,12 @@ Deno.serve(async (req) => {
         cooldown_applied: result.guardsApplied?.includes('cooldown') || false,
         max_step_applied: result.guardsApplied?.includes('max_step') || false,
         min_price_clamped: result.guardsApplied?.includes('FINAL_CLAMP_MIN') || result.guardsApplied?.includes('MIN_PRICE_SUGGESTION') || false,
+        // Momentum Smart V2 raise-safety gates (see _v2gates.ts) -- distinct
+        // signals so the Rule Performance dashboard can separate "blocked by
+        // the 2h cooldown" from "rejected for lack of floor support" rather
+        // than lumping both into one raise-safety bucket.
+        raise_blocked_cooldown: result.guardsApplied?.includes('post_raise_cooldown_active') || false,
+        raise_rejected_floor_support: result.guardsApplied?.includes('market_supported_raise_rejected') || false,
         competitive_price: result.rawTargetPrice,
         suggested_min_price: result.suggestedNewMinPrice ?? null,
         min_gap_amount: result.minGapAmount ?? null,
