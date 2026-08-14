@@ -18,8 +18,15 @@ import { toast } from "sonner";
 // at all -- there's nothing to attribute. CA/MX/BR sell via Remote
 // Fulfillment from the same US-purchased inventory, so there's no separate
 // international operation to carry its own overhead anyway.
-const INCOME_KEYS = ["sales", "reimbursements", "shipping_credits", "gift_wrap_credits", "other_income", "liquidations", "warehouse_lost", "warehouse_damage", "shipping_chargeback_refund"] as const;
-const INCOME_DEDUCTION_KEYS = ["refunds", "shipping_credit_refunds", "gift_wrap_credit_refunds", "promotional_rebates", "restocking_fee"] as const;
+// Matches MonthlyPLBreakdown.tsx's INCOME_ROWS/EXPENSE_ROWS exactly (the
+// canonical taxonomy) -- restocking_fee and promotional_rebate_refunds are
+// both credits: a restocking fee is charged to the RETURNING CUSTOMER and
+// kept by the seller (see fetch-profit-loss/index.ts's own comment on
+// processRefundEventToCache), and a promotional-rebate refund is Amazon
+// reversing an over-applied promo back to the seller. Getting either one
+// backwards understates international profit.
+const INCOME_KEYS = ["sales", "reimbursements", "shipping_credits", "gift_wrap_credits", "promotional_rebate_refunds", "restocking_fee", "other_income", "liquidations", "warehouse_lost", "warehouse_damage", "shipping_chargeback_refund"] as const;
+const INCOME_DEDUCTION_KEYS = ["refunds", "shipping_credit_refunds", "gift_wrap_credit_refunds", "promotional_rebates"] as const;
 const AMAZON_FEE_KEYS = ["referral_fees", "variable_closing_fees", "fixed_closing_fees", "fba_fees", "fba_customer_return_fees", "fba_inbound_fees", "fba_inbound_convenience_fee", "fba_storage_fees", "fba_removal_fees", "fba_disposal_fees", "fba_long_term_storage_fees", "digital_services_fee", "other_fees", "liquidations_brokerage_fee", "re_commerce_grading_charge", "hrr_non_apparel", "shipping_chargeback"] as const;
 
 interface MarketplaceRow {
