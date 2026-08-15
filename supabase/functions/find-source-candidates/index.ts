@@ -322,9 +322,24 @@ Deno.serve(async (req) => {
     const newCount = (usageRow?.search_count || 0) + 1;
     await admin.from('find_source_usage').upsert({ user_id: userId, month_key: mKey, search_count: newCount, updated_at: new Date().toISOString() }, { onConflict: 'user_id,month_key' });
 
+    // Run title search always, UPC search additionally when available --
+    // NOT title-only-when-no-UPC. UPC search is precise but low-recall:
+    // most retail pages show the product NAME prominently and never print
+    // the raw UPC in indexable text, so UPC-exclusive search can miss real,
+    // current US retailers entirely. Confirmed live: for a UPC that only
+    // matched 2 foreign resellers, the title search alone found walmart.com
+    // and bathandbodyworks.com directly.
     const titleHasBrand = listing.brand && listing.title?.toLowerCase().startsWith(listing.brand.toLowerCase());
-    const query = listing.upc || `${listing.brand && !titleHasBrand ? listing.brand + ' ' : ''}${listing.title}`.slice(0, 120);
-    const raw = await searchAll(query, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'));
+    const titleQuery = `${listing.brand && !titleHasBrand ? listing.brand + ' ' : ''}${listing.title}`.slice(0, 120);
+    const searches = listing.upc
+      ? await Promise.all([searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY')), searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))])
+      : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))];
+    const seenUrls = new Set<string>();
+    const raw = searches.flat().filter((c) => {
+      if (seenUrls.has(c.url)) return false;
+      seenUrls.add(c.url);
+      return true;
+    });
 
     const scored = raw
       .map((c) => ({ ...c, score: ruleScore(c, listing) }))
