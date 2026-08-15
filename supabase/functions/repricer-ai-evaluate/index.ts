@@ -5733,7 +5733,7 @@ Deno.serve(async (req) => {
       localCost = fxResult.converted;
       console.log(`[repricer-ai-evaluate] FX CONVERSION for ${targetAsin}: ${homeCurrency} ${unitCost.toFixed(2)} → ${marketplaceCurrency} ${localCost.toFixed(2)} (rate: ${fxRate.toFixed(4)})`);
     }
-    
+
     // === CALCULATE PROFIT FLOOR WITH DYNAMIC ROI ===
     // CRITICAL: Use localCost (converted to marketplace currency) for profit guard calculations
     // This matches the logic in calculate-roi and calculate-roi-range edge functions

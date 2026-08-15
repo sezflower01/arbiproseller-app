@@ -148,10 +148,41 @@ function shouldTreatConfirmedRevenueAsNative(row: SaleRow, rawTotal: number, qty
   }
   return rawTotal >= nativeMagnitudeThreshold(mp, fxRate);
 }
+// Recent still-Pending orders can carry a preliminary/wrong price from
+// Amazon before payment authorization finishes -- confirmed live: a 10-unit
+// order with price_source="orders_itemprice" showed $150.57 total while the
+// order was still Pending and the seller's own current listing price
+// (estimated_price) was $215.10 (the real, correct amount). Validated
+// against 900 recent (order_date within 30d) Pending + suspect-sourced US
+// rows: 893/900 were healthy (raw within 15% of estimated_price*qty); the
+// 7 genuine outliers were ALL understated, never overstated. Deliberately
+// scoped to Pending + recent + suspect-sourced + understated only -- older
+// or non-Pending mismatches usually mean the price legitimately changed
+// since the sale (estimated_price drifted, not the sale data), and treating
+// those as wrong caused the regressions documented in AUDIT §14/§14c above.
+function isRecentPendingSuspectLowball(row: SaleRow, raw: number, qty: number): boolean {
+  const status = String(row.order_status || "").trim().toLowerCase();
+  if (status !== "pending") return false;
+  const priceSource = String(row.price_source || "").trim().toLowerCase();
+  const calcMode = String(row.price_calc_mode || "").trim().toLowerCase();
+  const hasTrustedUsdMarker = TRUSTED_USD_PRICE_SOURCES.has(priceSource) || TRUSTED_USD_PRICE_SOURCES.has(calcMode) || priceSource.endsWith("_usd") || calcMode.endsWith("_usd") || priceSource.includes("_reconciled") || calcMode.includes("_reconciled");
+  if (hasTrustedUsdMarker) return false;
+  const suspectSource = SUSPECT_NATIVE_PRICE_SOURCES.some(prefix => prefix === "" ? priceSource === "" : priceSource.startsWith(prefix) || calcMode.startsWith(prefix));
+  if (!suspectSource) return false;
+  const orderDate = String(row.order_date || "");
+  if (!orderDate) return false;
+  const ageDays = (Date.now() - new Date(`${orderDate}T00:00:00Z`).getTime()) / 86400000;
+  if (!(ageDays >= 0 && ageDays <= 30)) return false;
+  const est = num(row.estimated_price) * qty;
+  if (!(est > 0)) return false;
+  return raw < est * 0.85;
+}
+
 function getConfirmedSalesOrderRevenueUsd(row: SaleRow, toUsd: (a:number,m:string|null|undefined)=>number): number {
   const qty = Math.max(1, num(row.quantity));
   const raw = getLineRevenueRaw(row);
   if (raw <= 0) return 0;
+  if (isRecentPendingSuspectLowball(row, raw, qty)) return num(row.estimated_price) * qty;
   const mp = String(row.marketplace || "US").trim().toUpperCase() || "US";
   if (mp === "US") return raw;
   const oneUsd = toUsd(1, mp);
