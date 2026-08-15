@@ -2,7 +2,7 @@
 // With per-user 24h Supabase cache to avoid re-burning Keepa tokens.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST, type KeepaSlotOptions } from '../_shared/keepa-rate-gate.ts';
 
 // This function used to call Keepa directly with zero awareness of other
 // callers (repricer-sp-api-pricing, check-seller-watchlist) sharing the same
@@ -13,12 +13,12 @@ import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
 // with those other callers via the same keepa_daily_usage table. Since this
 // is an interactive request (not a background cron), a blocked slot waits
 // briefly and retries once rather than skipping outright.
-async function acquireKeepaSlotWithRetry(supabase: any): Promise<{ ok: boolean; waitSeconds: number }> {
-  const first = await acquireKeepaGlobalSlot(supabase);
+async function acquireKeepaSlotWithRetry(supabase: any, options: KeepaSlotOptions = {}) {
+  const first = await acquireKeepaGlobalSlot(supabase, options);
   if (first.ok) return first;
   const waitMs = Math.min(first.waitSeconds, 15) * 1000;
   await new Promise((resolve) => setTimeout(resolve, waitMs));
-  return acquireKeepaGlobalSlot(supabase);
+  return acquireKeepaGlobalSlot(supabase, options);
 }
 
 const corsHeaders = {
@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
       }
 
       if (!store) {
-        const sellerSlot = await acquireKeepaSlotWithRetry(supabase);
+        const sellerSlot = await acquireKeepaSlotWithRetry(supabase, { estimatedTokens: KEEPA_COST.sellerStorefront });
         if (!sellerSlot.ok) {
           return new Response(JSON.stringify({ error: `Keepa is busy with other requests right now. Try again in ~${sellerSlot.waitSeconds}s.` }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -154,6 +154,7 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: `Keepa seller HTTP ${sResp.status}` }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         const sJson = await sResp.json().catch(() => ({}));
+        await reportKeepaTokensLeft(supabase, sJson?.tokensLeft);
         const seller = sJson?.sellers?.[sellerId];
         if (!seller) {
           console.error('[seller-storefront-snapshot] Seller not found in response', JSON.stringify(sJson).slice(0, 300));
@@ -202,7 +203,12 @@ Deno.serve(async (req) => {
 
     let products: any[] = [];
     if (!pageItems && slice.length) {
-      const productSlot = await acquireKeepaSlotWithRetry(supabase);
+      // offers=20 bills on top of the 1-token-per-ASIN base rate, so this is
+      // the single most expensive call in the codebase -- a 20-ASIN page can
+      // cost well over 100 tokens. Reserve for that, not for "one call".
+      const productSlot = await acquireKeepaSlotWithRetry(supabase, {
+        estimatedTokens: slice.length * KEEPA_COST.productWithOffersPerAsin,
+      });
       if (!productSlot.ok) {
         return new Response(JSON.stringify({ error: `Keepa is busy with other requests right now. Try again in ~${productSlot.waitSeconds}s.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -218,6 +224,7 @@ Deno.serve(async (req) => {
         const pResp = await fetch(url);
         if (pResp.ok) {
           const pJson = await pResp.json().catch(() => ({}));
+          await reportKeepaTokensLeft(supabase, pJson?.tokensLeft);
           if (pJson?.error) {
             console.error('[seller-storefront-snapshot] Keepa /product returned an error payload', JSON.stringify(pJson.error).slice(0, 200));
             return new Response(JSON.stringify({ error: `Keepa product fetch failed: ${pJson.error.message || 'unknown error'}.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

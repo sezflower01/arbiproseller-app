@@ -14,7 +14,7 @@
 // produces ranked candidates for the user to verify.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
-import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 
 const KEEPA_DOMAIN: Record<string, number> = {
   US: 1, GB: 2, DE: 3, FR: 4, JP: 5, CA: 6, IT: 8, ES: 9, IN: 10, MX: 11, BR: 12,
@@ -31,7 +31,8 @@ async function backfillProductDetails(
   asin: string,
   marketplace: string,
 ): Promise<{ title: string | null; brand: string | null; image: string | null; upc: string | null } | null> {
-  const slot = await acquireKeepaGlobalSlot(supabase);
+  // Single-ASIN /product lookup = 1 token.
+  const slot = await acquireKeepaGlobalSlot(supabase, { estimatedTokens: KEEPA_COST.productPerAsin });
   if (!slot.ok) return null;
   const domainId = KEEPA_DOMAIN[marketplace] ?? 1;
   try {
@@ -39,6 +40,7 @@ async function backfillProductDetails(
     const res = await fetch(url);
     if (!res.ok) return null;
     const json = await res.json().catch(() => ({}));
+    await reportKeepaTokensLeft(supabase, json?.tokensLeft);
     if (json?.error) return null;
     const p = json?.products?.[0];
     if (!p) return null;

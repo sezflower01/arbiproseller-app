@@ -16,7 +16,7 @@
 // kept as an independent cross-check (refill during the call can make the
 // delta read slightly low -- refillRate is reported so it can be corrected).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,11 +41,15 @@ function json(body: unknown, status = 200) {
 
 // Interactive probe, not a background sweep: wait for a slot rather than
 // skipping, so a busy repricer doesn't silently produce an empty report.
-async function acquireSlotWithRetry(supabase: any): Promise<{ ok: boolean; waitSeconds: number }> {
-  const first = await acquireKeepaGlobalSlot(supabase);
+// minReserve 0: this is a diagnostic and must be able to measure even when
+// the budget is near the repricer floor, otherwise it can never report on
+// exactly the conditions worth investigating.
+async function acquireSlotWithRetry(supabase: any, estimatedTokens: number) {
+  const opts = { estimatedTokens, minReserve: 0 };
+  const first = await acquireKeepaGlobalSlot(supabase, opts);
   if (first.ok) return first;
   await new Promise((r) => setTimeout(r, Math.min(first.waitSeconds, 20) * 1000));
-  return acquireKeepaGlobalSlot(supabase);
+  return acquireKeepaGlobalSlot(supabase, opts);
 }
 
 interface KeepaMeta {
@@ -137,7 +141,7 @@ Deno.serve(async (req) => {
     let widestSeller: { sellerId: string; asins: string[] } | null = null;
 
     for (const sellerId of dryRun ? [] : sellerIds) {
-      const slot = await acquireSlotWithRetry(admin);
+      const slot = await acquireSlotWithRetry(admin, KEEPA_COST.sellerStorefront);
       if (!slot.ok) {
         samples.push({ sellerId, skipped: true, reason: `rate gate busy, ~${slot.waitSeconds}s` });
         continue;
@@ -156,6 +160,7 @@ Deno.serve(async (req) => {
 
         const j = await res.json().catch(() => ({}));
         const meta = readMeta(j);
+        await reportKeepaTokensLeft(admin, meta.tokensLeft);
         if (!plan) plan = meta;
 
         const seller = j?.sellers?.[sellerId];
@@ -192,13 +197,77 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ---- Cheap-poll test -------------------------------------------------
+    // The whole economics of seller monitoring turns on this: /seller WITH
+    // storefront=1 costs a flat 10 tokens, and 90%+ of checks find nothing
+    // new. If a PLAIN /seller call (no storefront param) is materially
+    // cheaper AND still reports the seller's total storefront ASIN count,
+    // then the worker can poll cheaply and only pay the 10-token call when
+    // the count actually moves.
+    //
+    // Caveat this cannot detect: a seller who adds one ASIN and removes
+    // another between polls leaves the count unchanged, so count-based
+    // detection has a real false-negative rate. Worth it only if the price
+    // difference is large.
+    let cheapPollProbe: any = null;
+    if (!dryRun && body.includeCheapPoll !== false && sellerIds.length > 0) {
+      const sellerId = sellerIds[0];
+      const slot = await acquireSlotWithRetry(admin, 1);
+      if (slot.ok) {
+        const started = Date.now();
+        try {
+          const url = `https://api.keepa.com/seller?key=${KEEPA_KEY}&domain=${domainId}&seller=${encodeURIComponent(sellerId)}`;
+          const res = await fetch(url);
+          const elapsedMs = Date.now() - started;
+          if (res.ok) {
+            const j = await res.json().catch(() => ({}));
+            const meta = readMeta(j);
+            await reportKeepaTokensLeft(admin, meta.tokensLeft);
+            const seller = j?.sellers?.[sellerId];
+            const csv = seller?.totalStorefrontAsinsCSV;
+            const asinCount = Array.isArray(csv) && csv.length ? csv[csv.length - 1] : null;
+
+            const storefrontSample = samples.find((s) => s.sellerId === sellerId);
+            cheapPollProbe = {
+              sellerId,
+              tokensConsumed: meta.tokensConsumed,
+              tokensLeftAfter: meta.tokensLeft,
+              // The decisive fields:
+              returnsAsinCount: asinCount != null,
+              asinCount,
+              storefrontCallAsinCount: storefrontSample?.totalStorefrontAsins ?? null,
+              countsAgree: asinCount != null && storefrontSample
+                ? asinCount === storefrontSample.totalStorefrontAsins
+                : null,
+              asinListIncluded: Array.isArray(seller?.asinList) ? seller.asinList.length : 0,
+              savingsVsStorefront: meta.tokensConsumed != null
+                ? KEEPA_COST.sellerStorefront - meta.tokensConsumed
+                : null,
+              elapsedMs,
+              verdict: meta.tokensConsumed != null && asinCount != null
+                ? (meta.tokensConsumed < KEEPA_COST.sellerStorefront
+                    ? `VIABLE: ${meta.tokensConsumed} tokens vs ${KEEPA_COST.sellerStorefront}, and the ASIN count is present`
+                    : 'NOT VIABLE: no cheaper than the storefront call')
+                : 'NOT VIABLE: plain /seller does not report the storefront ASIN count',
+            };
+          } else {
+            cheapPollProbe = { error: `HTTP ${res.status}`, elapsedMs };
+          }
+        } catch (e) {
+          cheapPollProbe = { error: (e as Error).message };
+        }
+      } else {
+        cheapPollProbe = { skipped: true, reason: `gate busy, ~${slot.waitSeconds}s` };
+      }
+    }
+
     // Second cost driver: the bounded /product batch check-seller-watchlist
     // fires for genuinely-new ASINs. Reuses real ASINs from the widest
     // storefront above so the batch is representative.
     let productProbe: any = null;
     if (!dryRun && includeProductProbe && widestSeller && widestSeller.asins.length > 0) {
       const batch = widestSeller.asins.slice(0, PRODUCT_PROBE_ASINS);
-      const slot = await acquireSlotWithRetry(admin);
+      const slot = await acquireSlotWithRetry(admin, batch.length * KEEPA_COST.productPerAsin);
       if (slot.ok) {
         const started = Date.now();
         try {
@@ -208,6 +277,7 @@ Deno.serve(async (req) => {
           if (res.ok) {
             const j = await res.json().catch(() => ({}));
             const meta = readMeta(j);
+            await reportKeepaTokensLeft(admin, meta.tokensLeft);
             productProbe = {
               asinsRequested: batch.length,
               productsReturned: Array.isArray(j?.products) ? j.products.length : 0,
@@ -342,6 +412,7 @@ Deno.serve(async (req) => {
       marketplace,
       plan,
       samples,
+      cheapPollProbe,
       productProbe,
       capacity,
     });

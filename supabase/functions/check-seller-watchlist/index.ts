@@ -17,7 +17,7 @@
 // (see migration 20260815140759) and the Find Source search query. Cost
 // here scales with actual new-listing volume, not catalog size.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 
 const MAX_PRODUCT_DETAIL_ASINS = 50;
 
@@ -82,9 +82,11 @@ Deno.serve(async (req) => {
     const nowIso = new Date().toISOString();
 
     for (const { sellerId, marketplace, watches: group } of groups.values()) {
-      const slot = await acquireKeepaGlobalSlot(admin);
+      // Background sweep: leave the default repricer reserve in place so a
+      // large watchlist can never drain the budget live repricing needs.
+      const slot = await acquireKeepaGlobalSlot(admin, { estimatedTokens: KEEPA_COST.sellerStorefront });
       if (!slot.ok) {
-        console.warn(`[check-seller-watchlist] rate limit guard: skipping ${sellerId}/${marketplace}, next slot in ~${slot.waitSeconds}s`);
+        console.warn(`[check-seller-watchlist] ${slot.blockedBy} guard: skipping ${sellerId}/${marketplace}, next slot in ~${slot.waitSeconds}s`);
         skippedRateLimit += group.length;
         continue;
       }
@@ -97,6 +99,7 @@ Deno.serve(async (req) => {
         const res = await fetch(url);
         if (res.ok) {
           const json = await res.json().catch(() => ({}));
+          await reportKeepaTokensLeft(admin, json?.tokensLeft);
           const seller = json?.sellers?.[sellerId];
           if (seller) {
             currentAsins = Array.isArray(seller.asinList) ? seller.asinList : [];
@@ -137,14 +140,20 @@ Deno.serve(async (req) => {
       // feed and Find Source's search query.
       const productDetails = new Map<string, { title: string | null; brand: string | null; image: string | null; upc: string | null }>();
       if (unionNewAsins.size > 0) {
-        const detailSlot = await acquireKeepaGlobalSlot(admin);
+        // /product bills 1 token PER ASIN, so this batch is worth up to
+        // MAX_PRODUCT_DETAIL_ASINS tokens -- reserve for the real size, not
+        // for "one call".
+        const asinsToFetch = Array.from(unionNewAsins).slice(0, MAX_PRODUCT_DETAIL_ASINS);
+        const detailSlot = await acquireKeepaGlobalSlot(admin, {
+          estimatedTokens: asinsToFetch.length * KEEPA_COST.productPerAsin,
+        });
         if (detailSlot.ok) {
-          const asinsToFetch = Array.from(unionNewAsins).slice(0, MAX_PRODUCT_DETAIL_ASINS);
           try {
             const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${asinsToFetch.join(',')}`;
             const res = await fetch(url);
             if (res.ok) {
               const json = await res.json().catch(() => ({}));
+              await reportKeepaTokensLeft(admin, json?.tokensLeft);
               const products = Array.isArray(json?.products) ? json.products : [];
               for (const p of products) {
                 if (!p?.asin) continue;
