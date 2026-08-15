@@ -5,6 +5,16 @@ import { Loader2, Search, ExternalLink, Package, Store, Check } from "lucide-rea
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
 import { useToast } from "@/hooks/use-toast";
 
+const MARKETPLACE_DOMAIN: Record<string, string> = {
+  US: "amazon.com", CA: "amazon.ca", MX: "amazon.com.mx", BR: "amazon.com.br",
+  UK: "amazon.co.uk", GB: "amazon.co.uk", DE: "amazon.de", FR: "amazon.fr",
+  IT: "amazon.it", ES: "amazon.es", JP: "amazon.co.jp", IN: "amazon.in",
+};
+function amazonListingUrl(asin: string, marketplace: string): string {
+  const host = MARKETPLACE_DOMAIN[marketplace.toUpperCase()] || "amazon.com";
+  return `https://www.${host}/dp/${asin}`;
+}
+
 function CandidateRow({
   candidate,
   isSourced,
@@ -102,7 +112,17 @@ export default function NewListingsPanel() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{listing.title || listing.asin}</div>
-                    <div className="text-xs text-muted-foreground">{listing.asin} · detected {new Date(listing.detected_at).toLocaleString()}</div>
+                    <div className="text-xs text-muted-foreground">
+                      <a
+                        href={amazonListingUrl(listing.asin, listing.marketplace)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {listing.asin}
+                      </a>
+                      {" "}· detected {new Date(listing.detected_at).toLocaleString()}
+                    </div>
                   </div>
                   <Button
                     type="button"
