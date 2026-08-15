@@ -14,6 +14,42 @@
 // produces ranked candidates for the user to verify.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
+import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+
+const KEEPA_DOMAIN: Record<string, number> = {
+  US: 1, GB: 2, DE: 3, FR: 4, JP: 5, CA: 6, IT: 8, ES: 9, IN: 10, MX: 11, BR: 12,
+};
+
+// check-seller-watchlist's product-detail batch fetch can fail silently
+// (rate-gate slot unavailable, transient Keepa error) and leave a listing
+// with null title/brand/image/upc forever -- confirmed live 2026-08-15.
+// Rather than hard-failing "no title or UPC to search with" on a listing
+// that just needs one more Keepa call, try to backfill it here first.
+async function backfillProductDetails(
+  supabase: any,
+  keepaKey: string,
+  asin: string,
+  marketplace: string,
+): Promise<{ title: string | null; brand: string | null; image: string | null; upc: string | null } | null> {
+  const slot = await acquireKeepaGlobalSlot(supabase);
+  if (!slot.ok) return null;
+  const domainId = KEEPA_DOMAIN[marketplace] ?? 1;
+  try {
+    const url = `https://api.keepa.com/product?key=${keepaKey}&domain=${domainId}&asin=${asin}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => ({}));
+    if (json?.error) return null;
+    const p = json?.products?.[0];
+    if (!p) return null;
+    const image = p?.imagesCSV ? `https://images-na.ssl-images-amazon.com/images/I/${String(p.imagesCSV).split(',')[0]}` : null;
+    const upc = Array.isArray(p?.upcList) && p.upcList.length ? String(p.upcList[0]) : null;
+    return { title: p?.title || null, brand: p?.brand || p?.manufacturer || null, image, upc };
+  } catch (e) {
+    console.warn('[find-source-candidates] product-detail backfill failed:', (e as Error).message);
+    return null;
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,6 +142,23 @@ const NON_RETAIL_DOMAINS = new Set([
   'twitter.com', 'x.com', 'tiktok.com', 'quora.com', 'wikipedia.org', 'amazon.com',
 ]);
 
+// Hard exclude, not a ranking preference -- gl=us/cr=countryUS on the search
+// call are only ranking hints, not filters, so a query can still surface
+// foreign-TLD retailers (confirmed live: desertcart.ie, desertcart.in on a
+// US-only account). ccTLD suffix check; generic TLDs (.com/.us/.net/.org/etc)
+// pass through untouched.
+const NON_US_TLD_SUFFIXES = [
+  '.ie', '.uk', '.co.uk', '.ca', '.de', '.fr', '.it', '.es', '.nl', '.se', '.pl',
+  '.jp', '.co.jp', '.in', '.au', '.com.au', '.mx', '.com.mx', '.br', '.com.br',
+  '.cn', '.ru', '.sg', '.ae', '.sa', '.tr', '.com.tr', '.nz', '.co.nz', '.za',
+  '.co.za', '.eu', '.ch', '.at', '.be', '.dk', '.no', '.fi', '.pt', '.gr', '.hk',
+  '.tw', '.kr', '.co.kr', '.th', '.vn', '.id', '.ph', '.my', '.il', '.pk',
+];
+
+function isNonUsDomain(domain: string): boolean {
+  return NON_US_TLD_SUFFIXES.some((suffix) => domain.endsWith(suffix));
+}
+
 function getDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -116,7 +169,7 @@ function getDomain(url: string): string {
 
 function ruleScore(c: RawCandidate, listing: { upc: string | null; brand: string | null; title: string | null }): number {
   const domain = getDomain(c.url);
-  if (!domain || NON_RETAIL_DOMAINS.has(domain)) return 0;
+  if (!domain || NON_RETAIL_DOMAINS.has(domain) || isNonUsDomain(domain)) return 0;
 
   const haystack = `${c.title} ${c.snippet}`.toLowerCase();
   let score = 0;
@@ -240,14 +293,23 @@ Deno.serve(async (req) => {
 
     const { data: listing, error: listingErr } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, title, brand, image_url, upc')
+      .select('id, user_id, asin, marketplace, title, brand, image_url, upc')
       .eq('id', listingId)
       .eq('user_id', userId)
       .maybeSingle();
     if (listingErr || !listing) return jsonResponse({ error: 'Listing not found' }, 404);
 
     if (!listing.upc && !listing.title) {
-      return jsonResponse({ error: 'No title or UPC available to search with' }, 400);
+      const backfilled = await backfillProductDetails(admin, Deno.env.get('KEEPA_API_KEY') || '', listing.asin, listing.marketplace);
+      if (backfilled && (backfilled.title || backfilled.upc)) {
+        listing.title = backfilled.title;
+        listing.brand = backfilled.brand;
+        listing.image_url = backfilled.image;
+        listing.upc = backfilled.upc;
+        await admin.from('seller_watch_new_listings').update({ title: backfilled.title, brand: backfilled.brand, image_url: backfilled.image, upc: backfilled.upc }).eq('id', listingId);
+      } else {
+        return jsonResponse({ error: 'No title or UPC available to search with -- Amazon/Keepa has no data for this ASIN yet. Try again shortly.' }, 400);
+      }
     }
 
     await admin.from('seller_watch_new_listings').update({ source_status: 'sourcing', last_searched_at: new Date().toISOString() }).eq('id', listingId);
@@ -285,6 +347,7 @@ Deno.serve(async (req) => {
         url: c.url,
         domain: getDomain(c.url),
         title: c.title,
+        imageUrl: c.imageUrl,
         confidence,
         label: confidenceLabel(confidence),
         reason: gemini ? (gemini.verdict === 'same_product' ? 'Text and image signals align' : 'Partial match, verify carefully') : 'Based on text match only',
@@ -311,6 +374,11 @@ Deno.serve(async (req) => {
             verified[0].price = priceJson.price_current;
             verified[0].currency = priceJson.currency || null;
             verified[0].availability = priceJson.availability_status || null;
+          }
+          // SerpAPI results never carry an image (no pagemap data); backfill
+          // from the page itself if the search step didn't already have one.
+          if (!verified[0].imageUrl && priceJson?.image_url) {
+            verified[0].imageUrl = priceJson.image_url;
           }
         }
       } catch (e) {

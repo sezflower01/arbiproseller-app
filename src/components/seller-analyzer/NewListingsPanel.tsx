@@ -20,8 +20,12 @@ function CandidateRow({
 
   return (
     <div className="flex items-center gap-3 rounded-lg border p-3">
-      <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0">
-        <Store className="h-4 w-4" />
+      <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0 overflow-hidden">
+        {candidate.imageUrl ? (
+          <img src={candidate.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <Store className="h-4 w-4" />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">{candidate.domain}</div>

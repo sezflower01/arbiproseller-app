@@ -1,8 +1,11 @@
 // CREATE-SELLER-WATCH
-// Called from Seller Analyzer's "Watch this seller" action. Saves a pending
-// seller watch (any notify_email the user typed, NOT required to match their
-// account email) and sends a confirm-first email -- the watch never goes
-// active without that click, mirroring create-price-alert's anti-spam shape.
+// Called from Seller Analyzer's "Watch this seller" action. Activates
+// immediately -- no confirm-email step. That double opt-in made sense for
+// price_alerts, where notify_email can be an arbitrary address someone
+// typed in (so confirmation proves they own it). Here notify_email is
+// always the caller's own already-verified Supabase account email, so
+// there's nothing to confirm; gating it behind an email round-trip was
+// pure friction with no anti-spam benefit.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
@@ -14,7 +17,6 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SELLER_ID_RE = /^[A-Z0-9]{6,20}$/i;
 
 Deno.serve(async (req) => {
@@ -36,10 +38,12 @@ Deno.serve(async (req) => {
     if (meMatch) sellerId = meMatch[1];
     const sellerName = body.sellerName ? String(body.sellerName).slice(0, 200) : null;
     const marketplace = String(body.marketplace || 'US').toUpperCase();
-    const notifyEmail = String(body.notifyEmail || '').trim();
+    const notifyEmail = userRes.user.email || '';
 
     if (!SELLER_ID_RE.test(sellerId)) return jsonResponse({ error: 'Invalid seller ID' }, 400);
-    if (!EMAIL_RE.test(notifyEmail)) return jsonResponse({ error: 'Invalid email address' }, 400);
+    if (!notifyEmail) return jsonResponse({ error: 'Your account has no email on file' }, 400);
+
+    const nowIso = new Date().toISOString();
 
     // Reactivate a cancelled watch instead of erroring on the unique index.
     const { data: existing } = await admin
@@ -50,31 +54,30 @@ Deno.serve(async (req) => {
       .eq('marketplace', marketplace)
       .maybeSingle();
 
-    let row: { id: string; confirm_token: string } | null = null;
-    if (existing && existing.status !== 'cancelled') {
-      return jsonResponse({ error: `You're already ${existing.status === 'active' ? 'watching' : 'pending confirmation for'} this seller.` }, 409);
+    if (existing && existing.status === 'active') {
+      return jsonResponse({ error: "You're already watching this seller." }, 409);
     }
 
+    let rowId: string;
     if (existing) {
       const { data: updated, error: updateErr } = await admin
         .from('seller_watchlist')
         .update({
           seller_name: sellerName,
           notify_email: notifyEmail,
-          status: 'pending_confirmation',
-          confirm_token: crypto.randomUUID(),
+          status: 'active',
           known_asin_list: null,
-          confirmed_at: null,
+          confirmed_at: nowIso,
           cancelled_at: null,
         })
         .eq('id', existing.id)
-        .select('id, confirm_token')
+        .select('id')
         .single();
       if (updateErr || !updated) {
         console.error('[create-seller-watch] reactivate failed', updateErr?.message);
         return jsonResponse({ error: 'Could not create seller watch' }, 500);
       }
-      row = updated;
+      rowId = updated.id;
     } else {
       const { data: inserted, error: insertErr } = await admin
         .from('seller_watchlist')
@@ -84,34 +87,19 @@ Deno.serve(async (req) => {
           seller_name: sellerName,
           marketplace,
           notify_email: notifyEmail,
+          status: 'active',
+          confirmed_at: nowIso,
         })
-        .select('id, confirm_token')
+        .select('id')
         .single();
       if (insertErr || !inserted) {
         console.error('[create-seller-watch] insert failed', insertErr?.message);
         return jsonResponse({ error: 'Could not create seller watch' }, 500);
       }
-      row = inserted;
+      rowId = inserted.id;
     }
 
-    const confirmUrl = `${SUPABASE_URL}/functions/v1/confirm-seller-watch?token=${row.confirm_token}`;
-    try {
-      const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE}` },
-        body: JSON.stringify({
-          to: notifyEmail,
-          name: 'there',
-          emailType: 'seller-watch-confirm',
-          sellerWatch: { sellerId, sellerName, marketplace, confirmUrl },
-        }),
-      });
-      if (!emailRes.ok) console.error('[create-seller-watch] confirm email send failed', await emailRes.text());
-    } catch (e) {
-      console.error('[create-seller-watch] confirm email send error', (e as Error).message);
-    }
-
-    return jsonResponse({ ok: true, id: row.id, message: `Confirmation email sent to ${notifyEmail}` });
+    return jsonResponse({ ok: true, id: rowId, message: `Now watching ${sellerName || sellerId}` });
   } catch (e) {
     console.error('[create-seller-watch] error', (e as Error).message);
     return jsonResponse({ error: (e as Error).message }, 500);

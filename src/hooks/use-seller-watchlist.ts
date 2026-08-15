@@ -53,13 +53,13 @@ export function useSellerWatchlist() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const createWatch = useCallback(async (sellerId: string, sellerName: string | null, marketplace: string, notifyEmail: string) => {
+  const createWatch = useCallback(async (sellerId: string, sellerName: string | null, marketplace: string) => {
     const { data: authData } = await supabase.auth.getSession();
     const token = authData.session?.access_token;
     if (!token) throw new Error("Please log in to watch a seller.");
 
     const { data: res, error } = await supabase.functions.invoke("create-seller-watch", {
-      body: { sellerId, sellerName, marketplace, notifyEmail },
+      body: { sellerId, sellerName, marketplace },
       headers: { Authorization: `Bearer ${token}` },
     });
     if (error) throw new Error(await getFunctionErrorMessage(error, "Failed to create seller watch"));

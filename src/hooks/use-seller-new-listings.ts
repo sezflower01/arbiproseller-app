@@ -5,6 +5,7 @@ export interface SourceCandidate {
   url: string;
   domain: string;
   title: string;
+  imageUrl: string | null;
   confidence: number;
   label: string;
   reason: string;

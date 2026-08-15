@@ -3,15 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, RefreshCw, Search, Store, ExternalLink, BellPlus, Bell, BellOff, X } from "lucide-react";
+import { Loader2, RefreshCw, Search, Store, ExternalLink, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerSnapshot } from "@/hooks/use-seller-snapshot";
 import { useSellerWatchlist } from "@/hooks/use-seller-watchlist";
-import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import StoreDetailsCard from "@/components/seller-analyzer/StoreDetailsCard";
 import TopListTable from "@/components/seller-analyzer/TopListTable";
 import SellerCharts from "@/components/seller-analyzer/SellerCharts";
@@ -37,33 +34,24 @@ export default function SellerAnalyzer() {
   const [page, setPage] = useState(0);
 
   const { data, loading, error, load } = useSellerSnapshot();
-  const { user } = useAuth();
   const { toast } = useToast();
   const { watches, createWatch, cancelWatch } = useSellerWatchlist();
-  const [watchDialogOpen, setWatchDialogOpen] = useState(false);
-  const [watchEmail, setWatchEmail] = useState("");
-  const [watchSubmitting, setWatchSubmitting] = useState(false);
+  const [watchToggling, setWatchToggling] = useState(false);
 
   const currentWatch = data
     ? watches.find((w) => w.seller_id === data.store.sellerId && w.marketplace === marketplace)
     : undefined;
 
-  const openWatchDialog = () => {
-    setWatchEmail(user?.email || "");
-    setWatchDialogOpen(true);
-  };
-
-  const submitWatch = async () => {
+  const addWatch = async () => {
     if (!data) return;
-    setWatchSubmitting(true);
+    setWatchToggling(true);
     try {
-      const res = await createWatch(data.store.sellerId, data.store.sellerName, marketplace, watchEmail);
-      toast({ title: "Confirmation email sent", description: res.message });
-      setWatchDialogOpen(false);
+      await createWatch(data.store.sellerId, data.store.sellerName, marketplace);
+      toast({ title: `Now watching ${data.store.sellerName || data.store.sellerId}` });
     } catch (e: any) {
-      toast({ title: "Could not create watch", description: e.message, variant: "destructive" });
+      toast({ title: "Could not watch seller", description: e.message, variant: "destructive" });
     } finally {
-      setWatchSubmitting(false);
+      setWatchToggling(false);
     }
   };
 
@@ -156,13 +144,12 @@ export default function SellerAnalyzer() {
                     className="text-foreground"
                     onClick={() => removeWatch(currentWatch.id)}
                   >
-                    {currentWatch.status === "active" ? <Bell className="h-4 w-4 mr-2 text-emerald-500" /> : <Bell className="h-4 w-4 mr-2 text-amber-500" />}
-                    {currentWatch.status === "active" ? "Watching" : "Pending confirmation"}
-                    <X className="h-4 w-4 ml-2" />
+                    <Bell className="h-4 w-4 mr-2 text-emerald-500" /> Watching
                   </Button>
                 ) : (
-                  <Button type="button" variant="outline" className="text-foreground" onClick={openWatchDialog}>
-                    <BellPlus className="h-4 w-4 mr-2" /> Watch this seller
+                  <Button type="button" variant="outline" className="text-foreground" onClick={addWatch} disabled={watchToggling}>
+                    {watchToggling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BellPlus className="h-4 w-4 mr-2" />}
+                    Watch this seller
                   </Button>
                 )}
               </>
@@ -199,9 +186,7 @@ export default function SellerAnalyzer() {
                       <span className="text-muted-foreground shrink-0">({w.marketplace})</span>
                     </button>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Badge variant={w.status === "active" ? "default" : "secondary"}>
-                        {w.status === "active" ? "Watching" : "Pending confirmation"}
-                      </Badge>
+                      <Badge>Watching</Badge>
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeWatch(w.id)}>
                         <BellOff className="h-4 w-4" />
                       </Button>
@@ -267,33 +252,6 @@ export default function SellerAnalyzer() {
         )}
       </div>
 
-      <Dialog open={watchDialogOpen} onOpenChange={setWatchDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Watch {data?.store.sellerName || data?.store.sellerId}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              We'll email you whenever this seller lists something new. About an hour after you confirm,
-              we'll check their storefront to establish a baseline — you won't get flooded with their existing catalog.
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="watch-email">Notify email</Label>
-              <Input
-                id="watch-email"
-                type="email"
-                value={watchEmail}
-                onChange={(e) => setWatchEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-            </div>
-            <Button className="w-full" onClick={submitWatch} disabled={watchSubmitting || !watchEmail}>
-              {watchSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BellPlus className="h-4 w-4 mr-2" />}
-              Send confirmation email
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
