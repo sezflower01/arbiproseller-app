@@ -143,10 +143,6 @@ export default function SellerAnalyzer() {
                 Watch
               </Button>
             )}
-            <Button type="submit" disabled={loading} variant="outline" className="text-foreground">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              <span className="ml-2">Analyze (optional)</span>
-            </Button>
             {data && (
               <>
                 <Button type="button" variant="outline" className="text-foreground" onClick={refresh} disabled={loading}>
