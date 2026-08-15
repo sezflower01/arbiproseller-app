@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, RefreshCw, Search, Store, ExternalLink, BellPlus, Bell, BellOff } from "lucide-react";
+import { Loader2, RefreshCw, Search, Store, ExternalLink, BellPlus, Bell, BellOff, ChevronDown, ChevronUp } from "lucide-react";
 import { useSellerSnapshot } from "@/hooks/use-seller-snapshot";
 import { useSellerWatchlist } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,7 @@ export default function SellerAnalyzer() {
   const { toast } = useToast();
   const { watches, createWatch, cancelWatch } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
+  const [showListings, setShowListings] = useState(false);
 
   // Watching works directly off the typed seller ID -- adding a watch is
   // the primary action here, running the full storefront analysis is
@@ -235,26 +236,37 @@ export default function SellerAnalyzer() {
             <SellerCharts topBrands={data.topBrands} topCategories={data.topCategories} items={data.pageItems} />
 
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">Storefront Listings</h2>
-                <div className="text-sm text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setShowListings((v) => !v)}
+                className="flex items-center justify-between w-full mb-3"
+              >
+                <span className="flex items-center gap-2 text-lg font-semibold">
+                  {showListings ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  Storefront Listings
+                </span>
+                <span className="text-sm text-muted-foreground">
                   Page {data.page + 1} of {data.totalPages} · {data.asinList.length.toLocaleString()} ASINs
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {data.pageItems.map((p) => (
-                  <StorefrontListingCard key={p.asin} p={p} marketplace={marketplace} />
-                ))}
-                {data.pageItems.length === 0 && (
-                  <Card className="md:col-span-2 xl:col-span-3"><CardContent className="p-6 text-center text-muted-foreground">No items on this page.</CardContent></Card>
-                )}
-              </div>
-              {data.totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => goPage(page - 1)}>Previous</Button>
-                  <span className="text-sm text-muted-foreground">Page {page + 1} / {data.totalPages}</span>
-                  <Button variant="outline" size="sm" disabled={page >= data.totalPages - 1 || loading} onClick={() => goPage(page + 1)}>Next</Button>
-                </div>
+                </span>
+              </button>
+              {showListings && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {data.pageItems.map((p) => (
+                      <StorefrontListingCard key={p.asin} p={p} marketplace={marketplace} />
+                    ))}
+                    {data.pageItems.length === 0 && (
+                      <Card className="md:col-span-2 xl:col-span-3"><CardContent className="p-6 text-center text-muted-foreground">No items on this page.</CardContent></Card>
+                    )}
+                  </div>
+                  {data.totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => goPage(page - 1)}>Previous</Button>
+                      <span className="text-sm text-muted-foreground">Page {page + 1} / {data.totalPages}</span>
+                      <Button variant="outline" size="sm" disabled={page >= data.totalPages - 1 || loading} onClick={() => goPage(page + 1)}>Next</Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>
