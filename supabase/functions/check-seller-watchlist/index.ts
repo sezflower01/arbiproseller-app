@@ -115,12 +115,37 @@ Deno.serve(async (req) => {
     if (!KEEPA_KEY) return jsonResponse({ error: 'KEEPA_API_KEY not configured' }, 500);
     const admin = createClient(SUPABASE_URL, serviceRoleKey);
 
-    const body = await req.json().catch(() => ({}));
     // Plan mode: report the queue order WITHOUT calling Keepa or mutating
     // anything. This is how fair rotation is verified against real data --
     // run it, run the worker, run it again, and watch the just-checked seller
     // move to the back.
-    const planOnly = body?.plan === true;
+    //
+    // Accepted BOTH as ?plan=true and as {"plan":true}. The query parameter
+    // exists because PowerShell strips inner quotes when passing a JSON body
+    // to native curl, so a bash-shaped `-d '{"plan":true}'` silently arrives
+    // as invalid JSON. A query string has no such hazard.
+    //
+    // An unparseable body is now a 400 rather than an empty object. It
+    // previously fell back to `{}`, which meant a mangled --data turned a
+    // read-only request into a live run that spent real Keepa tokens -- the
+    // exact opposite of what the caller asked for. Cron sends well-formed
+    // JSON, and a bodyless POST is still fine, so failing closed here costs
+    // nothing and removes a foot-gun.
+    const rawBody = await req.text().catch(() => '');
+    let body: Record<string, unknown> = {};
+    if (rawBody.trim()) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return jsonResponse({
+          error: 'Request body was not valid JSON. Nothing was run and no Keepa tokens were spent. On PowerShell, prefer the query form: ?plan=true',
+          receivedBody: rawBody.slice(0, 200),
+        }, 400);
+      }
+    }
+
+    const planParam = new URL(req.url).searchParams.get('plan');
+    const planOnly = body?.plan === true || planParam === 'true' || planParam === '1';
 
     // --- Step 1: the stalest watches, oldest first, unseeded ahead of all ---
     // No global cap. The bound is "what one run can plausibly process",
