@@ -175,22 +175,27 @@ export default function SellerAnalyzer() {
               <div className="space-y-2">
                 {watches.map((w) => (
                   <div key={w.id} className="flex items-center justify-between gap-2 text-sm border-b last:border-b-0 pb-2 last:pb-0">
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 text-left hover:underline min-w-0"
-                      onClick={() => {
-                        setInput(w.seller_id);
-                        setMarketplace(w.marketplace);
-                        setPage(0);
-                        setParams({ sellerId: w.seller_id, marketplace: w.marketplace });
-                        load(w.seller_id, w.marketplace, 0);
-                      }}
-                    >
+                    <div className="flex items-center gap-2 min-w-0">
                       <span className="truncate">{w.seller_name || w.seller_id}</span>
                       <span className="text-muted-foreground shrink-0">({w.marketplace})</span>
-                    </button>
+                    </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge>Watching</Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => {
+                          setInput(w.seller_id);
+                          setMarketplace(w.marketplace);
+                          setPage(0);
+                          setParams({ sellerId: w.seller_id, marketplace: w.marketplace });
+                          load(w.seller_id, w.marketplace, 0);
+                        }}
+                      >
+                        <Search className="h-3.5 w-3.5 mr-1.5" /> Analysis
+                      </Button>
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeWatch(w.id)}>
                         <BellOff className="h-4 w-4" />
                       </Button>
