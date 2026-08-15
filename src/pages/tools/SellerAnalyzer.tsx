@@ -38,16 +38,20 @@ export default function SellerAnalyzer() {
   const { watches, createWatch, cancelWatch } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
 
-  const currentWatch = data
-    ? watches.find((w) => w.seller_id === data.store.sellerId && w.marketplace === marketplace)
+  // Watching works directly off the typed seller ID -- adding a watch is
+  // the primary action here, running the full storefront analysis is
+  // optional and shouldn't gate it.
+  const typedSellerId = parseSellerInput(input).sellerId;
+  const currentWatch = typedSellerId
+    ? watches.find((w) => w.seller_id === typedSellerId && w.marketplace === marketplace)
     : undefined;
 
   const addWatch = async () => {
-    if (!data) return;
+    if (!typedSellerId) return;
     setWatchToggling(true);
     try {
-      await createWatch(data.store.sellerId, data.store.sellerName, marketplace);
-      toast({ title: `Now watching ${data.store.sellerName || data.store.sellerId}` });
+      await createWatch(typedSellerId, data?.store.sellerId === typedSellerId ? data.store.sellerName : null, marketplace);
+      toast({ title: `Now watching ${typedSellerId}` });
     } catch (e: any) {
       toast({ title: "Could not watch seller", description: e.message, variant: "destructive" });
     } finally {
@@ -123,9 +127,24 @@ export default function SellerAnalyzer() {
                 {MARKETS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button type="submit" disabled={loading} className="bg-primary hover:bg-primary/90">
+            {currentWatch ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="text-foreground"
+                onClick={() => removeWatch(currentWatch.id)}
+              >
+                <Bell className="h-4 w-4 mr-2 text-emerald-500" /> Watching
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" className="text-foreground" onClick={addWatch} disabled={watchToggling || !typedSellerId}>
+                {watchToggling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BellPlus className="h-4 w-4 mr-2" />}
+                Watch
+              </Button>
+            )}
+            <Button type="submit" disabled={loading} variant="outline" className="text-foreground">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              <span className="ml-2">Analyze</span>
+              <span className="ml-2">Analyze (optional)</span>
             </Button>
             {data && (
               <>
@@ -137,21 +156,6 @@ export default function SellerAnalyzer() {
                     <ExternalLink className="h-4 w-4 mr-2" /> Open on Amazon
                   </a>
                 </Button>
-                {currentWatch ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="text-foreground"
-                    onClick={() => removeWatch(currentWatch.id)}
-                  >
-                    <Bell className="h-4 w-4 mr-2 text-emerald-500" /> Watching
-                  </Button>
-                ) : (
-                  <Button type="button" variant="outline" className="text-foreground" onClick={addWatch} disabled={watchToggling}>
-                    {watchToggling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BellPlus className="h-4 w-4 mr-2" />}
-                    Watch this seller
-                  </Button>
-                )}
               </>
             )}
           </form>
