@@ -1,13 +1,43 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+/** Response from bulk-create-seller-watches, in both preview and commit mode. */
+export interface BulkAddResult {
+  ok: true;
+  mode: "preview" | "commit";
+  marketplace: string;
+  linesRead: number;
+  willAdd: number;
+  willReactivate: number;
+  alreadyWatched: number;
+  duplicatesInUpload: number;
+  invalidLines: number;
+  overCap: boolean;
+  cap: number;
+  droppedOverCap: number;
+  samples: {
+    invalid: string[];
+    duplicates: string[];
+    alreadyWatched: string[];
+  };
+  committed: boolean;
+  /** Commit only: rows actually written. */
+  added?: number;
+  reactivated?: number;
+  /** Commit only: set when a chunk failed partway through. */
+  partial?: boolean;
+}
+
 export interface SellerWatch {
   id: string;
   seller_id: string;
   seller_name: string | null;
   marketplace: string;
   notify_email: string;
-  status: "pending_confirmation" | "active" | "cancelled";
+  // 'pending_confirmation' was dropped in migration 20260815230000 -- seller
+  // watches activate immediately, since notify_email is always the caller's
+  // own verified account email.
+  status: "active" | "cancelled";
   created_at: string;
   last_checked_at: string | null;
   last_alert_at: string | null;
@@ -111,6 +141,34 @@ export function useSellerWatchlist() {
     return res as { ok: true; id: string; message: string };
   }, [refresh]);
 
+  /**
+   * Bulk add from a pasted list or CSV.
+   *
+   * Two passes over the SAME server-side parser: 'preview' classifies and
+   * writes nothing, 'commit' classifies and then writes. Running the identical
+   * code path both times is what makes the preview trustworthy -- a separate
+   * client-side estimate could disagree with what actually lands.
+   */
+  const bulkAddWatches = useCallback(async (
+    text: string,
+    marketplace: string,
+    mode: "preview" | "commit",
+  ): Promise<BulkAddResult> => {
+    const { data: authData } = await supabase.auth.getSession();
+    const token = authData.session?.access_token;
+    if (!token) throw new Error("Please log in to add sellers.");
+
+    const { data: res, error } = await supabase.functions.invoke("bulk-create-seller-watches", {
+      body: { text, marketplace, mode },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (error) throw new Error(await getFunctionErrorMessage(error, "Bulk add failed"));
+    if ((res as any)?.error) throw new Error((res as any).error);
+
+    if (mode === "commit") await refresh();
+    return res as BulkAddResult;
+  }, [refresh]);
+
   const cancelWatch = useCallback(async (id: string) => {
     const { error } = await supabase
       .from("seller_watchlist")
@@ -125,5 +183,5 @@ export function useSellerWatchlist() {
   // produce an alert -- there is no baseline to diff against yet.
   const timing = estimateWatchTiming(watches.length);
 
-  return { watches, loading, createWatch, cancelWatch, refresh, timing };
+  return { watches, loading, createWatch, cancelWatch, bulkAddWatches, refresh, timing };
 }

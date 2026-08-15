@@ -8,6 +8,7 @@ import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist, formatDuration, type SellerWatch, type WatchTiming } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
+import BulkAddPanel from "@/components/seller-analyzer/BulkAddPanel";
 import { Helmet } from "react-helmet-async";
 
 const MARKETS = ["US", "CA", "MX", "GB", "DE", "FR", "IT", "ES", "JP", "IN", "BR"];
@@ -62,7 +63,7 @@ export default function SellerAnalyzer() {
   const [marketplace, setMarketplace] = useState("US");
 
   const { toast } = useToast();
-  const { watches, createWatch, cancelWatch, timing } = useSellerWatchlist();
+  const { watches, createWatch, cancelWatch, bulkAddWatches, timing } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
 
   const typedSellerId = parseSellerInput(input).sellerId;
@@ -140,6 +141,12 @@ export default function SellerAnalyzer() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
+        <BulkAddPanel
+          marketplace={marketplace}
+          currentWatchCount={watches.length}
+          onBulkAdd={bulkAddWatches}
+        />
+
         <NewListingsPanel />
 
         {watches.length > 0 ? (

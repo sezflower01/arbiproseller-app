@@ -32,7 +32,7 @@ function amazonSellerUrl(sellerId: string, marketplace?: string): string {
 }
 
 // Email template types
-type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired" | "gmail-reply" | "seller-watch-confirm" | "seller-watch-new-listings";
+type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired" | "gmail-reply" | "seller-watch-new-listings";
 
 interface EmailRequest {
   to: string;
@@ -57,7 +57,6 @@ interface EmailRequest {
     sellerId: string;
     sellerName?: string | null;
     marketplace?: string;
-    confirmUrl?: string;
     newAsins?: string[];
     totalNew?: number;
   };
@@ -237,29 +236,13 @@ const handler = async (req: Request): Promise<Response> => {
           </p>
         </div>
       `;
-    } else if (emailType === "seller-watch-confirm") {
-      if (!sellerWatch?.confirmUrl) {
-        throw new Error("sellerWatch.confirmUrl is required for seller-watch-confirm email type");
-      }
-      const displayName = sellerWatch.sellerName || sellerWatch.sellerId;
-      subject = `Confirm your seller watch for ${displayName}`;
-      html = `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #6D28D9; margin-bottom: 24px;">Confirm your seller watch</h1>
-          <p>Hello,</p>
-          <p>Someone (hopefully you) set up storefront monitoring on InventorySprint for:</p>
-          <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0;">
-            <p><strong>Seller:</strong> <a href="${amazonSellerUrl(sellerWatch.sellerId, sellerWatch.marketplace)}" style="color: #6D28D9;">${escapeHtml(displayName)}</a> (${sellerWatch.marketplace || "US"})</p>
-          </div>
-          <p>Click below to confirm and activate this watch. We'll email you whenever this seller lists something new. If you don't confirm, no notifications will ever be sent.</p>
-          <p style="text-align: center; margin: 32px 0;">
-            <a href="${sellerWatch.confirmUrl}" style="background-color: #6D28D9; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Confirm Seller Watch</a>
-          </p>
-          <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
-            If you didn't request this, you can safely ignore this email — the watch will never activate without confirmation.
-          </p>
-        </div>
-      `;
+    // NOTE: a "seller-watch-confirm" type used to live here. Seller watches
+    // are created directly as active -- notify_email is always the caller's
+    // own already-verified account email, so there is nothing to confirm and
+    // the double opt-in was pure friction. The branch was unreachable for a
+    // long time before being removed; price-alert-confirm above is the real
+    // one, and it still matters because price alerts accept an arbitrary
+    // notify_email that must be proven to belong to the requester.
     } else if (emailType === "seller-watch-new-listings") {
       if (!sellerWatch) {
         throw new Error("sellerWatch is required for seller-watch-new-listings email type");
