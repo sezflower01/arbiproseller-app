@@ -1,24 +1,18 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, RefreshCw, Search, Store, ExternalLink, BellPlus, Bell, BellOff, ChevronDown, ChevronUp } from "lucide-react";
-import { useSellerSnapshot } from "@/hooks/use-seller-snapshot";
+import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
-import StoreDetailsCard from "@/components/seller-analyzer/StoreDetailsCard";
-import TopListTable from "@/components/seller-analyzer/TopListTable";
-import SellerCharts from "@/components/seller-analyzer/SellerCharts";
-import StorefrontListingCard from "@/components/seller-analyzer/StorefrontListingCard";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
 import { Helmet } from "react-helmet-async";
 
 const MARKETS = ["US", "CA", "MX", "GB", "DE", "FR", "IT", "ES", "JP", "IN", "BR"];
 
-function parseSellerInput(raw: string): { sellerId: string; marketplace?: string } {
+function parseSellerInput(raw: string): { sellerId: string } {
   const t = raw.trim();
   const me = t.match(/[?&]me=([A-Z0-9]+)/i);
   if (me) return { sellerId: me[1] };
@@ -26,22 +20,13 @@ function parseSellerInput(raw: string): { sellerId: string; marketplace?: string
 }
 
 export default function SellerAnalyzer() {
-  const [params, setParams] = useSearchParams();
-  const initialSeller = params.get("sellerId") || params.get("url") || "";
-  const initialMarket = (params.get("marketplace") || "US").toUpperCase();
-  const [input, setInput] = useState(initialSeller);
-  const [marketplace, setMarketplace] = useState(initialMarket);
-  const [page, setPage] = useState(0);
+  const [input, setInput] = useState("");
+  const [marketplace, setMarketplace] = useState("US");
 
-  const { data, loading, error, load } = useSellerSnapshot();
   const { toast } = useToast();
   const { watches, createWatch, cancelWatch } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
-  const [showListings, setShowListings] = useState(false);
 
-  // Watching works directly off the typed seller ID -- adding a watch is
-  // the primary action here, running the full storefront analysis is
-  // optional and shouldn't gate it.
   const typedSellerId = parseSellerInput(input).sellerId;
   const currentWatch = typedSellerId
     ? watches.find((w) => w.seller_id === typedSellerId && w.marketplace === marketplace)
@@ -51,8 +36,9 @@ export default function SellerAnalyzer() {
     if (!typedSellerId) return;
     setWatchToggling(true);
     try {
-      await createWatch(typedSellerId, data?.store.sellerId === typedSellerId ? data.store.sellerName : null, marketplace);
+      await createWatch(typedSellerId, null, marketplace);
       toast({ title: `Now watching ${typedSellerId}` });
+      setInput("");
     } catch (e: any) {
       toast({ title: "Could not watch seller", description: e.message, variant: "destructive" });
     } finally {
@@ -69,43 +55,11 @@ export default function SellerAnalyzer() {
     }
   };
 
-  useEffect(() => {
-    if (initialSeller) {
-      const { sellerId } = parseSellerInput(initialSeller);
-      if (sellerId) load(sellerId, initialMarket, 0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const submit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const { sellerId } = parseSellerInput(input);
-    if (!sellerId) return;
-    setPage(0);
-    setParams({ sellerId, marketplace });
-    load(sellerId, marketplace, 0);
-  };
-
-  const goPage = (p: number) => {
-    if (!data) return;
-    setPage(p);
-    load(data.store.sellerId, marketplace, p, { prev: data });
-  };
-
-  const refresh = () => {
-    if (!data) return;
-    load(data.store.sellerId, marketplace, page, { forceRefresh: true });
-  };
-
-  const cachedLabel = data?.cachedAt
-    ? `Cached result · Last fetched: ${new Date(data.cachedAt).toLocaleString()}`
-    : null;
-
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>Seller Storefront Analyzer | InventorySprint</title>
-        <meta name="description" content="Analyze any Amazon seller storefront — brands, categories, listings and live offers." />
+        <title>Seller Storefront Monitor | InventorySprint</title>
+        <meta name="description" content="Watch Amazon seller storefronts and get alerted when they list something new." />
       </Helmet>
 
       {/* Header */}
@@ -113,9 +67,9 @@ export default function SellerAnalyzer() {
         <div className="max-w-[1600px] mx-auto px-4 py-4">
           <div className="flex items-center gap-3 mb-3">
             <Store className="h-5 w-5" />
-            <h1 className="text-xl font-semibold">Seller Storefront Analyzer</h1>
+            <h1 className="text-xl font-semibold">Seller Storefront Monitor</h1>
           </div>
-          <form onSubmit={submit} className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+          <form onSubmit={(e) => { e.preventDefault(); addWatch(); }} className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -138,34 +92,19 @@ export default function SellerAnalyzer() {
                 <Bell className="h-4 w-4 mr-2 text-emerald-500" /> Watching
               </Button>
             ) : (
-              <Button type="button" variant="outline" className="text-foreground" onClick={addWatch} disabled={watchToggling || !typedSellerId}>
+              <Button type="submit" variant="outline" className="text-foreground" disabled={watchToggling || !typedSellerId}>
                 {watchToggling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BellPlus className="h-4 w-4 mr-2" />}
                 Watch
               </Button>
             )}
-            {data && (
-              <>
-                <Button type="button" variant="outline" className="text-foreground" onClick={refresh} disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh from Keepa
-                </Button>
-                <Button asChild type="button" variant="outline" className="text-foreground">
-                  <a href={`https://www.amazon.com/s?i=merchant-items&me=${data.store.sellerId}&marketplaceID=ATVPDKIKX0DER`} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-4 w-4 mr-2" /> Open on Amazon
-                  </a>
-                </Button>
-              </>
-            )}
           </form>
-          {cachedLabel && (
-            <div className="mt-2 text-xs text-white/70">{cachedLabel}</div>
-          )}
         </div>
       </div>
 
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
         <NewListingsPanel />
 
-        {watches.length > 0 && (
+        {watches.length > 0 ? (
           <Card>
             <CardContent className="p-4">
               <h2 className="text-sm font-semibold mb-3">Watched Sellers</h2>
@@ -178,21 +117,6 @@ export default function SellerAnalyzer() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge>Watching</Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7"
-                        onClick={() => {
-                          setInput(w.seller_id);
-                          setMarketplace(w.marketplace);
-                          setPage(0);
-                          setParams({ sellerId: w.seller_id, marketplace: w.marketplace });
-                          load(w.seller_id, w.marketplace, 0);
-                        }}
-                      >
-                        <Search className="h-3.5 w-3.5 mr-1.5" /> Analysis
-                      </Button>
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeWatch(w.id)}>
                         <BellOff className="h-4 w-4" />
                       </Button>
@@ -202,73 +126,12 @@ export default function SellerAnalyzer() {
               </div>
             </CardContent>
           </Card>
-        )}
-
-        {error && (
-          <Card><CardContent className="p-4 text-rose-600 dark:text-rose-400">{error}</CardContent></Card>
-        )}
-
-        {!data && !loading && !error && (
+        ) : (
           <Card><CardContent className="p-10 text-center text-muted-foreground">
-            Enter a seller ID or paste a storefront URL to begin.
+            Enter a seller ID to start watching for new listings.
           </CardContent></Card>
-        )}
-
-        {loading && !data && (
-          <Card><CardContent className="p-10 flex items-center justify-center text-muted-foreground gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Fetching storefront…
-          </CardContent></Card>
-        )}
-
-        {data && (
-          <>
-            <StoreDetailsCard store={data.store} marketplace={marketplace} />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <TopListTable title="Top Brands (page)" labelHeader="Brand" rows={data.topBrands} />
-              <TopListTable title="Top Categories (page)" labelHeader="Category" rows={data.topCategories} />
-            </div>
-
-            <SellerCharts topBrands={data.topBrands} topCategories={data.topCategories} items={data.pageItems} />
-
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowListings((v) => !v)}
-                className="flex items-center justify-between w-full mb-3"
-              >
-                <span className="flex items-center gap-2 text-lg font-semibold">
-                  {showListings ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  Storefront Listings
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Page {data.page + 1} of {data.totalPages} · {data.asinList.length.toLocaleString()} ASINs
-                </span>
-              </button>
-              {showListings && (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {data.pageItems.map((p) => (
-                      <StorefrontListingCard key={p.asin} p={p} marketplace={marketplace} />
-                    ))}
-                    {data.pageItems.length === 0 && (
-                      <Card className="md:col-span-2 xl:col-span-3"><CardContent className="p-6 text-center text-muted-foreground">No items on this page.</CardContent></Card>
-                    )}
-                  </div>
-                  {data.totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 mt-4">
-                      <Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => goPage(page - 1)}>Previous</Button>
-                      <span className="text-sm text-muted-foreground">Page {page + 1} / {data.totalPages}</span>
-                      <Button variant="outline" size="sm" disabled={page >= data.totalPages - 1 || loading} onClick={() => goPage(page + 1)}>Next</Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
         )}
       </div>
-
     </div>
   );
 }
