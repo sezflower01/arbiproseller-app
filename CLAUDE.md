@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## ⚠️ Read this first: the naming trap
+
+This repository has **five different names** across its layers. They all refer to the same single product. Nothing is mis-linked, nothing is a leftover from a different app, and no second checkout exists on the machine.
+
+| Layer | Name it carries |
+| --- | --- |
+| Local folder | `quick-start-genesis` (Lovable scaffold name) |
+| GitHub repo | `sezflower01/arbiproseller-app` |
+| Vercel project | `arbiproseller-app` (`.vercel/project.json`) |
+| Supabase project | `CloudArbi` — ref `mstibdszibcheodvnprm` |
+| Package name | `vite_react_shadcn_ts` (Lovable default) |
+| **The actual product** | **InventorySprint** — `inventorysprint.com` |
+
+The product is an **Amazon FBA seller-operations platform**: repricing, inventory, sourcing, P&L, shipments, and label printing. When the user says "InventorySprint", "the app", or "the site", they mean this repo. Do not go looking for another project.
+
+## Commands
+
+- `npm run dev` — Vite dev server (port 8080)
+- `npm run build` — builds extension zips, then `vite build`
+- `npm run build:dev` — unminified build, for debugging build-only issues
+- `npm run lint` — ESLint over the repo
+- `npm run db:status` — `supabase migration list`
+- `npm run db:push` — `supabase db push`
+
+**Package manager is npm.** `package-lock.json` is the live lockfile (`node_modules/.package-lock.json` confirms it). `bun.lock` and `bun.lockb` are Lovable residue — ignore them, don't update them, don't switch to bun.
+
+`npm run build` runs `scripts/build-extension-zips.js` **before** Vite. A build failure may originate there, not in the frontend.
+
+### Tests
+
+There is **no frontend test runner** — no Jest, no Vitest, no test files in `src`. Don't assume `npm test` exists.
+
+Edge-function logic is tested with **Deno** (~20 `*_test.ts` files):
+
+```bash
+deno test --allow-net --allow-env --allow-read supabase/functions/_tests/repricer-ai-evaluate/presets_snapshot_test.ts
+```
+
+Shared-module tests sit beside their source (`_shared/module-access-guard_test.ts`); larger suites live in `supabase/functions/_tests/`.
+
+## Architecture
+
+**Frontend** — React 18 + TypeScript + Vite + shadcn-ui (Radix) + Tailwind, deployed to Vercel. ~126 pages in `src/pages`, feature-grouped components in `src/components/<feature>/` (repricer, sales, profitloss, inventory, shipment, seller-analyzer, admin, access, …). i18n via `src/locales`.
+
+**Backend** — Supabase: Postgres (**891 migrations**), Auth, Realtime, and **253 Deno Edge Functions** in `supabase/functions/*`, one `index.ts` per function. Edge functions are **not** built or bundled by `npm run build`; they deploy independently.
+
+**Also in the repo** — a Chrome extension (`extension/`, `extension-create/`) and a self-contained Windows .NET print client (`print-clients/windows/`).
+
+### External integrations
+
+Amazon SP-API (LWA + AWS creds), **Keepa** (product/seller data), Rainforest, ScrapingBee, Google CSE, Gemini, Resend (email). All secrets live in **Supabase edge-function secrets**, never in the repo. The local `.env` holds only public `VITE_*` values — there is no Keepa or SP-API key on the dev machine, so anything needing one must run server-side.
+
+## Critical patterns
+
+### Shared rate gates — always use them, never call a metered API directly
+
+Third-party quotas are **account-wide**, so independent callers will silently starve each other. Two gates exist, both using the same atomic claim pattern (`last_called_at` on a shared row):
+
+- **Keepa** — `_shared/keepa-rate-gate.ts` → `acquireKeepaGlobalSlot()`, backed by `keepa_daily_usage`
+- **SP-API** — `sp_api_rate_limit_state` table, per `(user_id, operation)`
+
+Callers currently sharing the Keepa gate: `repricer-sp-api-pricing` (live and critical), `check-seller-watchlist`, `find-source-candidates`, `seller-storefront-snapshot`. **Adding a new Keepa caller without the gate will degrade repricing.**
+
+Two distinct usage styles, and picking the wrong one is a real bug:
+- **Background cron** — if no slot is free, skip and retry next run.
+- **Interactive request** — wait briefly and retry, so the user gets data instead of an empty screen (`seller-storefront-snapshot` does this).
+
+### Keepa cost model
+
+The account plan is **5 tokens/min**; the gate guards at **4 calls/min** to avoid 429s. Note the gate meters **calls, not tokens** — a call returning thousands of listings may cost far more than one token, so call-count budgeting understates real consumption. Every Keepa response carries `tokensLeft`, `tokensConsumed`, `refillRate` and `refillIn`; read them when reasoning about capacity.
+
+Keepa API gotchas already learned the hard way:
+- `/product` `offers` must be **0 or ≥20**. `offers=10` returns HTTP 200 with an `{error:...}` body, which naive code reads as "zero offers".
+- Always check `json.error` on a 200 response — Keepa signals failure in-body.
+
+### Cron jobs
+
+Scheduled with **pg_cron inside migrations**, calling edge functions over `net.http_post` with an `x-internal-secret` header from Vault. Cron-triggered functions must authenticate via `INTERNAL_SYNC_SECRET` **or** a service-role bearer, and must never be publicly callable — they read all users' data and spend metered API quota.
+
+Stagger new jobs off the existing ones (e.g. `check-price-alerts` at `:00`, `check-seller-watchlist` at `:15`) so quota-consuming jobs don't burst together.
+
+Wrap long fan-out jobs in `withCronLock(...)` from `_shared/cron-lock.ts` — it prevents overlapping runs and records observability rows in `cron_run_history`.
+
+### Access control
+
+- `_shared/module-access-guard.ts` — per-user module permissions; admins (`user_roles.role = 'admin'`) always pass
+- `_shared/marketplace-guard.ts` — per-marketplace access
+- Admin-only functions verify via the `has_role` RPC (see `admin-vacuum-full`)
+- RLS is on throughout; user-facing tables scope by `auth.uid() = user_id`
+
+## Deployment
+
+- **Frontend** — Vercel auto-deploys from GitHub `main`.
+- **Edge functions** — `.github/workflows/deploy-edge-functions.yml` auto-deploys on push to `main` touching `supabase/functions/**`. **Committing an edge function ships it to production.** For an out-of-band deploy: `npx supabase functions deploy <name> --project-ref mstibdszibcheodvnprm`.
+- **Migrations** — not auto-applied; run `npm run db:push` deliberately.
+- Other workflows: `build-print-client.yml`, `repricer-preset-tests.yml`, `supabase-db-lint.yml`.
+
+Work happens directly on `main` — that is the established workflow here.
+
+## Reference docs
+
+- `docs/module-access-control.md` — source of truth for module permissions
+- `docs/realtime-channels.md` — every `supabase.channel(...)` must be scoped and registered here
+- `docs/verify-jwt-hardening.md` — cron `verify_jwt` hardening, run via SQL Editor
+
+## Working style in this repo
+
+Edge functions carry **substantial header comments** explaining *why* a design was chosen — cost tradeoffs, bugs previously hit, live-confirmed API behaviour with dates. This is deliberate institutional memory. Match it: when fixing a non-obvious bug, record the reasoning in the file rather than only the fix.
+
+Lovable residue (the scaffold README, `.lovable/`, bun lockfiles, the generic package name) is a normal migration artifact — not a bug to fix reflexively.
