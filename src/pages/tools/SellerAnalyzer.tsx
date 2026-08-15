@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
-import { useSellerWatchlist } from "@/hooks/use-seller-watchlist";
+import { useSellerWatchlist, formatDuration, type SellerWatch, type WatchTiming } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
 import { Helmet } from "react-helmet-async";
@@ -19,12 +19,50 @@ function parseSellerInput(raw: string): { sellerId: string } {
   return { sellerId: t };
 }
 
+/**
+ * Row status. Every watch used to render an identical "Watching" badge, which
+ * made three genuinely different states indistinguishable: seeded and quiet,
+ * never checked yet, and (before the fair-rotation fix) never going to be
+ * checked at all. At scale the queue is legitimately days deep, so the wait
+ * has to be visible and explained or a working watch looks broken for a week.
+ */
+function WatchStatus({ watch, timing }: { watch: SellerWatch; timing: WatchTiming }) {
+  // last_checked_at and known_asin_list are written together by the worker's
+  // first pass, so a null here means "no baseline yet".
+  if (!watch.last_checked_at) {
+    return (
+      <div className="flex flex-col items-end gap-0.5">
+        <Badge variant="secondary" className="gap-1">
+          <Loader2 className="h-3 w-3 animate-spin" /> Seeding
+        </Badge>
+        <span className="text-[11px] text-muted-foreground">
+          first alert possible in {formatDuration(timing.daysToFirstAlert)}
+        </span>
+      </div>
+    );
+  }
+
+  const checkedAgoMs = Date.now() - new Date(watch.last_checked_at).getTime();
+  const checkedAgoDays = checkedAgoMs / 86_400_000;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <Badge className="gap-1">
+        <Bell className="h-3 w-3" /> Watching
+      </Badge>
+      <span className="text-[11px] text-muted-foreground">
+        checked {formatDuration(checkedAgoDays)} ago
+      </span>
+    </div>
+  );
+}
+
 export default function SellerAnalyzer() {
   const [input, setInput] = useState("");
   const [marketplace, setMarketplace] = useState("US");
 
   const { toast } = useToast();
-  const { watches, createWatch, cancelWatch } = useSellerWatchlist();
+  const { watches, createWatch, cancelWatch, timing } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
 
   const typedSellerId = parseSellerInput(input).sellerId;
@@ -107,7 +145,12 @@ export default function SellerAnalyzer() {
         {watches.length > 0 ? (
           <Card>
             <CardContent className="p-4">
-              <h2 className="text-sm font-semibold mb-3">Watched Sellers</h2>
+              <div className="flex items-baseline justify-between gap-2 mb-3">
+                <h2 className="text-sm font-semibold">Watched Sellers</h2>
+                <span className="text-xs text-muted-foreground">
+                  {watches.length} watched · full rotation {formatDuration(timing.rotationDays)}
+                </span>
+              </div>
               <div className="space-y-2">
                 {watches.map((w) => (
                   <div key={w.id} className="flex items-center justify-between gap-2 text-sm border-b last:border-b-0 pb-2 last:pb-0">
@@ -116,7 +159,7 @@ export default function SellerAnalyzer() {
                       <span className="text-muted-foreground shrink-0">({w.marketplace})</span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Badge>Watching</Badge>
+                      <WatchStatus watch={w} timing={timing} />
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeWatch(w.id)}>
                         <BellOff className="h-4 w-4" />
                       </Button>
@@ -124,6 +167,11 @@ export default function SellerAnalyzer() {
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Sellers are checked oldest-first, so every watch is reached in turn. New listings
+                usually take days to appear anyway — a seller has to source and ship to FBA before
+                the listing goes live.
+              </p>
             </CardContent>
           </Card>
         ) : (

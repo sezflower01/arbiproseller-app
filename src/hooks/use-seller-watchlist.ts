@@ -30,6 +30,49 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
   return err?.message || fallback;
 }
 
+/**
+ * Measured Keepa throughput for seller monitoring, 2026-08-15.
+ *
+ * A /seller?storefront=1 call costs a flat 10 tokens (catalog size is
+ * irrelevant) against a plan refilling 5 tokens/min. At the ~50% budget
+ * share seller monitoring is allowed -- the rest is reserved for live
+ * repricing -- that works out to roughly 350 checks per day across ALL
+ * watched sellers, shared.
+ *
+ * This is what makes the wait honest rather than mysterious: at 1000 watched
+ * sellers a full rotation takes about three days, and because a watch must be
+ * SEEDED on its first check before a second check can diff against it, the
+ * first possible alert is roughly two rotations out.
+ */
+const CHECKS_PER_DAY_TOTAL = 350;
+
+export interface WatchTiming {
+  /** Estimated days for the queue to work through every active watch once. */
+  rotationDays: number;
+  /** Estimated days until a brand-new watch could produce its first alert. */
+  daysToFirstAlert: number;
+}
+
+export function estimateWatchTiming(activeWatchCount: number): WatchTiming {
+  const sellers = Math.max(1, activeWatchCount);
+  const rotationDays = sellers / CHECKS_PER_DAY_TOTAL;
+  return {
+    rotationDays,
+    // Seed on the first check, diff on the second -- two rotations.
+    daysToFirstAlert: rotationDays * 2,
+  };
+}
+
+export function formatDuration(days: number): string {
+  if (days < 1 / 24) return 'under an hour';
+  if (days < 1) {
+    const hours = Math.round(days * 24);
+    return `~${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  const rounded = days < 10 ? Math.round(days * 10) / 10 : Math.round(days);
+  return `~${rounded} day${rounded === 1 ? '' : 's'}`;
+}
+
 export function useSellerWatchlist() {
   const [watches, setWatches] = useState<SellerWatch[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,5 +120,10 @@ export function useSellerWatchlist() {
     await refresh();
   }, [refresh]);
 
-  return { watches, loading, createWatch, cancelWatch, refresh };
+  // A watch is "seeding" until its first successful check, which writes
+  // last_checked_at and known_asin_list together. Until then it cannot
+  // produce an alert -- there is no baseline to diff against yet.
+  const timing = estimateWatchTiming(watches.length);
+
+  return { watches, loading, createWatch, cancelWatch, refresh, timing };
 }

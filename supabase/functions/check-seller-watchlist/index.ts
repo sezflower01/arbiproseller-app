@@ -1,25 +1,59 @@
 // CHECK-SELLER-WATCHLIST
-// Hourly cron worker (see migration 20260815133728_add_seller_watchlist.sql).
-// For every active seller watch, re-pulls the seller's current storefront
-// ASIN list from Keepa (ONE minimal /seller?storefront=1 call per DISTINCT
-// seller+marketplace, shared across however many users are watching the
-// same seller -- mirrors check-price-alerts' asin+marketplace grouping) and
-// diffs it against the last-known list. New ASINs fire a
-// seller-watch-new-listings email; the very first check for a watch just
-// seeds the baseline (known_asin_list starts NULL) so a brand-new watch
-// doesn't immediately "discover" the seller's entire existing catalog.
+// Resumable, fair-rotation worker (see migrations 20260815133728 and
+// 20260815220000). Runs every 5 minutes, spends whatever Keepa budget is
+// available on the STALEST watches, and stops cleanly when the budget or the
+// clock runs out. The next run resumes from wherever this one stopped.
 //
-// The seller-list diff itself deliberately does NOT call Keepa's /product
-// endpoint -- it only needs ASINs, so cost stays flat regardless of catalog
-// size. Once genuinely NEW asins are found (typically 0-5, not the whole
-// catalog), a SEPARATE bounded /product batch call fetches title/brand/
-// image/upc for just those -- needed for the seller_watch_new_listings feed
-// (see migration 20260815140759) and the Find Source search query. Cost
-// here scales with actual new-listing volume, not catalog size.
+// WHY THIS SHAPE -- the previous version had three defects that combined
+// into silent, permanent starvation rather than mere slowness:
+//
+//   1. `.limit(500)` was GLOBAL across all users, so with more than 500
+//      active watches the overflow was never read from the database at all.
+//   2. No ORDER BY, so the arbitrary rows Postgres returned first won the
+//      rate-limit slot on EVERY run. last_checked_at was written but never
+//      read, so nothing preferred a seller that hadn't been checked.
+//   3. On a busy gate it did `continue`, and the skip count lived only in
+//      the response JSON. The next run started from the same arbitrary order
+//      with zero memory of who had been passed over.
+//
+// Net effect: the same handful of sellers were checked forever while the
+// rest never were, and the UI showed all of them as "Watching". Users could
+// not tell the difference between "checked and nothing new" and "never
+// checked at all".
+//
+// The fix is ordering, not throughput. `last_checked_at ASC NULLS FIRST`
+// makes the queue self-balancing: whoever waited longest goes next, and
+// NULLS FIRST puts brand-new unseeded watches at the head so they finish
+// seeding promptly. Once ordering is fair, stopping early is CORRECT rather
+// than lossy -- an unprocessed seller is simply the stalest one next time.
+// That is why this breaks out of the loop instead of skipping onward.
+//
+// Cost model (measured 2026-08-15, see _shared/keepa-rate-gate.ts):
+// /seller?storefront=1 is a flat 10 tokens regardless of catalog size, and
+// the plan refills 5 tokens/min, so a full check costs about two minutes of
+// budget. At a 50% share that is roughly 350 checks/day across ALL watched
+// sellers -- about a 3-day rotation at 1000 sellers. The seller-list diff
+// deliberately never calls /product; only genuinely-new ASINs (typically
+// 0-5) get a bounded detail batch, so cost scales with new-listing volume
+// rather than catalog size.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 
 const MAX_PRODUCT_DETAIL_ASINS = 50;
+
+// Stalest N watches considered per run. Only a couple will actually be
+// processed on a 5-tokens/min plan; the surplus is headroom so a run with
+// spare budget (or a future larger plan) can keep going without a redeploy.
+const CANDIDATE_BATCH = 60;
+
+// Leave room inside the cron's 120s timeout to finish the current seller and
+// write its state, rather than being killed mid-update.
+const RUN_BUDGET_MS = 90_000;
+
+// How long to wait for a token slot before ending the run. A 10-token call
+// needs ~2 minutes of refill, which is longer than a run should idle -- past
+// this, stopping and letting the next run pick up is cheaper than blocking.
+const MAX_SLOT_WAIT_SECONDS = 25;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,6 +68,25 @@ const NEW_ASINS_IN_EMAIL = 10;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Claim a token slot, waiting briefly if the wait is short enough to be worth
+ * it and there is time left in the run. Returns the final (possibly failed)
+ * claim; callers end the run rather than skipping onward, so that a refused
+ * seller stays at the head of the queue for next time.
+ */
+async function acquireSlotOrGiveUp(admin: any, estimatedTokens: number, deadlineAt: number) {
+  const first = await acquireKeepaGlobalSlot(admin, { estimatedTokens });
+  if (first.ok) return first;
+
+  const waitSeconds = Math.min(first.waitSeconds ?? MAX_SLOT_WAIT_SECONDS, MAX_SLOT_WAIT_SECONDS);
+  if (Date.now() + waitSeconds * 1000 >= deadlineAt) return first;
+
+  await sleep(waitSeconds * 1000);
+  return acquireKeepaGlobalSlot(admin, { estimatedTokens });
 }
 
 Deno.serve(async (req) => {
@@ -53,42 +106,110 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + RUN_BUDGET_MS;
+
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const KEEPA_KEY = Deno.env.get('KEEPA_API_KEY')?.trim();
     if (!KEEPA_KEY) return jsonResponse({ error: 'KEEPA_API_KEY not configured' }, 500);
     const admin = createClient(SUPABASE_URL, serviceRoleKey);
 
-    const { data: watches, error } = await admin
+    const body = await req.json().catch(() => ({}));
+    // Plan mode: report the queue order WITHOUT calling Keepa or mutating
+    // anything. This is how fair rotation is verified against real data --
+    // run it, run the worker, run it again, and watch the just-checked seller
+    // move to the back.
+    const planOnly = body?.plan === true;
+
+    // --- Step 1: the stalest watches, oldest first, unseeded ahead of all ---
+    // No global cap. The bound is "what one run can plausibly process",
+    // applied in staleness order, rather than an arbitrary slice of the table.
+    const { data: candidates, error } = await admin
+      .from('seller_watchlist')
+      .select('id, seller_id, marketplace, last_checked_at')
+      .eq('status', 'active')
+      .order('last_checked_at', { ascending: true, nullsFirst: true })
+      .limit(CANDIDATE_BATCH);
+    if (error) return jsonResponse({ error: error.message }, 500);
+
+    const { count: totalActive } = await admin
+      .from('seller_watchlist')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'active');
+
+    if (!candidates?.length) {
+      return jsonResponse({ ok: true, checked: 0, alertsFired: 0, distinctSellers: 0, totalActive: totalActive ?? 0 });
+    }
+
+    // Distinct seller+marketplace pairs, preserving staleness order.
+    const orderedPairs: { sellerId: string; marketplace: string; stalest: string | null }[] = [];
+    const seenPair = new Set<string>();
+    for (const c of candidates) {
+      const key = `${c.seller_id}|${c.marketplace}`;
+      if (seenPair.has(key)) continue;
+      seenPair.add(key);
+      orderedPairs.push({ sellerId: c.seller_id, marketplace: c.marketplace, stalest: c.last_checked_at });
+    }
+
+    if (planOnly) {
+      return jsonResponse({
+        ok: true,
+        planOnly: true,
+        totalActive: totalActive ?? 0,
+        queue: orderedPairs.map((p, i) => ({
+          position: i + 1,
+          sellerId: p.sellerId,
+          marketplace: p.marketplace,
+          lastCheckedAt: p.stalest,
+          seeded: p.stalest !== null,
+        })),
+        note: 'Order is last_checked_at ASC NULLS FIRST. Unseeded watches (null) sort first, then longest-waiting. Nothing was called or modified.',
+      });
+    }
+
+    // --- Step 2: all watchers of those sellers, so one Keepa call still
+    // serves everyone watching the same storefront (the original cost-sharing
+    // property). Fetched by the pair components then filtered exactly, since
+    // PostgREST cannot express a composite IN cleanly.
+    const { data: allWatches, error: fetchErr } = await admin
       .from('seller_watchlist')
       .select('id, user_id, seller_id, seller_name, marketplace, notify_email, known_asin_list')
       .eq('status', 'active')
-      .limit(500);
-    if (error) return jsonResponse({ error: error.message }, 500);
-    if (!watches?.length) return jsonResponse({ ok: true, checked: 0, alertsFired: 0, distinctSellers: 0 });
+      .in('seller_id', orderedPairs.map((p) => p.sellerId))
+      .in('marketplace', Array.from(new Set(orderedPairs.map((p) => p.marketplace))));
+    if (fetchErr) return jsonResponse({ error: fetchErr.message }, 500);
 
-    // Group by seller_id+marketplace so N watches on the same seller cost
-    // ONE Keepa call, not N.
-    const groups = new Map<string, { sellerId: string; marketplace: string; watches: typeof watches }>();
-    for (const w of watches) {
+    const groups = new Map<string, typeof allWatches>();
+    for (const w of allWatches || []) {
       const key = `${w.seller_id}|${w.marketplace}`;
-      if (!groups.has(key)) groups.set(key, { sellerId: w.seller_id, marketplace: w.marketplace, watches: [] });
-      groups.get(key)!.watches.push(w);
+      if (!seenPair.has(key)) continue; // over-fetch from the cross-product
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(w);
     }
 
     let checked = 0;
     let alertsFired = 0;
-    let skippedRateLimit = 0;
+    let processedSellers = 0;
+    let stoppedReason: string | null = null;
     const nowIso = new Date().toISOString();
 
-    for (const { sellerId, marketplace, watches: group } of groups.values()) {
-      // Background sweep: leave the default repricer reserve in place so a
-      // large watchlist can never drain the budget live repricing needs.
-      const slot = await acquireKeepaGlobalSlot(admin, { estimatedTokens: KEEPA_COST.sellerStorefront });
+    for (const pair of orderedPairs) {
+      const key = `${pair.sellerId}|${pair.marketplace}`;
+      const group = groups.get(key);
+      if (!group?.length) continue;
+
+      if (Date.now() >= deadlineAt) { stoppedReason = 'run-time-budget'; break; }
+
+      const { sellerId, marketplace } = pair;
+
+      const slot = await acquireSlotOrGiveUp(admin, KEEPA_COST.sellerStorefront, deadlineAt);
       if (!slot.ok) {
-        console.warn(`[check-seller-watchlist] ${slot.blockedBy} guard: skipping ${sellerId}/${marketplace}, next slot in ~${slot.waitSeconds}s`);
-        skippedRateLimit += group.length;
-        continue;
+        // Deliberately BREAK, not continue. With fair ordering this seller is
+        // simply the stalest next run; grinding through the rest would spend
+        // the remaining budget on fresher sellers and re-starve this one.
+        stoppedReason = `keepa-${slot.blockedBy ?? 'budget'}`;
+        break;
       }
 
       const domainId = KEEPA_DOMAIN[marketplace] ?? 1;
@@ -114,14 +235,16 @@ Deno.serve(async (req) => {
         console.warn(`[check-seller-watchlist] Keepa fetch failed for ${sellerId}`, (e as Error).message);
       }
 
-      // Fetch failed entirely -- leave these watches untouched, they'll
-      // retry next hour rather than silently losing their baseline.
+      // Fetch failed entirely -- leave these watches untouched so they keep
+      // their place at the head of the queue and retry next run, rather than
+      // silently losing their baseline.
       if (currentAsins === null) continue;
 
-      // Pass 1: compute each watch's own newAsins (their known_asin_list
-      // may differ if they subscribed at different times) and accumulate
-      // the union so product details are fetched once per ASIN, not once
-      // per watch.
+      processedSellers++;
+
+      // Pass 1: compute each watch's own newAsins (their known_asin_list may
+      // differ if they subscribed at different times) and accumulate the union
+      // so product details are fetched once per ASIN, not once per watch.
       const perWatchNew = new Map<string, string[]>();
       const unionNewAsins = new Set<string>();
       for (const w of group) {
@@ -135,18 +258,18 @@ Deno.serve(async (req) => {
         }
       }
 
-      // One bounded batch call for whatever's genuinely new across the
-      // whole group -- title/brand/image/upc, needed for the new-listings
-      // feed and Find Source's search query.
+      // One bounded batch call for whatever's genuinely new across the whole
+      // group -- title/brand/image/upc, needed for the new-listings feed and
+      // Find Source's search query. /product bills 1 token PER ASIN, so this
+      // reserves for the real batch size rather than "one call".
       const productDetails = new Map<string, { title: string | null; brand: string | null; image: string | null; upc: string | null }>();
       if (unionNewAsins.size > 0) {
-        // /product bills 1 token PER ASIN, so this batch is worth up to
-        // MAX_PRODUCT_DETAIL_ASINS tokens -- reserve for the real size, not
-        // for "one call".
         const asinsToFetch = Array.from(unionNewAsins).slice(0, MAX_PRODUCT_DETAIL_ASINS);
-        const detailSlot = await acquireKeepaGlobalSlot(admin, {
-          estimatedTokens: asinsToFetch.length * KEEPA_COST.productPerAsin,
-        });
+        const detailSlot = await acquireSlotOrGiveUp(
+          admin,
+          asinsToFetch.length * KEEPA_COST.productPerAsin,
+          deadlineAt,
+        );
         if (detailSlot.ok) {
           try {
             const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${asinsToFetch.join(',')}`;
@@ -173,7 +296,9 @@ Deno.serve(async (req) => {
             console.warn(`[check-seller-watchlist] Keepa /product fetch failed for new-asin batch`, (e as Error).message);
           }
         } else {
-          console.warn(`[check-seller-watchlist] rate limit guard: skipping product-detail fetch for ${sellerId}/${marketplace}`);
+          // Detail fetch is optional: the new-listing rows still get written
+          // with null metadata and the seller-level diff is not lost.
+          console.warn(`[check-seller-watchlist] no token budget for product-detail fetch for ${sellerId}/${marketplace}`);
         }
       }
 
@@ -242,7 +367,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({ ok: true, checked, alertsFired, distinctSellers: groups.size, skippedRateLimit });
+    return jsonResponse({
+      ok: true,
+      checked,
+      alertsFired,
+      processedSellers,
+      queuedSellers: orderedPairs.length,
+      totalActive: totalActive ?? 0,
+      stoppedReason,
+      elapsedMs: Date.now() - startedAt,
+    });
   } catch (e) {
     console.error('[check-seller-watchlist] error', (e as Error).message);
     return jsonResponse({ error: (e as Error).message }, 500);
