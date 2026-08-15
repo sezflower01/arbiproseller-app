@@ -439,3 +439,15 @@ verify_jwt = false
 
 [functions.debug-load-snapshot]
 verify_jwt = false
+
+[functions.create-seller-watch]
+verify_jwt = true
+
+[functions.confirm-seller-watch]
+verify_jwt = false
+
+[functions.check-seller-watchlist]
+verify_jwt = false
+
+[functions.find-source-candidates]
+verify_jwt = true

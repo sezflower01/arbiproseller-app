@@ -17,7 +17,7 @@ import {
   ENGINE_VERSION,
   type EngineResult,
 } from "./_match-engine.ts";
-import { compareImages, type ImageCompareResult } from "./_image-compare.ts";
+import { compareImages, type ImageCompareResult } from "../_shared/image-compare.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

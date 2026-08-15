@@ -26,9 +26,13 @@ function amazonListingUrl(asin: string, marketplace?: string): string {
   const host = MARKETPLACE_DOMAIN[(marketplace || "US").toUpperCase()] || "amazon.com";
   return `https://www.${host}/dp/${encodeURIComponent(asin)}`;
 }
+function amazonSellerUrl(sellerId: string, marketplace?: string): string {
+  const host = MARKETPLACE_DOMAIN[(marketplace || "US").toUpperCase()] || "amazon.com";
+  return `https://www.${host}/sp?seller=${encodeURIComponent(sellerId)}`;
+}
 
 // Email template types
-type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired" | "gmail-reply";
+type EmailType = "order-confirmation" | "license-key" | "contact-form" | "contact-auto-reply" | "price-alert-confirm" | "price-alert-fired" | "gmail-reply" | "seller-watch-confirm" | "seller-watch-new-listings";
 
 interface EmailRequest {
   to: string;
@@ -48,6 +52,14 @@ interface EmailRequest {
     targetPrice: number;
     currentPrice?: number;
     confirmUrl?: string;
+  };
+  sellerWatch?: {
+    sellerId: string;
+    sellerName?: string | null;
+    marketplace?: string;
+    confirmUrl?: string;
+    newAsins?: string[];
+    totalNew?: number;
   };
   replyBody?: string;
   replySubject?: string;
@@ -70,7 +82,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { to, from, name, emailType, orderDetails, licenseKey, inquiry, replyTo, priceAlert, replyBody, replySubject, inReplyTo }: EmailRequest = await req.json();
+    const { to, from, name, emailType, orderDetails, licenseKey, inquiry, replyTo, priceAlert, sellerWatch, replyBody, replySubject, inReplyTo }: EmailRequest = await req.json();
     
     if (!to || !name || !emailType) {
       throw new Error("Missing required fields: to, name, or emailType");
@@ -222,6 +234,58 @@ const handler = async (req: Request): Promise<Response> => {
           <div style="white-space: pre-line;">${escapeHtml(replyBody)}</div>
           <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
             Sent from InventorySprint Email Center
+          </p>
+        </div>
+      `;
+    } else if (emailType === "seller-watch-confirm") {
+      if (!sellerWatch?.confirmUrl) {
+        throw new Error("sellerWatch.confirmUrl is required for seller-watch-confirm email type");
+      }
+      const displayName = sellerWatch.sellerName || sellerWatch.sellerId;
+      subject = `Confirm your seller watch for ${displayName}`;
+      html = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #6D28D9; margin-bottom: 24px;">Confirm your seller watch</h1>
+          <p>Hello,</p>
+          <p>Someone (hopefully you) set up storefront monitoring on InventorySprint for:</p>
+          <div style="background-color: #F5F3FF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 16px; margin: 24px 0;">
+            <p><strong>Seller:</strong> <a href="${amazonSellerUrl(sellerWatch.sellerId, sellerWatch.marketplace)}" style="color: #6D28D9;">${escapeHtml(displayName)}</a> (${sellerWatch.marketplace || "US"})</p>
+          </div>
+          <p>Click below to confirm and activate this watch. We'll email you whenever this seller lists something new. If you don't confirm, no notifications will ever be sent.</p>
+          <p style="text-align: center; margin: 32px 0;">
+            <a href="${sellerWatch.confirmUrl}" style="background-color: #6D28D9; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Confirm Seller Watch</a>
+          </p>
+          <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+            If you didn't request this, you can safely ignore this email — the watch will never activate without confirmation.
+          </p>
+        </div>
+      `;
+    } else if (emailType === "seller-watch-new-listings") {
+      if (!sellerWatch) {
+        throw new Error("sellerWatch is required for seller-watch-new-listings email type");
+      }
+      const displayName = sellerWatch.sellerName || sellerWatch.sellerId;
+      const newAsins = sellerWatch.newAsins || [];
+      const totalNew = sellerWatch.totalNew ?? newAsins.length;
+      const asinRows = newAsins
+        .map((asin) => `<p style="margin: 4px 0;"><a href="${amazonListingUrl(asin, sellerWatch.marketplace)}" style="color: #059669;">${escapeHtml(asin)}</a></p>`)
+        .join("");
+      const moreNote = totalNew > newAsins.length ? `<p style="color: #6B7280; margin-top: 8px;">+ ${totalNew - newAsins.length} more</p>` : "";
+      subject = `${displayName} just listed ${totalNew} new item${totalNew === 1 ? "" : "s"}`;
+      html = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #059669; margin-bottom: 24px;">New listing${totalNew === 1 ? "" : "s"} detected</h1>
+          <p>Hello,</p>
+          <p>A seller you're watching just added ${totalNew} new item${totalNew === 1 ? "" : "s"} to their storefront:</p>
+          <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 16px; margin: 24px 0;">
+            <p><strong>Seller:</strong> <a href="${amazonSellerUrl(sellerWatch.sellerId, sellerWatch.marketplace)}" style="color: #059669;">${escapeHtml(displayName)}</a> (${sellerWatch.marketplace || "US"})</p>
+            <p style="margin-top: 12px;"><strong>New ASINs:</strong></p>
+            ${asinRows}
+            ${moreNote}
+          </div>
+          <p>This watch stays active — you'll get another email next time something new appears.</p>
+          <p style="margin-top: 32px; font-size: 12px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px;">
+            This is an automated message, please do not reply directly to this email.
           </p>
         </div>
       `;

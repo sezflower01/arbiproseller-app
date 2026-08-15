@@ -2,6 +2,24 @@
 // With per-user 24h Supabase cache to avoid re-burning Keepa tokens.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { acquireKeepaGlobalSlot } from '../_shared/keepa-rate-gate.ts';
+
+// This function used to call Keepa directly with zero awareness of other
+// callers (repricer-sp-api-pricing, check-seller-watchlist) sharing the same
+// account's 5-tokens/min plan -- confirmed live on 2026-08-15: a user's
+// /product page-item fetch failed silently (no cache write, no error
+// surfaced -- just an empty "Storefront Listings" page) right after a burst
+// of Keepa calls from check-seller-watchlist testing. This gate coordinates
+// with those other callers via the same keepa_daily_usage table. Since this
+// is an interactive request (not a background cron), a blocked slot waits
+// briefly and retries once rather than skipping outright.
+async function acquireKeepaSlotWithRetry(supabase: any): Promise<{ ok: boolean; waitSeconds: number }> {
+  const first = await acquireKeepaGlobalSlot(supabase);
+  if (first.ok) return first;
+  const waitMs = Math.min(first.waitSeconds, 15) * 1000;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+  return acquireKeepaGlobalSlot(supabase);
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -119,6 +137,10 @@ Deno.serve(async (req) => {
       }
 
       if (!store) {
+        const sellerSlot = await acquireKeepaSlotWithRetry(supabase);
+        if (!sellerSlot.ok) {
+          return new Response(JSON.stringify({ error: `Keepa is busy with other requests right now. Try again in ~${sellerSlot.waitSeconds}s.` }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
         const sellerUrl = `https://api.keepa.com/seller?key=${KEEPA_KEY}&domain=${domain}&seller=${encodeURIComponent(sellerId)}&storefront=1`;
         const sResp = await fetch(sellerUrl);
         if (!sResp.ok) {
@@ -180,11 +202,26 @@ Deno.serve(async (req) => {
 
     let products: any[] = [];
     if (!pageItems && slice.length) {
-      const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domain}&asin=${slice.join(',')}&stats=90&offers=10&buybox=1&stock=1`;
+      const productSlot = await acquireKeepaSlotWithRetry(supabase);
+      if (!productSlot.ok) {
+        return new Response(JSON.stringify({ error: `Keepa is busy with other requests right now. Try again in ~${productSlot.waitSeconds}s.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      // offers must be 0 or >=20 per Keepa's API -- offers=10 was an invalid
+      // parameter that Keepa rejected with a 200-status {error:...} body
+      // (not a 429), which the old code never checked, silently treating it
+      // as "zero offers" and returning empty pageItems with no explanation.
+      // Confirmed live 2026-08-15 via a debug response dump -- this was the
+      // ACTUAL root cause of the empty-storefront-listings bug, not Keepa
+      // rate limiting (tokensLeft was 290/plenty at the time).
+      const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domain}&asin=${slice.join(',')}&stats=90&offers=20&buybox=1&stock=1`;
       try {
         const pResp = await fetch(url);
         if (pResp.ok) {
           const pJson = await pResp.json().catch(() => ({}));
+          if (pJson?.error) {
+            console.error('[seller-storefront-snapshot] Keepa /product returned an error payload', JSON.stringify(pJson.error).slice(0, 200));
+            return new Response(JSON.stringify({ error: `Keepa product fetch failed: ${pJson.error.message || 'unknown error'}.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
           products = Array.isArray(pJson?.products) ? pJson.products : [];
         } else {
           const txt = await pResp.text().catch(() => '');
@@ -194,9 +231,13 @@ Deno.serve(async (req) => {
             try { const j = JSON.parse(txt); if (j?.refillIn) refillSec = Math.ceil(j.refillIn / 1000); } catch {}
             return new Response(JSON.stringify({ error: `Keepa rate limit reached on product fetch. Try again in ~${refillSec}s.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
+          // Non-429 failure -- previously fell through silently, returning
+          // 200 with empty pageItems and no explanation. Surface it instead.
+          return new Response(JSON.stringify({ error: `Keepa product fetch failed (HTTP ${pResp.status}). Try again.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
       } catch (e) {
         console.error('[seller-storefront-snapshot] /product fetch threw', (e as Error).message);
+        return new Response(JSON.stringify({ error: `Keepa product fetch failed: ${(e as Error).message}. Try again.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 
