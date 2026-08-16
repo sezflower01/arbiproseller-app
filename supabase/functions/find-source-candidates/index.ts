@@ -360,6 +360,23 @@ Deno.serve(async (req) => {
         compareImages(c.imageUrl, listing.image_url, GEMINI_API_KEY),
       ]);
       const confidence = blendConfidence(c.score, gemini, image);
+
+      // The reason string used to be derived from the Gemini TEXT verdict
+      // alone, so a candidate with no image at all still read "Text and image
+      // signals align". compareImages returns verdict 'unavailable' the moment
+      // either side lacks a URL, so it had frequently not run -- candidate
+      // images come only from Google CSE pagemap (cse_image / product.image),
+      // which many results simply do not carry, and the SerpAPI fallback path
+      // never sets one. Claiming corroborating image evidence that was never
+      // gathered overstates the case for exactly the mid-confidence matches a
+      // user leans on the reason to judge.
+      const imageCompared = !!image && image.verdict !== 'unavailable';
+      const reason = !gemini
+        ? 'Based on text match only'
+        : gemini.verdict === 'same_product'
+          ? (imageCompared ? 'Text and image signals align' : 'Text signals align — no image to compare')
+          : (imageCompared ? 'Partial match, verify carefully' : 'Partial text match — no image to compare');
+
       return {
         url: c.url,
         domain: getDomain(c.url),
@@ -367,7 +384,7 @@ Deno.serve(async (req) => {
         imageUrl: c.imageUrl,
         confidence,
         label: confidenceLabel(confidence),
-        reason: gemini ? (gemini.verdict === 'same_product' ? 'Text and image signals align' : 'Partial match, verify carefully') : 'Based on text match only',
+        reason,
         price: null as number | null,
         currency: null as string | null,
         availability: null as string | null,
