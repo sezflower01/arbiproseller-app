@@ -61,36 +61,73 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
 }
 
 /**
- * Measured Keepa throughput for seller monitoring, 2026-08-15.
+ * CONSERVATIVE FALLBACK ONLY -- used before enough real check times exist to
+ * measure the rate directly. Prefer estimateWatchTiming() below, which reads
+ * the actual throughput off last_checked_at.
  *
- * A /seller?storefront=1 call costs a flat 10 tokens (catalog size is
- * irrelevant) against a plan refilling 5 tokens/min. At the ~50% budget
- * share seller monitoring is allowed -- the rest is reserved for live
- * repricing -- that works out to roughly 350 checks per day across ALL
- * watched sellers, shared.
+ * Derived 2026-08-15: a /seller?storefront=1 call costs a flat 10 tokens
+ * (catalog size is irrelevant) against a plan refilling 5 tokens/min, and
+ * assuming seller monitoring gets about half the budget gives ~350 checks/day.
  *
- * This is what makes the wait honest rather than mysterious: at 1000 watched
- * sellers a full rotation takes about three days, and because a watch must be
- * SEEDED on its first check before a second check can diff against it, the
- * first possible alert is roughly two rotations out.
+ * That assumption proved too pessimistic in practice -- 402 sellers seeded in
+ * roughly ten hours, not the predicted twenty-eight. The gate never split the
+ * budget in half; it only reserves a floor for the repricer, so a quiet
+ * repricer leaves far more headroom. The number is kept as a floor for the
+ * cold-start case rather than retuned to a second guess.
  */
 const CHECKS_PER_DAY_TOTAL = 350;
 
 export interface WatchTiming {
-  /** Estimated days for the queue to work through every active watch once. */
+  /** Days for the queue to work through every active watch once. */
   rotationDays: number;
-  /** Estimated days until a brand-new watch could produce its first alert. */
+  /** Days until a brand-new watch could produce its first alert. */
   daysToFirstAlert: number;
+  /** Whether this came from observed check times or the derived constant. */
+  source: "measured" | "estimated";
 }
 
-export function estimateWatchTiming(activeWatchCount: number): WatchTiming {
-  const sellers = Math.max(1, activeWatchCount);
-  const rotationDays = sellers / CHECKS_PER_DAY_TOTAL;
-  return {
-    rotationDays,
-    // Seed on the first check, diff on the second -- two rotations.
-    daysToFirstAlert: rotationDays * 2,
-  };
+/** Below this many checked watches the observed rate is too noisy to trust. */
+const MIN_SAMPLES_FOR_MEASURED_RATE = 10;
+
+/**
+ * Estimate rotation timing, preferring MEASURED throughput over the constant.
+ *
+ * The constant above is a derivation from token cost and plan rate, and it
+ * turned out materially pessimistic in practice -- 402 sellers seeded in about
+ * ten hours against a predicted twenty-eight. The derivation assumed seller
+ * monitoring gets roughly half the Keepa budget, but the gate does not split
+ * anything: it simply reserves a floor for the repricer, so a quiet repricer
+ * leaves far more headroom than the model allowed for.
+ *
+ * Every checked watch carries a last_checked_at, so the real rate is already
+ * on screen: count how many were checked and over what span. That measures
+ * whatever the budget, plan rate and repricer contention actually are today,
+ * instead of restating an assumption that was wrong once already.
+ */
+export function estimateWatchTiming(watches: Pick<SellerWatch, "last_checked_at">[] | number): WatchTiming {
+  // Number form kept for callers that only know a projected count -- the bulk
+  // preview estimating a list it has not added yet.
+  if (typeof watches === "number") {
+    const rotationDays = Math.max(1, watches) / CHECKS_PER_DAY_TOTAL;
+    return { rotationDays, daysToFirstAlert: rotationDays * 2, source: "estimated" };
+  }
+
+  const total = Math.max(1, watches.length);
+  const stamps = watches
+    .map((w) => (w.last_checked_at ? new Date(w.last_checked_at).getTime() : null))
+    .filter((t): t is number => t !== null && Number.isFinite(t));
+
+  if (stamps.length >= MIN_SAMPLES_FOR_MEASURED_RATE) {
+    const spanDays = (Math.max(...stamps) - Math.min(...stamps)) / 86_400_000;
+    if (spanDays > 0) {
+      const checksPerDay = stamps.length / spanDays;
+      const rotationDays = total / checksPerDay;
+      return { rotationDays, daysToFirstAlert: rotationDays * 2, source: "measured" };
+    }
+  }
+
+  const rotationDays = total / CHECKS_PER_DAY_TOTAL;
+  return { rotationDays, daysToFirstAlert: rotationDays * 2, source: "estimated" };
 }
 
 export function formatDuration(days: number): string {
@@ -181,7 +218,7 @@ export function useSellerWatchlist() {
   // A watch is "seeding" until its first successful check, which writes
   // last_checked_at and known_asin_list together. Until then it cannot
   // produce an alert -- there is no baseline to diff against yet.
-  const timing = estimateWatchTiming(watches.length);
+  const timing = estimateWatchTiming(watches);
 
   return { watches, loading, createWatch, cancelWatch, bulkAddWatches, refresh, timing };
 }
