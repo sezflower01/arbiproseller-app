@@ -15,6 +15,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 
 const KEEPA_DOMAIN: Record<string, number> = {
   US: 1, GB: 2, DE: 3, FR: 4, JP: 5, CA: 6, IT: 8, ES: 9, IN: 10, MX: 11, BR: 12,
@@ -30,7 +31,24 @@ async function backfillProductDetails(
   keepaKey: string,
   asin: string,
   marketplace: string,
+  userId: string | null,
 ): Promise<{ title: string | null; brand: string | null; image: string | null; upc: string | null } | null> {
+  // SP-API Catalog Items first. It returns the same four fields (title, brand,
+  // image, upc) from Amazon's own catalog on a quota ~24x larger than the
+  // ENTIRE Keepa daily budget -- catalog_api runs at 2 req/s where Keepa
+  // refills 5 tokens/min total. Keepa stays as the fallback rather than being
+  // removed: it is the older path, and this function is user-facing, so a
+  // Catalog Items miss should degrade rather than return nothing.
+  if (userId) {
+    const token = await getCatalogAccessToken(supabase, userId, marketplace);
+    if (token) {
+      const sp = await fetchCatalogItemDetails(supabase, token, asin, marketplace);
+      if (sp.title || sp.image) {
+        return { title: sp.title, brand: sp.brand, image: sp.image, upc: sp.upc };
+      }
+    }
+  }
+
   // Single-ASIN /product lookup = 1 token.
   const slot = await acquireKeepaGlobalSlot(supabase, { estimatedTokens: KEEPA_COST.productPerAsin });
   if (!slot.ok) return null;
@@ -302,7 +320,7 @@ Deno.serve(async (req) => {
     if (listingErr || !listing) return jsonResponse({ error: 'Listing not found' }, 404);
 
     if (!listing.upc && !listing.title) {
-      const backfilled = await backfillProductDetails(admin, Deno.env.get('KEEPA_API_KEY') || '', listing.asin, listing.marketplace);
+      const backfilled = await backfillProductDetails(admin, Deno.env.get('KEEPA_API_KEY') || '', listing.asin, listing.marketplace, userId);
       if (backfilled && (backfilled.title || backfilled.upc)) {
         listing.title = backfilled.title;
         listing.brand = backfilled.brand;

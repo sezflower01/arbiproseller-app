@@ -26,6 +26,10 @@ import { MARKETPLACE_META } from './marketplace-map.ts';
 export interface CatalogItemDetails {
   title: string | null;
   image: string | null;
+  /** summaries[].brand — Keepa's brand/manufacturer equivalent. */
+  brand: string | null;
+  /** identifiers[] UPC/EAN — Keepa's upcList equivalent. */
+  upc: string | null;
 }
 
 const SPAPI_HOSTS: Record<string, string> = {
@@ -96,7 +100,7 @@ export async function fetchCatalogItemDetails(
   asin: string,
   marketplaceCode: string,
 ): Promise<CatalogItemDetails> {
-  const empty: CatalogItemDetails = { title: null, image: null };
+  const empty: CatalogItemDetails = { title: null, image: null, brand: null, upc: null };
   try {
     const marketplaceId = MARKETPLACE_META[marketplaceCode]?.amazonMarketplaceId;
     const host = SPAPI_HOSTS[marketplaceCode];
@@ -106,7 +110,10 @@ export async function fetchCatalogItemDetails(
 
     const url = new URL(`https://${host}/catalog/2022-04-01/items/${encodeURIComponent(asin)}`);
     url.searchParams.set('marketplaceIds', marketplaceId);
-    url.searchParams.set('includedData', 'summaries,images');
+    // identifiers added so this covers everything the Keepa /product metadata
+    // call was fetching (title, brand, image, upc) -- otherwise callers would
+    // still need Keepa just for the barcode.
+    url.searchParams.set('includedData', 'summaries,images,identifiers');
 
     const res = await fetch(url.toString(), {
       headers: { 'x-amz-access-token': accessToken, 'Content-Type': 'application/json' },
@@ -134,7 +141,22 @@ export async function fetchCatalogItemDetails(
       image = main?.link || null;
     }
 
-    return { title: summary?.itemName || null, image };
+    // identifiers[] = [{ marketplaceId, identifiers: [{ identifierType, identifier }] }]
+    // Prefer UPC, accept EAN -- Keepa's upcList carried either.
+    let upc: string | null = null;
+    const idGroups = json?.identifiers || [];
+    const idGroup = idGroups.find((g: any) => g.marketplaceId === marketplaceId) || idGroups[0];
+    if (idGroup?.identifiers?.length) {
+      const byType = (t: string) => idGroup.identifiers.find((i: any) => i.identifierType === t)?.identifier;
+      upc = byType('UPC') || byType('EAN') || null;
+    }
+
+    return {
+      title: summary?.itemName || null,
+      image,
+      brand: summary?.brand || summary?.manufacturer || null,
+      upc,
+    };
   } catch (e) {
     console.warn(`[spapi-catalog-image] ${asin} failed:`, (e as Error).message);
     return empty;

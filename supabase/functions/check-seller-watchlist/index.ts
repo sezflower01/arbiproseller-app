@@ -386,14 +386,38 @@ Deno.serve(async (req) => {
       const productDetails = new Map<string, { title: string | null; brand: string | null; image: string | null; upc: string | null }>();
       if (unionNewAsins.size > 0) {
         const asinsToFetch = Array.from(unionNewAsins).slice(0, MAX_PRODUCT_DETAIL_ASINS);
-        const detailSlot = await acquireSlotOrGiveUp(
-          admin,
-          asinsToFetch.length * KEEPA_COST.productPerAsin,
-          deadlineAt,
-        );
+
+        // SP-API Catalog Items FIRST. It supplies the same four fields this
+        // used to take from Keepa (title, brand, image, upc) on a quota about
+        // 24x the entire Keepa daily budget -- catalog_api runs at 2 req/s
+        // against Keepa's 5 tokens/min total. This is the only Keepa call in
+        // the 5-minute cron that has an equivalent elsewhere, so moving it is
+        // the one place a shift actually relieves the shared budget.
+        //
+        // Note this does NOT speed up the rotation: that is bounded by
+        // /seller?storefront=1 at a flat 10 tokens, which SP-API cannot
+        // replace at all. What it buys is that new-listing metadata stops
+        // competing with the storefront sweep for the same tokens.
+        const spApiToken = await getCatalogAccessToken(admin, group[0].user_id, marketplace);
+        if (spApiToken) {
+          for (const asin of asinsToFetch.slice(0, MAX_SPAPI_IMAGE_LOOKUPS)) {
+            if (Date.now() >= deadlineAt) break;
+            const sp = await fetchCatalogItemDetails(admin, spApiToken, asin, marketplace);
+            if (sp.title || sp.image) {
+              productDetails.set(asin, { title: sp.title, brand: sp.brand, image: sp.image, upc: sp.upc });
+            }
+          }
+        }
+        // Only ask Keepa for what SP-API could not supply, and reserve tokens
+        // for that remainder rather than the original batch size -- otherwise
+        // the shift saves no budget at all, just adds a second call.
+        const keepaStillNeeded = asinsToFetch.filter((a) => !productDetails.get(a)?.title);
+        const detailSlot = keepaStillNeeded.length
+          ? await acquireSlotOrGiveUp(admin, keepaStillNeeded.length * KEEPA_COST.productPerAsin, deadlineAt)
+          : { ok: false, waitSeconds: 0, skipped: true } as const;
         if (detailSlot.ok) {
           try {
-            const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${asinsToFetch.join(',')}`;
+            const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${keepaStillNeeded.join(',')}`;
             const res = await fetch(url);
             if (res.ok) {
               const json = await res.json().catch(() => ({}));
@@ -419,7 +443,11 @@ Deno.serve(async (req) => {
         } else {
           // Detail fetch is optional: the new-listing rows still get written
           // with null metadata and the seller-level diff is not lost.
-          console.warn(`[check-seller-watchlist] no token budget for product-detail fetch for ${sellerId}/${marketplace}`);
+          // Silent when there is simply nothing left for Keepa to add --
+          // that is the shift working, not a failure.
+          if (keepaStillNeeded.length) {
+            console.warn(`[check-seller-watchlist] no token budget for ${keepaStillNeeded.length} product-detail ASIN(s) for ${sellerId}/${marketplace}`);
+          }
         }
 
         // Fill whatever Keepa left blank from catalogs we already populate.
