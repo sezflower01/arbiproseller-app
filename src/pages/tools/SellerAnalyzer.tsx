@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
-import { useSellerWatchlist, formatDuration, type SellerWatch, type WatchTiming } from "@/hooks/use-seller-watchlist";
+import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
 import BulkAddPanel from "@/components/seller-analyzer/BulkAddPanel";
@@ -28,33 +28,32 @@ function parseSellerInput(raw: string): { sellerId: string } {
  * checked at all. At scale the queue is legitimately days deep, so the wait
  * has to be visible and explained or a working watch looks broken for a week.
  */
-function WatchStatus({ watch, timing }: { watch: SellerWatch; timing: WatchTiming }) {
+function WatchStatus({ watch }: { watch: SellerWatch }) {
   // last_checked_at and known_asin_list are written together by the worker's
   // first pass, so a null here means "no baseline yet".
+  //
+  // The seeding ETA is deliberately NOT repeated per row. It is identical for
+  // every unseeded watch, so at 400 sellers it printed the same sentence 400
+  // times and buried the one thing that differs -- which sellers are still
+  // waiting. It now appears once, in the card header.
   if (!watch.last_checked_at) {
     return (
-      <div className="flex flex-col items-end gap-0.5">
-        <Badge variant="secondary" className="gap-1">
-          <Loader2 className="h-3 w-3 animate-spin" /> Seeding
-        </Badge>
-        <span className="text-[11px] text-muted-foreground">
-          first alert possible in {formatDuration(timing.daysToFirstAlert)}
-        </span>
-      </div>
+      <Badge variant="secondary" className="gap-1 shrink-0">
+        <Loader2 className="h-3 w-3 animate-spin" /> Seeding
+      </Badge>
     );
   }
 
-  const checkedAgoMs = Date.now() - new Date(watch.last_checked_at).getTime();
-  const checkedAgoDays = checkedAgoMs / 86_400_000;
+  const checkedAgoDays = (Date.now() - new Date(watch.last_checked_at).getTime()) / 86_400_000;
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="text-[11px] text-muted-foreground hidden sm:inline">
+        {formatDuration(checkedAgoDays)} ago
+      </span>
       <Badge className="gap-1">
         <Bell className="h-3 w-3" /> Watching
       </Badge>
-      <span className="text-[11px] text-muted-foreground">
-        checked {formatDuration(checkedAgoDays)} ago
-      </span>
     </div>
   );
 }
@@ -63,6 +62,7 @@ export default function SellerAnalyzer() {
   const [input, setInput] = useState("");
   const [marketplace, setMarketplace] = useState("US");
   const [tab, setTab] = useState("add");
+  const [watchFilter, setWatchFilter] = useState("");
 
   const { toast } = useToast();
   const { watches, createWatch, cancelWatch, bulkAddWatches, timing } = useSellerWatchlist();
@@ -73,14 +73,21 @@ export default function SellerAnalyzer() {
     ? watches.find((w) => w.seller_id === typedSellerId && w.marketplace === marketplace)
     : undefined;
 
-  // After a successful commit, move to Results so the newly added sellers are
-  // visible immediately. Previews stay put -- switching tabs mid-review would
-  // yank the summary away before it has been read.
-  const handleBulkAdd: typeof bulkAddWatches = async (text, mkt, mode) => {
-    const result = await bulkAddWatches(text, mkt, mode);
-    if (mode === "commit" && !result.partial) setTab("results");
-    return result;
-  };
+  const seedingCount = watches.filter((w) => !w.last_checked_at).length;
+
+  const visibleWatches = (() => {
+    const q = watchFilter.trim().toLowerCase();
+    if (!q) return watches;
+    return watches.filter(
+      (w) => w.seller_id.toLowerCase().includes(q) || (w.seller_name || "").toLowerCase().includes(q),
+    );
+  })();
+
+  // Deliberately does NOT switch tabs. Newly added sellers appear in the
+  // Watched Sellers card directly below, on this same tab -- and Results holds
+  // only new listings, which stay empty for days while the queue seeds. Jumping
+  // there after an add would show an empty panel and read as a failure.
+  const handleBulkAdd: typeof bulkAddWatches = bulkAddWatches;
 
   const addWatch = async () => {
     if (!typedSellerId) return;
@@ -89,7 +96,6 @@ export default function SellerAnalyzer() {
       await createWatch(typedSellerId, null, marketplace);
       toast({ title: `Now watching ${typedSellerId}` });
       setInput("");
-      setTab("results");
     } catch (e: any) {
       toast({ title: "Could not watch seller", description: e.message, variant: "destructive" });
     } finally {
@@ -136,9 +142,6 @@ export default function SellerAnalyzer() {
             </TabsTrigger>
             <TabsTrigger value="results" className="gap-2">
               <Bell className="h-4 w-4" /> Results
-              {watches.length > 0 && (
-                <Badge variant="secondary" className="ml-1">{watches.length.toLocaleString()}</Badge>
-              )}
             </TabsTrigger>
           </TabsList>
 
@@ -185,49 +188,80 @@ export default function SellerAnalyzer() {
               currentWatchCount={watches.length}
               onBulkAdd={handleBulkAdd}
             />
-          </TabsContent>
 
-          {/* ---- RESULTS ---- */}
-          <TabsContent value="results" className="space-y-6 mt-0">
-            <NewListingsPanel />
-
+            {/* The watchlist belongs with the controls that manage it, not with
+                results. It is the record of what you added, and at 400+ rows it
+                would otherwise bury the new-listing feed that is the actual
+                payoff of the tool. */}
             {watches.length > 0 ? (
               <Card>
                 <CardContent className="p-4">
-                  <div className="flex items-baseline justify-between gap-2 mb-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <h2 className="text-sm font-semibold">Watched Sellers</h2>
                     <span className="text-xs text-muted-foreground">
-                      {watches.length} watched · full rotation {formatDuration(timing.rotationDays)}
+                      {watches.length.toLocaleString()} watched · full rotation {formatDuration(timing.rotationDays)}
                     </span>
                   </div>
-                  <div className="space-y-2">
-                    {watches.map((w) => (
-                      <div key={w.id} className="flex items-center justify-between gap-2 text-sm border-b last:border-b-0 pb-2 last:pb-0">
+
+                  {/* Stated once, not on every row. */}
+                  {seedingCount > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {seedingCount.toLocaleString()} still seeding — first alert possible in{" "}
+                      {formatDuration(timing.daysToFirstAlert)}. Sellers are checked oldest-first,
+                      so every watch is reached in turn.
+                    </p>
+                  )}
+
+                  {watches.length > 10 && (
+                    <Input
+                      value={watchFilter}
+                      onChange={(e) => setWatchFilter(e.target.value)}
+                      placeholder="Filter by seller ID or name…"
+                      className="mt-3 h-8 text-sm"
+                    />
+                  )}
+
+                  {/* Scroll the list rather than letting 400 rows run the page
+                      to several screens tall. */}
+                  <div className="mt-3 max-h-[26rem] overflow-y-auto pr-1 divide-y">
+                    {visibleWatches.map((w) => (
+                      <div key={w.id} className="flex items-center justify-between gap-2 text-sm py-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate">{w.seller_name || w.seller_id}</span>
-                          <span className="text-muted-foreground shrink-0">({w.marketplace})</span>
+                          <span className="truncate font-mono text-xs">{w.seller_name || w.seller_id}</span>
+                          <span className="text-muted-foreground shrink-0 text-xs">({w.marketplace})</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <WatchStatus watch={w} timing={timing} />
+                          <WatchStatus watch={w} />
                           <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeWatch(w.id)}>
                             <BellOff className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     ))}
+                    {visibleWatches.length === 0 && (
+                      <p className="py-6 text-center text-xs text-muted-foreground">
+                        No sellers match “{watchFilter}”.
+                      </p>
+                    )}
                   </div>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Sellers are checked oldest-first, so every watch is reached in turn. New listings
-                    usually take days to appear anyway — a seller has to source and ship to FBA before
-                    the listing goes live.
-                  </p>
+
+                  {watchFilter.trim() && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Showing {visibleWatches.length.toLocaleString()} of {watches.length.toLocaleString()}.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <Card><CardContent className="p-10 text-center text-muted-foreground">
-                Nothing watched yet — add sellers on the <strong>Add sellers</strong> tab.
+                Nothing watched yet — add a seller above, or bulk upload a list.
               </CardContent></Card>
             )}
+          </TabsContent>
+
+          {/* ---- RESULTS ---- */}
+          <TabsContent value="results" className="mt-0">
+            <NewListingsPanel />
           </TabsContent>
         </Tabs>
       </div>
