@@ -81,6 +81,10 @@ Keepa API gotchas already learned the hard way:
 
 Scheduled with **pg_cron inside migrations**, calling edge functions over `net.http_post` with an `x-internal-secret` header from Vault. Cron-triggered functions must authenticate via `INTERNAL_SYNC_SECRET` **or** a service-role bearer, and must never be publicly callable — they read all users' data and spend metered API quota.
 
+⚠️ **A new cron-invoked function MUST get `verify_jwt = false` in `supabase/config.toml`.** pg_cron sends `x-internal-secret` and **no `Authorization` header**, so with the default `verify_jwt = true` Supabase's gateway rejects the call *before your function runs* — no function log, no error, just a worker that silently never executes. Diagnose by calling it unauthenticated and reading the error **shape**: `{"code":"UNAUTHORIZED_NO_AUTH_HEADER"}` is the platform, `{"error":"Unauthorized"}` is your own guard. Cost a real debugging cycle on 2026-08-16.
+
+The same trap applies one call deeper: when a cron worker invokes **another** edge function that legitimately keeps `verify_jwt = true` (because the browser also calls it), send **both** a service-role `Authorization` bearer to satisfy the gateway *and* `x-internal-secret` for the target's own logic. `auto-source-new-listings` → `find-source-candidates` is the worked example.
+
 Stagger new jobs off the existing ones (e.g. `check-price-alerts` at `:00`, `check-seller-watchlist` at `:15`) so quota-consuming jobs don't burst together.
 
 Wrap long fan-out jobs in `withCronLock(...)` from `_shared/cron-lock.ts` — it prevents overlapping runs and records observability rows in `cron_run_history`.
