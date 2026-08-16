@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, ExternalLink, Package, Store, Check } from "lucide-react";
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
+import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
 
 const MARKETPLACE_DOMAIN: Record<string, string> = {
@@ -61,7 +62,7 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { listings, loading, searchingId, monthlySearchCount, findSource, markAsSourced } = useSellerNewListings();
+  const { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced } = useSellerNewListings();
   const { toast } = useToast();
 
   if (!loading && listings.length === 0) return null;
@@ -111,7 +112,13 @@ export default function NewListingsPanel() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{listing.title || listing.asin}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium truncate">{listing.title || listing.asin}</span>
+                      {/* Gating is the first triage question -- a restricted
+                          ASIN is worth nothing however good the source is --
+                          so it sits beside the title, not below the fold. */}
+                      <EligibilityBadge status={eligibility[listing.asin]} />
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       <a
                         href={amazonListingUrl(listing.asin, listing.marketplace)}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { EligibilityStatus } from "@/components/common/EligibilityBadge";
 
 export interface SourceCandidate {
   url: string;
@@ -52,11 +53,15 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
   return err?.message || fallback;
 }
 
+/** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
+const ELIGIBILITY_BATCH = 20;
+
 export function useSellerNewListings() {
   const [listings, setListings] = useState<NewListing[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchingId, setSearchingId] = useState<string | null>(null);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
+  const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -84,6 +89,81 @@ export function useSellerNewListings() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /**
+   * Auto-check listing eligibility for every visible ASIN.
+   *
+   * Gating is the first triage question on a new listing -- a restricted ASIN
+   * is worth nothing however good the source is -- so this runs on load rather
+   * than behind a button. Same edge function and batch size the six existing
+   * consumers use (Sourcer, MobileScan, ...), and it caches server-side by
+   * ASIN, so re-opening the panel costs nothing.
+   *
+   * Grouped by marketplace because gating is per-marketplace: the same ASIN can
+   * be open in one and restricted in another, so a single blended call would
+   * give a confidently wrong answer.
+   */
+  useEffect(() => {
+    if (!listings.length) return;
+
+    const byMarketplace = new Map<string, string[]>();
+    for (const l of listings) {
+      if (eligibility[l.asin]) continue; // already known or in flight
+      if (!byMarketplace.has(l.marketplace)) byMarketplace.set(l.marketplace, []);
+      const arr = byMarketplace.get(l.marketplace)!;
+      if (!arr.includes(l.asin)) arr.push(l.asin);
+    }
+    if (byMarketplace.size === 0) return;
+
+    let cancelled = false;
+
+    const markAll = (asins: string[], status: EligibilityStatus) =>
+      setEligibility((prev) => {
+        const next = { ...prev };
+        for (const a of asins) next[a] = status;
+        return next;
+      });
+
+    (async () => {
+      for (const [marketplace, asins] of byMarketplace) {
+        markAll(asins, "checking");
+        for (let i = 0; i < asins.length; i += ELIGIBILITY_BATCH) {
+          if (cancelled) return;
+          const batch = asins.slice(i, i + ELIGIBILITY_BATCH);
+          try {
+            const { data, error } = await supabase.functions.invoke("check-product-eligibility", {
+              body: { marketplace, asins: batch, force_rescan: false },
+            });
+            if (error) throw error;
+            const results =
+              (data as { results?: { asin: string; status: string }[] } | null)?.results ?? [];
+            if (cancelled) return;
+            setEligibility((prev) => {
+              const next = { ...prev };
+              for (const r of results) {
+                // The function lowercases before returning; anything outside
+                // the known set becomes 'error' rather than being rendered raw.
+                next[r.asin] =
+                  r.status === "approved" ? "approved"
+                  : r.status === "approval_required" ? "approval_required"
+                  : r.status === "restricted" ? "restricted"
+                  : "error";
+              }
+              // A batch can come back short; leave nothing stuck on "checking".
+              for (const a of batch) if (next[a] === "checking") next[a] = "error";
+              return next;
+            });
+          } catch (e) {
+            console.error("[useSellerNewListings] eligibility check failed", e);
+            if (!cancelled) markAll(batch, "error");
+          }
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listings]);
 
   const findSource = useCallback(async (listingId: string) => {
     setSearchingId(listingId);
@@ -117,5 +197,5 @@ export function useSellerNewListings() {
     setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
   }, []);
 
-  return { listings, loading, searchingId, monthlySearchCount, findSource, markAsSourced, refresh };
+  return { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, refresh };
 }
