@@ -39,6 +39,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
+import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
+
+// Bound on SP-API catalog lookups per run. These cost no Keepa tokens, but
+// they do cost wall-clock inside the run budget, and a run only processes a
+// couple of sellers anyway.
+const MAX_SPAPI_IMAGE_LOOKUPS = 12;
 
 const MAX_PRODUCT_DETAIL_ASINS = 50;
 
@@ -361,6 +367,28 @@ Deno.serve(async (req) => {
 
         if (blankRows?.length) {
           const details = await lookupAsinDetails(admin, blankRows.map((r: any) => r.asin));
+
+          // Anything the local catalogs could not supply goes to SP-API --
+          // Amazon's own catalog, and a SEPARATE quota from Keepa, so this
+          // cannot slow the rotation or starve the repricer. Same call shape
+          // enrich-missing-titles already uses.
+          const stillBlank = blankRows.filter((r: any) => !details.get(r.asin)?.image);
+          if (stillBlank.length) {
+            const token = await getCatalogAccessToken(admin, group[0].user_id, marketplace);
+            if (token) {
+              for (const row of stillBlank.slice(0, MAX_SPAPI_IMAGE_LOOKUPS)) {
+                const spapi = await fetchCatalogItemDetails(admin, token, row.asin, marketplace);
+                if (spapi.image || spapi.title) {
+                  const prev = details.get(row.asin);
+                  details.set(row.asin, {
+                    title: prev?.title ?? spapi.title,
+                    image: prev?.image ?? spapi.image,
+                  });
+                }
+              }
+            }
+          }
+
           for (const row of blankRows) {
             const found = details.get(row.asin);
             if (!found?.image && !found?.title) continue;
