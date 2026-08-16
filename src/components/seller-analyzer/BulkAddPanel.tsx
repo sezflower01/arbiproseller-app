@@ -85,6 +85,16 @@ export default function BulkAddPanel({ marketplace, currentWatchCount, onBulkAdd
     );
   }
 
+  // Count what is actually in the box, client-side. Without this the only
+  // line count came back from the server AFTER previewing, so a truncated
+  // paste was indistinguishable from a filter that legitimately matched
+  // fewer sellers -- you had to diff two numbers you could not see side by
+  // side. Showing it up front makes a short paste obvious before anything
+  // is sent.
+  const localLineCount = text.split(/\r?\n/).filter((l) => l.trim()).length;
+  const serverLineCount = preview?.linesRead;
+  const countMismatch = serverLineCount !== undefined && serverLineCount !== localLineCount;
+
   const willChange = preview ? preview.willAdd + preview.willReactivate : 0;
   // Show the wait BEFORE committing. Adding 1000 sellers legitimately means a
   // multi-day seeding queue, and that should be a known trade-off at the
@@ -125,6 +135,9 @@ export default function BulkAddPanel({ marketplace, currentWatchCount, onBulkAdd
             Preview
           </Button>
           <span className="text-xs text-muted-foreground">
+            {localLineCount > 0 && (
+              <><strong>{localLineCount.toLocaleString()}</strong> line{localLineCount === 1 ? "" : "s"} in the box · </>
+            )}
             All rows are added to <strong>{marketplace}</strong>. Max 1,000 per upload.
           </span>
         </div>
@@ -134,6 +147,17 @@ export default function BulkAddPanel({ marketplace, currentWatchCount, onBulkAdd
             <div className="text-sm font-medium">
               {preview.committed ? "Result" : "Preview"} · {preview.linesRead.toLocaleString()} lines read
             </div>
+
+            {countMismatch && (
+              <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  The box holds {localLineCount.toLocaleString()} lines but the server read{" "}
+                  {serverLineCount?.toLocaleString()} — the upload was truncated in transit, so this
+                  preview is incomplete. Re-load the file rather than trusting these counts.
+                </span>
+              </div>
+            )}
 
             <SummaryRow label={preview.committed ? "Added" : "Will add"} value={preview.committed ? (preview.added ?? 0) : preview.willAdd} tone="good" />
             {(preview.willReactivate > 0 || (preview.reactivated ?? 0) > 0) && (
