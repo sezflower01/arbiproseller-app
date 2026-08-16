@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, ExternalLink, Package, Store, Check } from "lucide-react";
+import { Loader2, Search, ExternalLink, Package, Store, Check, X } from "lucide-react";
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
@@ -20,10 +20,12 @@ function CandidateRow({
   candidate,
   isSourced,
   onMarkAsSourced,
+  onReject,
 }: {
   candidate: SourceCandidate;
   isSourced: boolean;
   onMarkAsSourced: () => void;
+  onReject: () => void;
 }) {
   const badgeClass = candidate.confidence >= 60
     ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-transparent"
@@ -53,16 +55,32 @@ function CandidateRow({
           <Check className="h-4 w-4 mr-1" /> Source
         </Button>
       ) : (
-        <Button type="button" size="sm" variant="outline" onClick={onMarkAsSourced} className="shrink-0">
-          Mark as source
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button type="button" size="sm" variant="outline" onClick={onMarkAsSourced}>
+            Mark as source
+          </Button>
+          {/* Ruling a candidate OUT is the more common judgement, and it is one
+              the scorer cannot make: "right product, wrong seller" still scores
+              as a strong text and image match. */}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            onClick={onReject}
+            title="Not a source — hide this and exclude it from future searches"
+            aria-label="Not a source"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     </div>
   );
 }
 
 export default function NewListingsPanel() {
-  const { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced } = useSellerNewListings();
+  const { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, rejectCandidate } = useSellerNewListings();
   const { toast } = useToast();
 
   if (!loading && listings.length === 0) return null;
@@ -75,6 +93,15 @@ export default function NewListingsPanel() {
       }
     } catch (e: any) {
       toast({ title: "Search failed", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const onReject = async (listingId: string, candidate: SourceCandidate) => {
+    try {
+      await rejectCandidate(listingId, candidate);
+      toast({ title: "Marked as not a source", description: `${candidate.domain} won't be suggested again for this listing.` });
+    } catch (e: any) {
+      toast({ title: "Could not update", description: e.message, variant: "destructive" });
     }
   };
 
@@ -164,6 +191,7 @@ export default function NewListingsPanel() {
                         candidate={c}
                         isSourced={listing.source_status === "sourced" && listing.sourced_candidate?.url === c.url}
                         onMarkAsSourced={() => onMarkAsSourced(listing.id, c)}
+                        onReject={() => onReject(listing.id, c)}
                       />
                     ))}
                     <div className="text-xs text-muted-foreground">

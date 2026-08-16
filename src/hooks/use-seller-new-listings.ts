@@ -29,6 +29,8 @@ export interface NewListing {
   source_status: "unsourced" | "sourcing" | "candidates_found" | "sourced" | "no_candidates";
   candidates: SourceCandidate[] | null;
   sourced_candidate: SourceCandidate | null;
+  /** URLs the user ruled out; excluded from future searches. */
+  rejected_candidate_urls: string[] | null;
 }
 
 function currentMonthKey(): string {
@@ -69,7 +71,7 @@ export function useSellerNewListings() {
       const [{ data: rows, error }, { data: usageRow }] = await Promise.all([
         supabase
           .from("seller_watch_new_listings")
-          .select("id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, source_status, candidates, sourced_candidate")
+          .select("id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, source_status, candidates, sourced_candidate, rejected_candidate_urls")
           .order("detected_at", { ascending: false })
           .limit(50),
         supabase
@@ -188,6 +190,56 @@ export function useSellerNewListings() {
     }
   }, []);
 
+  /**
+   * Mark a candidate as NOT the source.
+   *
+   * Persisted rather than hidden client-side, because the whole point is that
+   * it survives "Search again" -- otherwise the same ruled-out candidate comes
+   * back every run and gets re-rejected. find-source-candidates filters these
+   * URLs out before scoring, so a rejection also stops costing verification
+   * budget.
+   *
+   * The judgement being captured is one the scorer cannot see: "right product,
+   * wrong seller" -- e.g. the item is correct but reaches you via Instacart
+   * rather than the brand's own store. Text and image similarity both look
+   * excellent in that case, which is exactly why the candidate keeps ranking.
+   */
+  const rejectCandidate = useCallback(async (listingId: string, candidate: SourceCandidate) => {
+    const listing = listings.find((l) => l.id === listingId);
+    if (!listing) return;
+
+    const remaining = (listing.candidates || []).filter((c) => c.url !== candidate.url);
+    const rejected = Array.from(
+      new Set([...(listing.rejected_candidate_urls || []), candidate.url]),
+    );
+
+    const { error } = await supabase
+      .from("seller_watch_new_listings")
+      .update({
+        candidates: remaining,
+        rejected_candidate_urls: rejected,
+        // Falling back to 'no_candidates' when the last one is ruled out keeps
+        // the row honest: it has been searched and nothing usable remains,
+        // which is a different state from never having searched.
+        source_status: remaining.length ? listing.source_status : "no_candidates",
+      })
+      .eq("id", listingId);
+    if (error) throw new Error(error.message);
+
+    setListings((prev) =>
+      prev.map((l) =>
+        l.id === listingId
+          ? {
+              ...l,
+              candidates: remaining,
+              rejected_candidate_urls: rejected,
+              source_status: remaining.length ? l.source_status : "no_candidates",
+            }
+          : l,
+      ),
+    );
+  }, [listings]);
+
   const markAsSourced = useCallback(async (listingId: string, candidate: SourceCandidate) => {
     const { error } = await supabase
       .from("seller_watch_new_listings")
@@ -197,5 +249,5 @@ export function useSellerNewListings() {
     setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
   }, []);
 
-  return { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, refresh };
+  return { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, rejectCandidate, refresh };
 }

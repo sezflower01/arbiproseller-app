@@ -313,7 +313,7 @@ Deno.serve(async (req) => {
 
     const { data: listing, error: listingErr } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, marketplace, title, brand, image_url, upc')
+      .select('id, user_id, asin, marketplace, title, brand, image_url, upc, rejected_candidate_urls')
       .eq('id', listingId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -361,7 +361,7 @@ Deno.serve(async (req) => {
       return true;
     });
 
-    const scored = raw
+    let scored = raw
       .map((c) => ({ ...c, score: ruleScore(c, listing) }))
       .filter((c) => c.score >= MIN_SCORE_TO_SHOW)
       .sort((a, b) => b.score - a.score)
@@ -370,6 +370,16 @@ Deno.serve(async (req) => {
     if (scored.length === 0) {
       await admin.from('seller_watch_new_listings').update({ source_status: 'no_candidates', candidates: [] }).eq('id', listingId);
       return jsonResponse({ ok: true, status: 'no_candidates', candidates: [], usage: { searchCount: newCount, monthKey: mKey } });
+    }
+
+    // Candidates the user explicitly ruled out. Filtered BEFORE verification
+    // so a rejected URL does not consume a Gemini/vision slot on its way to
+    // being discarded, and cannot reappear after "Search again".
+    const rejectedUrls = new Set<string>(
+      Array.isArray(listing.rejected_candidate_urls) ? listing.rejected_candidate_urls : [],
+    );
+    if (rejectedUrls.size) {
+      scored = scored.filter((c: any) => !rejectedUrls.has(c.url));
     }
 
     const verified = await Promise.all(scored.map(async (c) => {
