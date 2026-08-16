@@ -103,6 +103,45 @@ interface RawCandidate {
 // left for genuine third-party retailers.
 const QUERY_EXCLUSIONS = "-site:amazon.com -site:ebay.com -site:aliexpress.com -site:alibaba.com -site:wish.com -site:pinterest.com";
 
+/**
+ * Reject retailers that cannot serve a US arbitrage buy.
+ *
+ * BOTH search paths already ask for US results -- CSE sends
+ * `cr=countryUS&gl=us`, SerpAPI sends `location=United+States` -- and a
+ * Costa Rican cross-border reseller (tiendamia.cr) still came back as a
+ * scored candidate on 2026-08-16. Those parameters are a soft classification
+ * by Google, not a guarantee: a site carrying US-targeted, English product
+ * content gets classified as US-relevant regardless of where it ships from.
+ * Adding more search parameters cannot fix a misclassification, so the filter
+ * has to be ours and deterministic.
+ *
+ * The rule is the TLD: a two-letter country code is a foreign storefront
+ * unless it is .us. That catches .cr/.mx/.br/.de/.co.uk and everything like
+ * them in one line, rather than blocklisting reseller domains one at a time
+ * as they appear.
+ *
+ * Accepted cost: it also rejects .co/.io/.ai domains, which US companies do
+ * sometimes use. For SOURCING that is the right trade -- those are vanishingly
+ * rare as retail storefronts, and a missed candidate costs one search whereas
+ * a foreign one costs a Gemini verdict, a vision compare, a scrape, and a
+ * human working out why the price looks wrong.
+ *
+ * Filtered BEFORE scoring so a foreign domain never consumes verification
+ * budget, same principle as user-rejected URLs.
+ */
+const ALLOWED_TWO_LETTER_TLDS = new Set(['us']);
+
+function isUsServableDomain(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+    const tld = host.split('.').pop() || '';
+    if (tld.length === 2) return ALLOWED_TWO_LETTER_TLDS.has(tld);
+    return true;
+  } catch {
+    return false; // unparseable URL is not a candidate
+  }
+}
+
 async function googleSearch(query: string, apiKey: string, cx: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
   const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(`${query} ${QUERY_EXCLUSIONS}`)}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
   try {
@@ -376,11 +415,16 @@ Deno.serve(async (req) => {
       ? await Promise.all([searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY')), searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))])
       : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))];
     const seenUrls = new Set<string>();
+    let droppedForeign = 0;
     const raw = searches.flat().filter((c) => {
       if (seenUrls.has(c.url)) return false;
       seenUrls.add(c.url);
+      if (!isUsServableDomain(c.url)) { droppedForeign++; return false; }
       return true;
     });
+    if (droppedForeign) {
+      console.log(`[find-source-candidates] dropped ${droppedForeign} non-US domain(s) before scoring`);
+    }
 
     let scored = raw
       .map((c) => ({ ...c, score: ruleScore(c, listing) }))
