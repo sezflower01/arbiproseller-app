@@ -119,11 +119,24 @@ Deno.serve(async (req) => {
       for (const row of rows.slice(0, granted)) {
         if (Date.now() >= deadlineAt) break;
         try {
+          // Both headers, deliberately. find-source-candidates keeps
+          // verify_jwt = true because it is called from the browser with a
+          // user JWT, so the PLATFORM needs a valid Authorization header
+          // before the request reaches the function at all -- the service-role
+          // bearer satisfies that. The x-internal-secret is what the
+          // function's own logic checks to accept `userId` from the body
+          // instead of deriving it from a session.
+          //
+          // Sending only the internal secret fails with the gateway's
+          // UNAUTHORIZED_NO_AUTH_HEADER, which is not a response this function
+          // ever produces -- the shape of that error is what identified the
+          // problem.
           const res = await fetch(`${SUPABASE_URL}/functions/v1/find-source-candidates`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'x-internal-secret': INTERNAL_SECRET,
+              Authorization: `Bearer ${SERVICE_ROLE}`,
             },
             body: JSON.stringify({ listingId: row.id, userId }),
           });

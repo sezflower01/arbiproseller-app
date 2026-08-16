@@ -449,5 +449,13 @@ verify_jwt = false
 [functions.check-seller-watchlist]
 verify_jwt = false
 
+# Cron-invoked. pg_cron sends only x-internal-secret and no Authorization
+# header, so platform JWT verification would reject the request before the
+# function runs -- which is exactly what happened on first deploy: the gateway
+# returned UNAUTHORIZED_NO_AUTH_HEADER and the worker never executed. The
+# function does its own auth (internal secret or service-role bearer).
+[functions.auto-source-new-listings]
+verify_jwt = false
+
 [functions.find-source-candidates]
 verify_jwt = true
