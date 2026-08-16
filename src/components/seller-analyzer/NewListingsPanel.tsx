@@ -16,6 +16,21 @@ function amazonListingUrl(asin: string, marketplace: string): string {
   return `https://www.${host}/dp/${asin}`;
 }
 
+/**
+ * The seller's STOREFRONT (their listings), not their profile page.
+ *
+ * Two shapes exist in this codebase: send-email uses `/sp?seller=` (the
+ * profile, with feedback and business details) and OffersTable uses
+ * merchant-items (their actual catalogue). From a new-listing row the useful
+ * destination is what else they are selling, so this follows OffersTable --
+ * but marketplace-aware, where that one hardcodes amazon.com and a US
+ * marketplace id.
+ */
+function amazonStorefrontUrl(sellerId: string, marketplace: string): string {
+  const host = MARKETPLACE_DOMAIN[marketplace.toUpperCase()] || "amazon.com";
+  return `https://www.${host}/s?i=merchant-items&me=${encodeURIComponent(sellerId)}`;
+}
+
 function CandidateRow({
   candidate,
   isSourced,
@@ -80,7 +95,7 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, rejectCandidate } = useSellerNewListings();
+  const { listings, loading, searchingId, monthlySearchCount, eligibility, sellerNames, findSource, markAsSourced, rejectCandidate } = useSellerNewListings();
   const { toast } = useToast();
 
   if (!loading && listings.length === 0) return null;
@@ -156,6 +171,25 @@ export default function NewListingsPanel() {
                         {listing.asin}
                       </a>
                       {" "}· detected {new Date(listing.detected_at).toLocaleString()}
+                    </div>
+                    {/* Which seller listed it. With hundreds of watched
+                        sellers the row is otherwise anonymous, and "who is
+                        selling this" is the first thing needed to judge it --
+                        falls back to the raw id when the name has not been
+                        filled in yet. */}
+                    <div className="text-xs text-muted-foreground">
+                      from{" "}
+                      <a
+                        href={amazonStorefrontUrl(listing.seller_id, listing.marketplace)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                        title="Open this seller's storefront on Amazon"
+                      >
+                        <Store className="h-3 w-3" />
+                        {sellerNames[`${listing.seller_id}|${listing.marketplace}`] || listing.seller_id}
+                      </a>
+                      {" "}({listing.marketplace})
                     </div>
                   </div>
                   <Button

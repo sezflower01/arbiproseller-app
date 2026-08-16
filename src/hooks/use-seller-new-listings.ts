@@ -64,11 +64,13 @@ export function useSellerNewListings() {
   const [searchingId, setSearchingId] = useState<string | null>(null);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
+  /** `${seller_id}|${marketplace}` -> seller_name, for listings to show their origin. */
+  const [sellerNames, setSellerNames] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: rows, error }, { data: usageRow }] = await Promise.all([
+      const [{ data: rows, error }, { data: usageRow }, { data: watchRows }] = await Promise.all([
         supabase
           .from("seller_watch_new_listings")
           .select("id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, source_status, candidates, sourced_candidate, rejected_candidate_urls")
@@ -79,10 +81,23 @@ export function useSellerNewListings() {
           .select("search_count")
           .eq("month_key", currentMonthKey())
           .maybeSingle(),
+        // Listing rows carry seller_id but not the seller's NAME -- that lives
+        // on the watch. Fetched here so a listing can say who it came from,
+        // which is the first thing you need in order to judge it.
+        supabase
+          .from("seller_watchlist")
+          .select("seller_id, marketplace, seller_name")
+          .neq("status", "cancelled"),
       ]);
       if (error) throw error;
       setListings((rows as unknown as NewListing[]) || []);
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
+
+      const names: Record<string, string> = {};
+      for (const w of (watchRows as any[]) || []) {
+        if (w?.seller_name) names[`${w.seller_id}|${w.marketplace}`] = w.seller_name;
+      }
+      setSellerNames(names);
     } catch (e) {
       console.error("[useSellerNewListings] refresh failed", e);
     } finally {
@@ -249,5 +264,5 @@ export function useSellerNewListings() {
     setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
   }, []);
 
-  return { listings, loading, searchingId, monthlySearchCount, eligibility, findSource, markAsSourced, rejectCandidate, refresh };
+  return { listings, loading, searchingId, monthlySearchCount, eligibility, sellerNames, findSource, markAsSourced, rejectCandidate, refresh };
 }
