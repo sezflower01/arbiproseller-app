@@ -60,8 +60,8 @@ const MANUAL_STEPS: { title: string; detail: string }[] = [
     detail: "mkdir $HOME\\dev then cd $HOME\\dev",
   },
   {
-    title: "Clone arbiproseller-app",
-    detail: "git clone https://github.com/sezflower01/arbiproseller-app.git — a browser sign-in window will open since it's private.",
+    title: "Clone inventorysprint-app",
+    detail: "git clone https://github.com/sezflower01/inventorysprint-app.git — a browser sign-in window will open since it's private.",
   },
   {
     title: "Clone new-venture-generator",
@@ -69,7 +69,7 @@ const MANUAL_STEPS: { title: string; detail: string }[] = [
   },
   {
     title: "Install dependencies in each repo",
-    detail: "cd arbiproseller-app && npm install, then cd ..\\new-venture-generator && npm install",
+    detail: "cd inventorysprint-app && npm install, then cd ..\\new-venture-generator && npm install",
   },
 ];
 
@@ -118,7 +118,7 @@ export default function DevEnvironmentSetup() {
               Dev Environment Setup
             </h1>
             <p className="text-muted-foreground mt-1">
-              Bootstrap a new Windows machine for arbiproseller-app and new-venture-generator development —
+              Bootstrap a new Windows machine for inventorysprint-app and new-venture-generator development —
               Node.js, Git, Claude Code, both repos cloned, dependencies installed.
             </p>
           </div>

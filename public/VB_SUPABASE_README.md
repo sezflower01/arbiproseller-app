@@ -390,7 +390,7 @@ End Class
 
 ## Support
 
-- **Web App:** https://arbiproseller.com/
+- **Web App:** https://inventorysprint.com/
 - **Supabase Dashboard:** https://supabase.com/dashboard/project/mstibdszibcheodvnprm
 - **Edge Functions Logs:** Check Supabase dashboard for debugging
 

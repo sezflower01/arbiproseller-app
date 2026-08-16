@@ -34,7 +34,7 @@ Supabase anon key + the user's own session JWT are used.
 ## Sign in
 
 The first time you open the panel, click **Open sign-in**. It opens
-`https://arbiproseller.com/tools/ext-handoff?ext=1`. After login, the web app must
+`https://inventorysprint.com/tools/ext-handoff?ext=1`. After login, the web app must
 post the session to the extension:
 
 ```js
@@ -44,7 +44,7 @@ window.postMessage({
 }, '*');
 ```
 
-`handoff.js` (registered as a content script on `arbiproseller.com`)
+`handoff.js` (registered as a content script on `inventorysprint.com`)
 catches that message and stores the session in `chrome.storage.local`.
 
 > **Action item for the web app side**: add a small `/ext-handoff` route
@@ -58,7 +58,7 @@ catches that message and stores the session in `chrome.storage.local`.
 | `manifest.json` | MV3 manifest, host permissions, content scripts |
 | `background.js` | Service worker — session storage, token refresh, EF proxy |
 | `content.js` | Runs on Amazon pages — detects ASIN + mounts iframe |
-| `handoff.js` | Runs on arbiproseller.com — captures session postMessage |
+| `handoff.js` | Runs on inventorysprint.com — captures session postMessage |
 | `panel.html/js/css` | Floating SellerAmp-style panel UI |
 | `decisionSignal.js` | Mirrors `computeDecisionSignal()` from the web app |
 | `popup.html/js` | Toolbar popup — sign in / out |

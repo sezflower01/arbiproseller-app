@@ -7,7 +7,7 @@
 #   1. Checks for / installs Node.js LTS (via winget)
 #   2. Checks for / installs Git (via winget)
 #   3. Checks for / installs Claude Code (via npm)
-#   4. Clones arbiproseller-app and new-venture-generator into ~\dev
+#   4. Clones inventorysprint-app and new-venture-generator into ~\dev
 #   5. Runs npm install in each
 #
 # Both repos are private - cloning will pop a browser window asking you to
@@ -98,7 +98,7 @@ $devRoot = Join-Path $HOME "dev"
 if (-not (Test-Path $devRoot)) { New-Item -ItemType Directory -Path $devRoot | Out-Null }
 
 $repos = @(
-  @{ Name = "arbiproseller-app";     Url = "https://github.com/sezflower01/arbiproseller-app.git" },
+  @{ Name = "inventorysprint-app";     Url = "https://github.com/sezflower01/inventorysprint-app.git" },
   @{ Name = "new-venture-generator"; Url = "https://github.com/sezflower01/new-venture-generator.git" }
 )
 

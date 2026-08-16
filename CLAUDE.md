@@ -9,8 +9,8 @@ This repository has **five different names** across its layers. They all refer t
 | Layer | Name it carries |
 | --- | --- |
 | Local folder | `quick-start-genesis` (Lovable scaffold name) |
-| GitHub repo | `sezflower01/arbiproseller-app` |
-| Vercel project | `arbiproseller-app` (`.vercel/project.json`) |
+| GitHub repo | `sezflower01/inventorysprint-app` (renamed 2026-08-15 from `arbiproseller-app`) |
+| Vercel project | `arbiproseller-app` (`.vercel/project.json`) — renamed separately from the repo |
 | Supabase project | `CloudArbi` — ref `mstibdszibcheodvnprm` |
 | Package name | `vite_react_shadcn_ts` (Lovable default) |
 | **The actual product** | **InventorySprint** — `inventorysprint.com` |
@@ -111,4 +111,4 @@ Work happens directly on `main` — that is the established workflow here.
 
 Edge functions carry **substantial header comments** explaining *why* a design was chosen — cost tradeoffs, bugs previously hit, live-confirmed API behaviour with dates. This is deliberate institutional memory. Match it: when fixing a non-obvious bug, record the reasoning in the file rather than only the fix.
 
-Lovable residue (the scaffold README, `.lovable/`, bun lockfiles, the generic package name) is a normal migration artifact — not a bug to fix reflexively.
+Lovable residue (the scaffold README, `.lovable/`, bun lockfiles, the generic package name) is a normal migration artifact — not a bug to fix reflexively. `.lovable/` holds only markdown notes and memory files; nothing in this repo is wired to Lovable, and the Lovable↔GitHub connection was disconnected on 2026-08-15, so nothing external pushes here. Historical `arbiproseller` references inside `.lovable/` are left alone deliberately — they are a record of what was true when written.
