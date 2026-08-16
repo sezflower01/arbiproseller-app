@@ -94,7 +94,8 @@ export function useSellerNewListings() {
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
-      for (const w of (watchRows as any[]) || []) {
+      type WatchNameRow = { seller_id: string; marketplace: string; seller_name: string | null };
+      for (const w of (watchRows as WatchNameRow[] | null) ?? []) {
         if (w?.seller_name) names[`${w.seller_id}|${w.marketplace}`] = w.seller_name;
       }
       setSellerNames(names);
