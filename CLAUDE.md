@@ -105,6 +105,17 @@ Wrap long fan-out jobs in `withCronLock(...)` from `_shared/cron-lock.ts` — it
 
 Work happens directly on `main` — that is the established workflow here.
 
+## Analysing sales data
+
+`sales_orders` carries **two date fields in different timezones**, and mixing them silently corrupts any daily figure:
+
+- `order_date` — **local** (Amazon US default, Pacific). Complete.
+- `purchase_timestamp_utc` — **UTC**, as named. NULL on ~10% of rows.
+
+Measured 2026-08-16 over 1,865 rows: **23% land on different calendar days**, every one differing by exactly +1 (a just-after-midnight-UTC order is the previous day in Pacific). Choosing a different field moves roughly a quarter of rows between days — this produced three different answers for "orders today" in one sitting.
+
+**Pick one field per analysis and state which.** Also account for day-of-week before calling anything a slowdown: Sunday averages ~86 orders against Thursday's ~150, so a Sunday compared to a weekday-weighted mean looks like a 23% collapse when it is entirely normal.
+
 ## Reference docs
 
 - `docs/module-access-control.md` — source of truth for module permissions
