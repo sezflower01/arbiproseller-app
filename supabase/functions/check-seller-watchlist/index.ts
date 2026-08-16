@@ -38,6 +38,7 @@
 // rather than catalog size.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
 
 const MAX_PRODUCT_DETAIL_ASINS = 50;
 
@@ -325,6 +326,52 @@ Deno.serve(async (req) => {
           // with null metadata and the seller-level diff is not lost.
           console.warn(`[check-seller-watchlist] no token budget for product-detail fetch for ${sellerId}/${marketplace}`);
         }
+
+        // Fill whatever Keepa left blank from catalogs we already populate.
+        // A brand-new listing is exactly when Keepa's record is thinnest --
+        // a title often arrives before imagesCSV does -- and this costs no
+        // tokens, so it runs whether or not the fetch above was skipped.
+        const missing = Array.from(unionNewAsins).filter((a) => !productDetails.get(a)?.image);
+        if (missing.length) {
+          const fromCatalog = await lookupAsinDetails(admin, missing);
+          for (const [asin, details] of fromCatalog) {
+            const existing = productDetails.get(asin);
+            productDetails.set(asin, {
+              title: existing?.title ?? details.title,
+              brand: existing?.brand ?? null,
+              image: existing?.image ?? details.image,
+              upc: existing?.upc ?? null,
+            });
+          }
+        }
+      }
+
+      // Backfill rows already stored without a picture. Keepa fills images in
+      // as it crawls, and Find Source writes candidates that carry one, so a
+      // row that had nothing at detection time can often be completed later.
+      // Free -- catalog reads only, no Keepa call.
+      try {
+        const { data: blankRows } = await admin
+          .from('seller_watch_new_listings')
+          .select('id, asin')
+          .eq('seller_id', sellerId)
+          .eq('marketplace', marketplace)
+          .is('image_url', null)
+          .limit(100);
+
+        if (blankRows?.length) {
+          const details = await lookupAsinDetails(admin, blankRows.map((r: any) => r.asin));
+          for (const row of blankRows) {
+            const found = details.get(row.asin);
+            if (!found?.image && !found?.title) continue;
+            const patch: Record<string, unknown> = {};
+            if (found.image) patch.image_url = found.image;
+            if (found.title) patch.title = found.title;
+            await admin.from('seller_watch_new_listings').update(patch).eq('id', row.id);
+          }
+        }
+      } catch (e) {
+        console.warn('[check-seller-watchlist] image backfill failed', (e as Error).message);
       }
 
       // Pass 2: seed first-check watches, persist new-listing rows, email, update.
