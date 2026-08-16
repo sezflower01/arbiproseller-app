@@ -46,6 +46,10 @@ import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi
 // couple of sellers anyway.
 const MAX_SPAPI_IMAGE_LOOKUPS = 12;
 
+// How many picture-less rows to consider per run. Newest first, since a fresh
+// detection is the one a user is most likely looking at right now.
+const BLANK_IMAGE_SCAN_LIMIT = 60;
+
 const MAX_PRODUCT_DETAIL_ASINS = 50;
 
 // Stalest N watches considered per run. Only a couple will actually be
@@ -78,6 +82,86 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fill in new-listing rows that are missing a picture.
+ *
+ * Runs ONCE PER INVOCATION over every blank row, deliberately decoupled from
+ * which sellers this run happens to check. The first version keyed this to the
+ * seller being processed, which meant a blank image waited for that seller's
+ * turn in the rotation -- up to a full cycle, about ten hours at 400 sellers.
+ * That coupling bought nothing: none of this spends Keepa tokens, so there is
+ * no reason to ration it by rotation slot. Now a row detected at any point
+ * gets its image on the next 5-minute run.
+ *
+ * Sources in cheapest-first order: catalogs this app already populated (free
+ * table reads), then SP-API Catalog Items for whatever is still missing --
+ * Amazon's own data, on a quota entirely separate from Keepa.
+ */
+async function backfillBlankImages(admin: any, deadlineAt: number): Promise<Record<string, number>> {
+  const stats = { scanned: 0, fromCatalog: 0, fromSpApi: 0, stillBlank: 0, tokenMissing: 0 };
+  try {
+    const { data: blankRows } = await admin
+      .from('seller_watch_new_listings')
+      .select('id, asin, user_id, marketplace, title, image_url')
+      .is('image_url', null)
+      .order('detected_at', { ascending: false })
+      .limit(BLANK_IMAGE_SCAN_LIMIT);
+
+    if (!blankRows?.length) return stats;
+    stats.scanned = blankRows.length;
+
+    const details = await lookupAsinDetails(admin, blankRows.map((r: any) => r.asin));
+
+    // Group the leftovers by (user, marketplace): the SP-API token is scoped
+    // to both, so this exchanges one token per group rather than per row.
+    const stillBlank = blankRows.filter((r: any) => !details.get(r.asin)?.image);
+    const groups = new Map<string, any[]>();
+    for (const row of stillBlank) {
+      const key = `${row.user_id}|${row.marketplace}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+
+    let spapiBudget = MAX_SPAPI_IMAGE_LOOKUPS;
+    for (const [key, rows] of groups) {
+      if (spapiBudget <= 0 || Date.now() >= deadlineAt) break;
+      const [userId, marketplace] = key.split('|');
+      const token = await getCatalogAccessToken(admin, userId, marketplace);
+      if (!token) {
+        stats.tokenMissing += rows.length;
+        continue;
+      }
+      for (const row of rows) {
+        if (spapiBudget <= 0 || Date.now() >= deadlineAt) break;
+        spapiBudget--;
+        const spapi = await fetchCatalogItemDetails(admin, token, row.asin, marketplace);
+        if (spapi.image || spapi.title) {
+          const prev = details.get(row.asin);
+          details.set(row.asin, {
+            title: prev?.title ?? spapi.title,
+            image: prev?.image ?? spapi.image,
+          });
+          if (spapi.image) stats.fromSpApi++;
+        }
+      }
+    }
+
+    for (const row of blankRows) {
+      const found = details.get(row.asin);
+      if (!found?.image && !found?.title) { stats.stillBlank++; continue; }
+      const patch: Record<string, unknown> = {};
+      if (found.image) patch.image_url = found.image;
+      if (found.title && !row.title) patch.title = found.title;
+      if (!Object.keys(patch).length) { stats.stillBlank++; continue; }
+      await admin.from('seller_watch_new_listings').update(patch).eq('id', row.id);
+    }
+    stats.fromCatalog = stats.scanned - stats.stillBlank - stats.fromSpApi;
+  } catch (e) {
+    console.warn('[check-seller-watchlist] image backfill failed', (e as Error).message);
+  }
+  return stats;
+}
 
 /**
  * Claim a token slot, waiting briefly if the wait is short enough to be worth
@@ -220,6 +304,11 @@ Deno.serve(async (req) => {
       groups.get(key)!.push(w);
     }
 
+    // Before the Keepa loop: this spends no Keepa tokens, and running it
+    // after would let an exhausted budget (which breaks out of that loop)
+    // skip it entirely.
+    const imageBackfill = await backfillBlankImages(admin, deadlineAt);
+
     let checked = 0;
     let alertsFired = 0;
     let processedSellers = 0;
@@ -352,56 +441,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Backfill rows already stored without a picture. Keepa fills images in
-      // as it crawls, and Find Source writes candidates that carry one, so a
-      // row that had nothing at detection time can often be completed later.
-      // Free -- catalog reads only, no Keepa call.
-      try {
-        const { data: blankRows } = await admin
-          .from('seller_watch_new_listings')
-          .select('id, asin')
-          .eq('seller_id', sellerId)
-          .eq('marketplace', marketplace)
-          .is('image_url', null)
-          .limit(100);
-
-        if (blankRows?.length) {
-          const details = await lookupAsinDetails(admin, blankRows.map((r: any) => r.asin));
-
-          // Anything the local catalogs could not supply goes to SP-API --
-          // Amazon's own catalog, and a SEPARATE quota from Keepa, so this
-          // cannot slow the rotation or starve the repricer. Same call shape
-          // enrich-missing-titles already uses.
-          const stillBlank = blankRows.filter((r: any) => !details.get(r.asin)?.image);
-          if (stillBlank.length) {
-            const token = await getCatalogAccessToken(admin, group[0].user_id, marketplace);
-            if (token) {
-              for (const row of stillBlank.slice(0, MAX_SPAPI_IMAGE_LOOKUPS)) {
-                const spapi = await fetchCatalogItemDetails(admin, token, row.asin, marketplace);
-                if (spapi.image || spapi.title) {
-                  const prev = details.get(row.asin);
-                  details.set(row.asin, {
-                    title: prev?.title ?? spapi.title,
-                    image: prev?.image ?? spapi.image,
-                  });
-                }
-              }
-            }
-          }
-
-          for (const row of blankRows) {
-            const found = details.get(row.asin);
-            if (!found?.image && !found?.title) continue;
-            const patch: Record<string, unknown> = {};
-            if (found.image) patch.image_url = found.image;
-            if (found.title) patch.title = found.title;
-            await admin.from('seller_watch_new_listings').update(patch).eq('id', row.id);
-          }
-        }
-      } catch (e) {
-        console.warn('[check-seller-watchlist] image backfill failed', (e as Error).message);
-      }
-
       // Pass 2: seed first-check watches, persist new-listing rows, email, update.
       for (const w of group) {
         checked++;
@@ -474,6 +513,7 @@ Deno.serve(async (req) => {
       processedSellers,
       queuedSellers: orderedPairs.length,
       totalActive: totalActive ?? 0,
+      imageBackfill,
       stoppedReason,
       elapsedMs: Date.now() - startedAt,
     });
