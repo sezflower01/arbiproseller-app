@@ -296,18 +296,39 @@ Deno.serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
     const INTERNAL_SECRET = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
 
-    const auth = req.headers.get('Authorization');
-    if (!auth?.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const token = auth.replace('Bearer ', '').trim();
-    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userRes?.user) return jsonResponse({ error: 'Unauthorized' }, 401);
-    const userId = userRes.user.id;
+    const body = await req.json().catch(() => ({}));
+
+    // Two callers, two auth shapes.
+    //
+    // A user clicking through the UI presents their own JWT and the listing is
+    // scoped to them. The auto-source cron has no user session, so it presents
+    // the internal secret and names the user it is acting for. INTERNAL_SECRET
+    // was already read here but never checked -- the internal path is what it
+    // was declared for.
+    //
+    // The userId is still used to scope the listing lookup below in BOTH
+    // cases, so an internal caller cannot reach a listing by guessing an id;
+    // it has to name the owner correctly too.
+    const providedSecret = req.headers.get('x-internal-secret') || '';
+    const isInternal = !!INTERNAL_SECRET && providedSecret === INTERNAL_SECRET;
+
+    let userId: string;
+    if (isInternal) {
+      userId = String(body.userId || '').trim();
+      if (!userId) return jsonResponse({ error: 'userId is required for internal calls' }, 400);
+    } else {
+      const auth = req.headers.get('Authorization');
+      if (!auth?.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
+      const token = auth.replace('Bearer ', '').trim();
+      const { data: userRes, error: userErr } = await admin.auth.getUser(token);
+      if (userErr || !userRes?.user) return jsonResponse({ error: 'Unauthorized' }, 401);
+      userId = userRes.user.id;
+    }
 
     if (!GOOGLE_API_KEY || !GOOGLE_CX_ID) return jsonResponse({ error: 'Search is not configured' }, 500);
     if (!GEMINI_API_KEY) return jsonResponse({ error: 'Verification is not configured' }, 500);
 
-    const body = await req.json().catch(() => ({}));
     const listingId = String(body.listingId || '').trim();
     if (!listingId) return jsonResponse({ error: 'listingId is required' }, 400);
 

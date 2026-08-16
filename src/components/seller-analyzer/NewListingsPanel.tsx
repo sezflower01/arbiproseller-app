@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, ExternalLink, Package, Store, Check, X } from "lucide-react";
+import { Loader2, ExternalLink, Package, Store, Check, X } from "lucide-react";
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
@@ -95,21 +95,10 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { listings, loading, searchingId, monthlySearchCount, eligibility, sellerNames, findSource, markAsSourced, rejectCandidate } = useSellerNewListings();
+  const { listings, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate } = useSellerNewListings();
   const { toast } = useToast();
 
   if (!loading && listings.length === 0) return null;
-
-  const onFindSource = async (listingId: string) => {
-    try {
-      const result = await findSource(listingId);
-      if (result.status === "no_candidates") {
-        toast({ title: "No likely sources found", description: "This may be a private-label or exclusive listing." });
-      }
-    } catch (e: any) {
-      toast({ title: "Search failed", description: e.message, variant: "destructive" });
-    }
-  };
 
   const onReject = async (listingId: string, candidate: SourceCandidate) => {
     try {
@@ -139,7 +128,6 @@ export default function NewListingsPanel() {
 
         <div className="space-y-3">
           {listings.map((listing) => {
-            const isSearching = searchingId === listing.id || listing.source_status === "sourcing";
             const showCandidates = listing.source_status === "candidates_found" || listing.source_status === "sourced";
             const showNoCandidates = listing.source_status === "no_candidates";
 
@@ -192,32 +180,24 @@ export default function NewListingsPanel() {
                       {" "}({listing.marketplace})
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={showCandidates || showNoCandidates ? "outline" : "default"}
-                    disabled={isSearching}
-                    onClick={() => onFindSource(listing.id)}
-                    className="shrink-0"
-                  >
-                    {isSearching ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                    {showCandidates || showNoCandidates ? "Search again" : "Find source"}
-                  </Button>
+                  {/* Searches run automatically on a separate worker; there is
+                      no manual trigger. A listing sitting at 'unsourced' is
+                      queued, not stuck -- saying so is the difference between
+                      waiting and wondering. */}
+                  {!showCandidates && !showNoCandidates && (
+                    <span className="text-xs text-muted-foreground shrink-0 inline-flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Searching…
+                    </span>
+                  )}
                 </div>
 
-                {isSearching && (
-                  <div className="mt-3 text-xs text-muted-foreground flex items-center gap-2">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Searching for sources…
-                  </div>
-                )}
-
-                {showNoCandidates && !isSearching && (
+                {showNoCandidates && (
                   <div className="mt-3 text-xs text-muted-foreground">
                     No likely sources found — this may be a private-label or exclusive listing.
                   </div>
                 )}
 
-                {showCandidates && !isSearching && listing.candidates && listing.candidates.length > 0 && (
+                {showCandidates && listing.candidates && listing.candidates.length > 0 && (
                   <div className="mt-3 space-y-2">
                     {listing.candidates.map((c) => (
                       <CandidateRow
