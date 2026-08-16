@@ -40,7 +40,7 @@ async function backfillProductDetails(
     const res = await fetch(url);
     if (!res.ok) return null;
     const json = await res.json().catch(() => ({}));
-    await reportKeepaTokensLeft(supabase, json?.tokensLeft);
+    await reportKeepaTokensLeft(supabase, json?.tokensLeft, json?.refillRate);
     if (json?.error) return null;
     const p = json?.products?.[0];
     if (!p) return null;

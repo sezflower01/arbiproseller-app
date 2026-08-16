@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: `Keepa seller HTTP ${sResp.status}` }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         const sJson = await sResp.json().catch(() => ({}));
-        await reportKeepaTokensLeft(supabase, sJson?.tokensLeft);
+        await reportKeepaTokensLeft(supabase, sJson?.tokensLeft, sJson?.refillRate);
         const seller = sJson?.sellers?.[sellerId];
         if (!seller) {
           console.error('[seller-storefront-snapshot] Seller not found in response', JSON.stringify(sJson).slice(0, 300));
@@ -224,7 +224,7 @@ Deno.serve(async (req) => {
         const pResp = await fetch(url);
         if (pResp.ok) {
           const pJson = await pResp.json().catch(() => ({}));
-          await reportKeepaTokensLeft(supabase, pJson?.tokensLeft);
+          await reportKeepaTokensLeft(supabase, pJson?.tokensLeft, pJson?.refillRate);
           if (pJson?.error) {
             console.error('[seller-storefront-snapshot] Keepa /product returned an error payload', JSON.stringify(pJson.error).slice(0, 200));
             return new Response(JSON.stringify({ error: `Keepa product fetch failed: ${pJson.error.message || 'unknown error'}.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

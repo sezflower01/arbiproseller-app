@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
         const res = await fetch(url);
         if (res.ok) {
           const json = await res.json().catch(() => ({}));
-          await reportKeepaTokensLeft(admin, json?.tokensLeft);
+          await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
           const seller = json?.sellers?.[sellerId];
           if (seller) {
             currentAsins = Array.isArray(seller.asinList) ? seller.asinList : [];
@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
             const res = await fetch(url);
             if (res.ok) {
               const json = await res.json().catch(() => ({}));
-              await reportKeepaTokensLeft(admin, json?.tokensLeft);
+              await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
               const products = Array.isArray(json?.products) ? json.products : [];
               for (const p of products) {
                 if (!p?.asin) continue;

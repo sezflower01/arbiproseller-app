@@ -120,12 +120,30 @@ export async function acquireKeepaGlobalSlot(
 
 /**
  * Reconcile the local budget with Keepa's own accounting. Every Keepa
- * response carries tokensLeft; pass it here right after each call so
- * estimate error cannot accumulate.
+ * response carries tokensLeft AND refillRate; pass both right after each
+ * call so neither the balance nor the rate can drift from reality.
+ *
+ * The refill rate matters as much as the balance. It is a property of the
+ * account's Keepa billing, not of this codebase -- the Data subscription
+ * advertises 1 token/min with higher rates requiring a separate API plan --
+ * so it can change with no deploy. Measured 2026-08-15 it is 5/min (refill
+ * arrived in lumps of exactly +5, and tokensLeft peaked near 300, which a
+ * 1/min plan could not hold since a bucket caps at rate x 60). Reading it
+ * from each response means nobody has to be right about the plan.
  */
-export async function reportKeepaTokensLeft(supabase: any, tokensLeft: unknown): Promise<void> {
+export async function reportKeepaTokensLeft(
+  supabase: any,
+  tokensLeft: unknown,
+  refillRate?: unknown,
+): Promise<void> {
   if (typeof tokensLeft !== 'number' || !Number.isFinite(tokensLeft)) return;
-  const { error } = await supabase.rpc('observe_keepa_tokens', { p_tokens_left: tokensLeft });
+  const rate = typeof refillRate === 'number' && Number.isFinite(refillRate) && refillRate > 0
+    ? refillRate
+    : null;
+  const { error } = await supabase.rpc('observe_keepa_tokens', {
+    p_tokens_left: tokensLeft,
+    p_refill_rate: rate,
+  });
   if (error) console.warn('[Keepa] failed to record observed tokensLeft:', error.message);
 }
 

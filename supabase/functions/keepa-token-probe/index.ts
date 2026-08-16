@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
 
         const j = await res.json().catch(() => ({}));
         const meta = readMeta(j);
-        await reportKeepaTokensLeft(admin, meta.tokensLeft);
+        await reportKeepaTokensLeft(admin, meta.tokensLeft, meta.refillRate);
         if (!plan) plan = meta;
 
         const seller = j?.sellers?.[sellerId];
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
           if (res.ok) {
             const j = await res.json().catch(() => ({}));
             const meta = readMeta(j);
-            await reportKeepaTokensLeft(admin, meta.tokensLeft);
+            await reportKeepaTokensLeft(admin, meta.tokensLeft, meta.refillRate);
             const seller = j?.sellers?.[sellerId];
             const csv = seller?.totalStorefrontAsinsCSV;
             const asinCount = Array.isArray(csv) && csv.length ? csv[csv.length - 1] : null;
@@ -277,7 +277,7 @@ Deno.serve(async (req) => {
           if (res.ok) {
             const j = await res.json().catch(() => ({}));
             const meta = readMeta(j);
-            await reportKeepaTokensLeft(admin, meta.tokensLeft);
+            await reportKeepaTokensLeft(admin, meta.tokensLeft, meta.refillRate);
             productProbe = {
               asinsRequested: batch.length,
               productsReturned: Array.isArray(j?.products) ? j.products.length : 0,
