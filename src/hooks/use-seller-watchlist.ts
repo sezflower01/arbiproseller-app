@@ -215,10 +215,47 @@ export function useSellerWatchlist() {
     await refresh();
   }, [refresh]);
 
+  /**
+   * Cancel many watches at once.
+   *
+   * Chunked because the id list travels in the PATCH query string: ~400 UUIDs
+   * is roughly 15KB of URL, past what proxies will accept, and the failure
+   * would look like a random server error rather than a length problem.
+   *
+   * Refreshes once at the end rather than per chunk -- five hundred rows
+   * re-rendering four times over is visible jank for no added certainty.
+   *
+   * Soft cancel, matching cancelWatch: seller_watch_new_listings cascades on
+   * DELETE, so hard-deleting here would silently take every detected listing
+   * with it. Setting status keeps the Results tab intact.
+   */
+  const cancelWatches = useCallback(async (ids: string[]) => {
+    if (!ids.length) return 0;
+    const CHUNK = 100;
+    const cancelled_at = new Date().toISOString();
+    let done = 0;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const { error } = await supabase
+        .from("seller_watchlist")
+        .update({ status: "cancelled", cancelled_at })
+        .in("id", slice);
+      if (error) {
+        // Report what DID land -- a partial cancel that claims total failure
+        // sends the user back to re-select rows that are already gone.
+        await refresh();
+        throw new Error(`${error.message} (cancelled ${done} of ${ids.length} before failing)`);
+      }
+      done += slice.length;
+    }
+    await refresh();
+    return done;
+  }, [refresh]);
+
   // A watch is "seeding" until its first successful check, which writes
   // last_checked_at and known_asin_list together. Until then it cannot
   // produce an alert -- there is no baseline to diff against yet.
   const timing = estimateWatchTiming(watches);
 
-  return { watches, loading, createWatch, cancelWatch, bulkAddWatches, refresh, timing };
+  return { watches, loading, createWatch, cancelWatch, cancelWatches, bulkAddWatches, refresh, timing };
 }

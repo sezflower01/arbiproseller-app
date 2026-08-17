@@ -6,6 +6,18 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useAutoSourceConfig } from "@/hooks/use-auto-source-config";
 import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/use-seller-watchlist";
@@ -69,7 +81,7 @@ export default function SellerAnalyzer() {
   const { config: autoCfg, usedToday, saving: cfgSaving, update: updateAutoCfg } = useAutoSourceConfig();
 
   const { toast } = useToast();
-  const { watches, createWatch, cancelWatch, bulkAddWatches, timing } = useSellerWatchlist();
+  const { watches, createWatch, cancelWatch, cancelWatches, bulkAddWatches, timing } = useSellerWatchlist();
   const [watchToggling, setWatchToggling] = useState(false);
 
   const typedSellerId = parseSellerInput(input).sellerId;
@@ -113,6 +125,51 @@ export default function SellerAnalyzer() {
       toast({ title: "Watch cancelled" });
     } catch (e: any) {
       toast({ title: "Could not cancel watch", description: e.message, variant: "destructive" });
+    }
+  };
+
+  // Selection is keyed by watch id and deliberately survives filter changes:
+  // narrowing the filter to pick out a handful, then widening it again, must
+  // not silently discard what was already ticked.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRemoving, setBulkRemoving] = useState(false);
+
+  const visibleIds = visibleWatches.map((w) => w.id);
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+
+  const toggleSelectAllVisible = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const removeSelected = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    setBulkRemoving(true);
+    try {
+      const n = await cancelWatches(ids);
+      setSelected(new Set());
+      toast({ title: `Removed ${n.toLocaleString()} seller${n === 1 ? "" : "s"}` });
+    } catch (e) {
+      toast({ title: "Could not remove sellers", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setBulkRemoving(false);
     }
   };
 
@@ -274,12 +331,79 @@ export default function SellerAnalyzer() {
                     />
                   )}
 
+                  {/* Select-all acts on the FILTERED rows, not the whole list.
+                      That is what makes "swap the Keepa criteria" workable:
+                      filter to the batch you no longer want, select all, remove.
+                      The label always names the number it will actually tick, so
+                      it can never read "select all" while meaning 400. */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-y py-2">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        onCheckedChange={(v) => toggleSelectAllVisible(v === true)}
+                        aria-label="Select all shown sellers"
+                      />
+                      <span>
+                        Select all{watchFilter.trim() ? " shown" : ""}
+                        {visibleWatches.length > 0 && ` (${visibleWatches.length.toLocaleString()})`}
+                      </span>
+                    </label>
+
+                    {selected.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {selected.size.toLocaleString()} selected
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setSelected(new Set())}
+                        >
+                          Clear
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button type="button" variant="destructive" size="sm" className="h-7 text-xs" disabled={bulkRemoving}>
+                              {bulkRemoving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                              Remove {selected.size.toLocaleString()}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Remove {selected.size.toLocaleString()} seller{selected.size === 1 ? "" : "s"}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                They stop being checked for new listings. Listings already found stay
+                                in Results, and re-adding a seller later resumes from its existing
+                                baseline rather than seeding again from scratch.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={removeSelected}>
+                                Remove {selected.size.toLocaleString()}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Scroll the list rather than letting 400 rows run the page
                       to several screens tall. */}
                   <div className="mt-3 max-h-[26rem] overflow-y-auto pr-1 divide-y">
                     {visibleWatches.map((w) => (
                       <div key={w.id} className="flex items-center justify-between gap-2 text-sm py-2">
                         <div className="flex items-center gap-2 min-w-0">
+                          <Checkbox
+                            checked={selected.has(w.id)}
+                            onCheckedChange={(v) => toggleOne(w.id, v === true)}
+                            aria-label={`Select ${w.seller_name || w.seller_id}`}
+                          />
                           <span className="truncate font-mono text-xs">{w.seller_name || w.seller_id}</span>
                           <span className="text-muted-foreground shrink-0 text-xs">({w.marketplace})</span>
                         </div>
