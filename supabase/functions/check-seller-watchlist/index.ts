@@ -39,7 +39,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
-import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
+import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch } from '../_shared/spapi-catalog-image.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
 import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
 
@@ -403,11 +403,19 @@ Deno.serve(async (req) => {
         // /seller?storefront=1 at a flat 10 tokens, which SP-API cannot
         // replace at all. What it buys is that new-listing metadata stops
         // competing with the storefront sweep for the same tokens.
+        // BATCHED: 20 ASINs per call, so all MAX_PRODUCT_DETAIL_ASINS get
+        // resolved in ~3 calls instead of 12 ASINs in 12 calls.
+        //
+        // This matters far beyond speed. SP-API is the ONLY source of
+        // productGroup -- the Keepa fallback below supplies title/brand/image/
+        // upc and no category at all -- so the old per-ASIN cap meant the
+        // category filter usually ran on a null product_group, and unknown
+        // deliberately qualifies. Measured 2026-08-17 before this change:
+        // product_group resolved on 12% of 2,284 listings.
         const spApiToken = await getCatalogAccessToken(admin, group[0].user_id, marketplace);
-        if (spApiToken) {
-          for (const asin of asinsToFetch.slice(0, MAX_SPAPI_IMAGE_LOOKUPS)) {
-            if (Date.now() >= deadlineAt) break;
-            const sp = await fetchCatalogItemDetails(admin, spApiToken, asin, marketplace);
+        if (spApiToken && Date.now() < deadlineAt) {
+          const batch = await fetchCatalogItemsBatch(admin, spApiToken, asinsToFetch, marketplace);
+          for (const [asin, sp] of batch) {
             if (sp.title || sp.image || sp.productGroup) {
               productDetails.set(asin, {
                 title: sp.title, brand: sp.brand, image: sp.image, upc: sp.upc,

@@ -143,7 +143,19 @@ export async function fetchCatalogItemDetails(
 
     const json = await res.json().catch(() => null);
     if (!json) return empty;
+    return parseCatalogItem(json, marketplaceId);
+  } catch (e) {
+    console.warn(`[spapi-catalog-image] ${asin} failed:`, (e as Error).message);
+    return empty;
+  }
+}
 
+/**
+ * Parse one Catalog Items record. Shared by the single-ASIN and batch calls --
+ * both return the same item shape, so the field handling must not drift.
+ */
+function parseCatalogItem(json: any, marketplaceId: string): CatalogItemDetails {
+  try {
     const summaries = json?.summaries || [];
     const summary = summaries.find((s: any) => s.marketplaceId === marketplaceId) || summaries[0];
 
@@ -178,8 +190,78 @@ export async function fetchCatalogItemDetails(
       productGroup: summary?.websiteDisplayGroupName || summary?.websiteDisplayGroup || null,
       salesRank: broadRanks.length ? Math.min(...broadRanks) : null,
     };
-  } catch (e) {
-    console.warn(`[spapi-catalog-image] ${asin} failed:`, (e as Error).message);
-    return empty;
+  } catch {
+    return { title: null, image: null, brand: null, upc: null, productGroup: null, salesRank: null };
   }
+}
+
+/** Catalog Items caps `identifiers` at 20 per request. */
+export const CATALOG_BATCH_SIZE = 20;
+
+/**
+ * Resolve up to 20 ASINs in ONE Catalog Items call.
+ *
+ * The single-ASIN function above used to carry a comment claiming Catalog
+ * Items "has no batch form for this shape". That was wrong, and it cost real
+ * coverage: because each ASIN meant one HTTP call, check-seller-watchlist
+ * capped itself at MAX_SPAPI_IMAGE_LOOKUPS = 12 per run, and SP-API is the
+ * ONLY source of productGroup (the Keepa fallback supplies title/brand/image/
+ * upc but no category). Measured 2026-08-17: product_group was resolved on
+ * just 12% of 2,284 listings, so the category filter was deciding on data it
+ * usually did not have -- and "unknown" deliberately qualifies.
+ *
+ * searchCatalogItems takes the same includedData, returns the same item shape,
+ * and runs on the same catalog_api bucket. 50 ASINs goes from 50 calls to 3.
+ * Strictly cheaper AND complete, which is why this replaces the cap rather
+ * than merely raising it.
+ *
+ * Returns a Map keyed by ASIN; an ASIN Amazon has no record for is simply
+ * absent rather than present-and-empty, so callers can tell "no data" from
+ * "not looked up".
+ */
+export async function fetchCatalogItemsBatch(
+  supabase: any,
+  accessToken: string,
+  asins: string[],
+  marketplaceCode: string,
+): Promise<Map<string, CatalogItemDetails>> {
+  const out = new Map<string, CatalogItemDetails>();
+  if (!asins.length) return out;
+
+  const marketplaceId = MARKETPLACE_META[marketplaceCode]?.amazonMarketplaceId;
+  const host = SPAPI_HOSTS[marketplaceCode];
+  if (!marketplaceId || !host) return out;
+
+  for (let i = 0; i < asins.length; i += CATALOG_BATCH_SIZE) {
+    const chunk = asins.slice(i, i + CATALOG_BATCH_SIZE);
+    try {
+      await waitForApiToken(supabase, 'catalog_api');
+
+      const url = new URL(`https://${host}/catalog/2022-04-01/items`);
+      url.searchParams.set('identifiers', chunk.join(','));
+      url.searchParams.set('identifiersType', 'ASIN');
+      url.searchParams.set('marketplaceIds', marketplaceId);
+      url.searchParams.set('includedData', 'summaries,images,identifiers,salesRanks');
+      url.searchParams.set('pageSize', String(CATALOG_BATCH_SIZE));
+
+      const res = await fetch(url.toString(), {
+        headers: { 'x-amz-access-token': accessToken, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        console.warn(`[spapi-catalog-image] batch of ${chunk.length} HTTP ${res.status}`);
+        continue; // other chunks may still succeed
+      }
+      const json = await res.json().catch(() => null);
+      for (const item of json?.items || []) {
+        // Trust the ASIN Amazon echoes back, not our request order -- the
+        // response is not guaranteed to be aligned with `identifiers`, and
+        // mapping by position would silently mislabel every field.
+        const asin = item?.asin;
+        if (asin) out.set(asin, parseCatalogItem(item, marketplaceId));
+      }
+    } catch (e) {
+      console.warn('[spapi-catalog-image] batch failed:', (e as Error).message);
+    }
+  }
+  return out;
 }
