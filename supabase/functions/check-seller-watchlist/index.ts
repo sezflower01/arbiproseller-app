@@ -44,6 +44,7 @@ import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
 import { waitForApiToken } from '../_shared/rate-limiter.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
 import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
+import { withCronLock } from '../_shared/cron-lock.ts';
 
 // Bound on SP-API catalog lookups per run. These cost no Keepa tokens, but
 // they do cost wall-clock inside the run budget, and a run only processes a
@@ -204,11 +205,28 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   const deadlineAt = startedAt + RUN_BUDGET_MS;
 
-  try {
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-    const KEEPA_KEY = Deno.env.get('KEEPA_API_KEY')?.trim();
-    if (!KEEPA_KEY) return jsonResponse({ error: 'KEEPA_API_KEY not configured' }, 500);
-    const admin = createClient(SUPABASE_URL, serviceRoleKey);
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+  const KEEPA_KEY = Deno.env.get('KEEPA_API_KEY')?.trim();
+  if (!KEEPA_KEY) return jsonResponse({ error: 'KEEPA_API_KEY not configured' }, 500);
+  const admin = createClient(SUPABASE_URL, serviceRoleKey);
+
+  // Wrapped so every run leaves a row in cron_run_history.
+  //
+  // Two crons call this function -- the 5-minute sweep and an hourly catch-up
+  // -- and both are now confined to midnight-6am Pacific, so they overlap far
+  // more often within a narrow window than they used to. The lock stops two
+  // runs claiming Keepa tokens against the same budget.
+  //
+  // The observability half matters just as much. A watch's FIRST check seeds
+  // its baseline and deliberately produces no listings, so an empty Done tab
+  // is the expected outcome of a successful seeding run -- indistinguishable
+  // from the job never having fired. Without a run record there was no way to
+  // tell those apart except by reading the code and inferring.
+  let outcome: Record<string, unknown> = {};
+  // Early exits inside the lock cannot return a Response -- withCronLock wants
+  // a work result -- so the status rides alongside the body.
+  let outcomeStatus = 200;
+  const lock = await withCronLock(admin, 'check-seller-watchlist', 300, async () => {
 
     // Plan mode: report the queue order WITHOUT calling Keepa or mutating
     // anything. This is how fair rotation is verified against real data --
@@ -232,10 +250,12 @@ Deno.serve(async (req) => {
       try {
         body = JSON.parse(rawBody);
       } catch {
-        return jsonResponse({
+        outcome = {
           error: 'Request body was not valid JSON. Nothing was run and no Keepa tokens were spent. On PowerShell, prefer the query form: ?plan=true',
           receivedBody: rawBody.slice(0, 200),
-        }, 400);
+        };
+        outcomeStatus = 400;
+        return { items_processed: 0, detail: { badRequest: true } };
       }
     }
 
@@ -251,7 +271,7 @@ Deno.serve(async (req) => {
       .eq('status', 'active')
       .order('last_checked_at', { ascending: true, nullsFirst: true })
       .limit(CANDIDATE_BATCH);
-    if (error) return jsonResponse({ error: error.message }, 500);
+    if (error) throw new Error(error.message);
 
     const { count: totalActive } = await admin
       .from('seller_watchlist')
@@ -259,7 +279,8 @@ Deno.serve(async (req) => {
       .eq('status', 'active');
 
     if (!candidates?.length) {
-      return jsonResponse({ ok: true, checked: 0, alertsFired: 0, distinctSellers: 0, totalActive: totalActive ?? 0 });
+      outcome = { ok: true, checked: 0, alertsFired: 0, distinctSellers: 0, totalActive: totalActive ?? 0 };
+      return { items_processed: 0, detail: { nothingQueued: true, totalActive: totalActive ?? 0 } };
     }
 
     // Distinct seller+marketplace pairs, preserving staleness order.
@@ -273,7 +294,7 @@ Deno.serve(async (req) => {
     }
 
     if (planOnly) {
-      return jsonResponse({
+      outcome = {
         ok: true,
         planOnly: true,
         totalActive: totalActive ?? 0,
@@ -285,7 +306,8 @@ Deno.serve(async (req) => {
           seeded: p.stalest !== null,
         })),
         note: 'Order is last_checked_at ASC NULLS FIRST. Unseeded watches (null) sort first, then longest-waiting. Nothing was called or modified.',
-      });
+      };
+      return { items_processed: 0, detail: { planOnly: true, queued: orderedPairs.length } };
     }
 
     // --- Step 2: all watchers of those sellers, so one Keepa call still
@@ -298,7 +320,7 @@ Deno.serve(async (req) => {
       .eq('status', 'active')
       .in('seller_id', orderedPairs.map((p) => p.sellerId))
       .in('marketplace', Array.from(new Set(orderedPairs.map((p) => p.marketplace))));
-    if (fetchErr) return jsonResponse({ error: fetchErr.message }, 500);
+    if (fetchErr) throw new Error(fetchErr.message);
 
     const groups = new Map<string, typeof allWatches>();
     for (const w of allWatches || []) {
@@ -316,6 +338,11 @@ Deno.serve(async (req) => {
     let checked = 0;
     let alertsFired = 0;
     let processedSellers = 0;
+    // Counted separately from `checked` because a first check is the one that
+    // produces NO listings by design. Without this number, a night that
+    // correctly seeded 200 baselines is indistinguishable in the record from a
+    // night the job never ran.
+    let seeded = 0;
     let stoppedReason: string | null = null;
     const nowIso = new Date().toISOString();
 
@@ -549,6 +576,7 @@ Deno.serve(async (req) => {
         if (priorList === null || priorList === undefined) {
           // First check for this watch -- seed the baseline, don't alert.
           await admin.from('seller_watchlist').update(patch).eq('id', w.id);
+          seeded++;
           continue;
         }
 
@@ -764,19 +792,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({
+    outcome = {
       ok: true,
       checked,
       alertsFired,
       processedSellers,
       queuedSellers: orderedPairs.length,
+      seeded,
       totalActive: totalActive ?? 0,
       imageBackfill,
       stoppedReason,
       elapsedMs: Date.now() - startedAt,
-    });
-  } catch (e) {
-    console.error('[check-seller-watchlist] error', (e as Error).message);
-    return jsonResponse({ error: (e as Error).message }, 500);
+    };
+    // `seeded` is the number that answers "did tonight do anything" when the
+    // Done tab is still empty: a first check writes a baseline and no listing.
+    return {
+      items_processed: checked,
+      detail: {
+        checked, seeded, alertsFired, processedSellers,
+        queuedSellers: orderedPairs.length, stoppedReason,
+      },
+    };
+  });
+
+  if (lock.skipped) {
+    return jsonResponse({ ok: true, skipped_locked: true, reason: 'a previous run is still in flight' });
   }
+  if (lock.status === 'failed') {
+    console.error('[check-seller-watchlist] error', lock.error);
+    return jsonResponse({ error: lock.error || 'run failed' }, 500);
+  }
+  return jsonResponse(outcome, outcomeStatus);
 });

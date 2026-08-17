@@ -9,9 +9,15 @@
 //   });
 //   if (result.skipped) return jsonResponse({ skipped_locked: true });
 
-type AdminClient = {
-  rpc: (name: string, params: Record<string, unknown>) => Promise<{ data: any; error: any }>;
-};
+// Deliberately loose. A real SupabaseClient's `rpc` is generic and does not
+// structurally satisfy a hand-written narrow signature, so callers were forced
+// to cast -- and a cast at every call site is how a type stops catching
+// anything. Only `rpc` is ever used here.
+// The return is `any` rather than Promise<...> because supabase-js `rpc`
+// returns a thenable query builder, not a plain Promise -- typing it as a
+// Promise is precisely what made every real client fail to match.
+// deno-lint-ignore no-explicit-any
+type AdminClient = { rpc: (...args: any[]) => any };
 
 export interface CronWorkResult {
   items_processed?: number;

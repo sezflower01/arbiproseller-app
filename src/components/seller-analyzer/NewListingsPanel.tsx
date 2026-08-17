@@ -215,7 +215,13 @@ export default function NewListingsPanel() {
     }
   };
 
-  if (!loading && done.length === 0 && pending.length === 0) return null;
+  // Deliberately NOT returning null when empty. The panel used to vanish
+  // entirely with no listings, which made the ROI filter look unbuilt rather
+  // than un-fed -- and "empty" is the EXPECTED state for days after re-seeding
+  // a watchlist, since a seller's first check records a baseline and produces
+  // no listings by design. The controls stay visible and the content area says
+  // what is actually happening.
+  const isEmpty = !loading && done.length === 0 && pending.length === 0;
 
   const onReject = async (listingId: string, candidate: SourceCandidate) => {
     try {
@@ -315,7 +321,7 @@ export default function NewListingsPanel() {
             const truncated = total > rows.length;
             return (
               <TabsContent key={key} value={key} className="mt-0 space-y-3">
-                {isDone && rows.length > 0 && (
+                {isDone && (
                   <RoiFilterBar
                     range={roiRange}
                     onRangeChange={setRoiRange}
@@ -496,11 +502,24 @@ export default function NewListingsPanel() {
                 )}
 
                 {rows.length === 0 && (
-                  <p className="py-8 text-center text-xs text-muted-foreground">
-                    {key === "done"
-                      ? "No completed searches yet. Results appear here once the worker has looked for sources."
-                      : "Nothing queued — every detected listing has been searched."}
-                  </p>
+                  <div className="py-8 text-center text-xs text-muted-foreground space-y-1">
+                    {isEmpty ? (
+                      <>
+                        <p className="font-medium text-foreground">No listings yet — seeding in progress</p>
+                        <p>
+                          A seller's first check records what they already sell; only the SECOND
+                          check can show something new. Monitoring runs midnight–6am Pacific.
+                        </p>
+                        <p>The filter above is live and will apply as soon as listings arrive.</p>
+                      </>
+                    ) : (
+                      <p>
+                        {key === "done"
+                          ? "No completed searches yet. Results appear here once the worker has looked for sources."
+                          : "Nothing queued — every detected listing has been searched."}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {shown.map((listing) => {
             const showCandidates = listing.source_status === "candidates_found" || listing.source_status === "sourced";
