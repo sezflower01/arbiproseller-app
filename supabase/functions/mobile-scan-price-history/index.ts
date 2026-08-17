@@ -1,6 +1,7 @@
 // Mobile Scan – Price History (time-series) + Live Offers via Keepa
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { waitForApiToken } from "../_shared/rate-limiter.ts";
+import { reportKeepaTokensLeft, recordKeepa429 } from "../_shared/keepa-rate-gate.ts";
 import {
   KEEPA_EPOCH_MIN,
   KEEPA_EPOCH_MS_CONST,
@@ -649,8 +650,66 @@ Deno.serve(async (req) => {
     }
 
     const json = await res.json();
+
+    // Ground truth from a 200 response. This function is the heaviest Keepa
+    // caller in the system -- offers=100 on every panel view -- and until now it
+    // reported nothing, so keepa_token_budget could not see its consumption at
+    // all and read as healthy while this drained the bucket.
+    await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
+
+    // KEEPA SIGNALS FAILURE IN THE BODY OF A 200. Checking only res.ok and then
+    // products[0] made an exhausted quota indistinguishable from a product that
+    // genuinely has no data: both fell into degradeFallback, which silently
+    // served SP-API offers. On the panel that surfaced as a price history with
+    // only the Amazon line, no graph, and "Not enough data" for private-label
+    // risk -- with nothing anywhere saying the quota had run out.
+    //
+    // Reported live 2026-08-17 with keepa_token_budget.tokens_left at 5.3 of 300.
+    //
+    // A quota failure is TEMPORARY and retrying works, so it must not look like
+    // "this product has no data", which reads as permanent.
+    if (json?.error) {
+      // MEASURED 2026-08-17, not assumed. A 200 error body looks like:
+      //   {"error":{"message":"...","type":"invalidParameter"},
+      //    "tokensLeft":59,"tokensConsumed":0,"refillIn":26645,"refillRate":5}
+      // `error` is an OBJECT and `products` is absent entirely -- which is
+      // exactly why `json?.products?.[0]` came back undefined and the old code
+      // mistook a rejected request for a product with no data.
+      const err = json.error as { message?: string; type?: string } | string;
+      const detail = typeof err === 'string'
+        ? err
+        : (err?.message || err?.type || 'unknown Keepa error');
+      const type = typeof err === 'object' && err ? String(err.type || '') : '';
+      const tokensLeft = typeof json?.tokensLeft === 'number' ? json.tokensLeft : null;
+      const refillSec = typeof json?.refillIn === 'number' ? Math.ceil(json.refillIn / 1000) : null;
+      console.error('[mobile-scan-price-history] Keepa 200 with in-body error', {
+        asin, detail, type, tokensLeft, refillIn: json?.refillIn,
+      });
+
+      // Quota specifically: say so, and say when to come back. Matched on the
+      // error TYPE as well as the balance -- the exhausted-bucket payload has
+      // not been observed directly, so keying only on tokensLeft <= 0 would
+      // risk missing it if Keepa reports the shortfall a different way.
+      const quotaExhausted =
+        (tokensLeft !== null && tokensLeft <= 0) || /token|quota|limit/i.test(type);
+      if (quotaExhausted) {
+        await recordKeepa429(admin, tokensLeft, 'mobile-scan-price-history /product');
+        return await degradeFallback(
+          `Keepa quota exhausted${refillSec ? ` — retry in ~${refillSec}s` : ''}. Data below is incomplete.`,
+        );
+      }
+      return await degradeFallback(`Keepa error: ${detail}`);
+    }
+
     const product = json?.products?.[0];
-    if (!product) return await degradeFallback('No Keepa product data');
+    if (!product) {
+      // No in-body error and no product: the ASIN really is unavailable, which
+      // is a different message from a quota failure and now reads as one.
+      console.warn('[mobile-scan-price-history] Keepa returned no product', {
+        asin, tokensLeft: json?.tokensLeft,
+      });
+      return await degradeFallback('No Keepa data for this ASIN');
+    }
 
     // Real "Since Listed" day count, derived from THIS response's
     // listedSince/trackingSince fields — see computeSinceListedDays. For
