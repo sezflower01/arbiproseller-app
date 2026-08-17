@@ -35,18 +35,26 @@ export function useSourceRetailers() {
   const [retailers, setRetailers] = useState<SourceRetailer[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Size of the curated `suppliers` registry backing the fallback pass. Counted
+  // rather than listed: it is far too large to render here, and the only thing
+  // this panel needs to tell the user is that it exists and how big it is.
+  const [registryCount, setRegistryCount] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("source_retailers")
-        .select("id, domain, label, enabled, search_hits, price_attempts, price_success")
-        .order("enabled", { ascending: false })
-        .order("search_hits", { ascending: false })
-        .order("domain", { ascending: true });
+      const [{ data, error }, { count }] = await Promise.all([
+        supabase
+          .from("source_retailers")
+          .select("id, domain, label, enabled, search_hits, price_attempts, price_success")
+          .order("enabled", { ascending: false })
+          .order("search_hits", { ascending: false })
+          .order("domain", { ascending: true }),
+        supabase.from("suppliers").select("id", { count: "exact", head: true }),
+      ]);
       if (error) throw new Error(error.message);
       setRetailers((data || []) as SourceRetailer[]);
+      setRegistryCount(count ?? 0);
     } catch (e) {
       console.error("[useSourceRetailers] refresh failed", e);
     } finally {
@@ -113,5 +121,5 @@ export function useSourceRetailers() {
     }
   }, [retailers]);
 
-  return { retailers, loading, busy, refresh, setEnabled, addRetailer, removeRetailer };
+  return { retailers, registryCount, loading, busy, refresh, setEnabled, addRetailer, removeRetailer };
 }

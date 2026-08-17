@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,7 @@ interface Props {
  * than a misleading 0%.
  */
 export default function SourceRetailersPanel({ fallbackEnabled, fallbackSaving, onFallbackChange }: Props) {
-  const { retailers, loading, busy, setEnabled, addRetailer, removeRetailer } = useSourceRetailers();
+  const { retailers, registryCount, loading, busy, setEnabled, addRetailer, removeRetailer } = useSourceRetailers();
   const [newDomain, setNewDomain] = useState("");
   const { toast } = useToast();
 
@@ -139,6 +140,30 @@ export default function SourceRetailersPanel({ fallbackEnabled, fallbackSaving, 
             aria-label="Fall back to trusted suppliers"
           />
         </div>
+
+        {/* The curated supplier registry is edited in a different tool, and
+            nothing there hints that it steers sourcing results. Without this
+            line, a supplier added months ago silently changes what Find Source
+            falls back to, with no way to connect cause to effect. */}
+        {registryCount !== null && (
+          <p className="text-xs text-muted-foreground">
+            {registryCount > 0 ? (
+              <>
+                Falls back to your {registryCount.toLocaleString()} curated suppliers ·{" "}
+                <Link to="/tools/supplier-discovery" className="underline underline-offset-2 hover:text-foreground">
+                  manage them in Supplier Discovery
+                </Link>
+              </>
+            ) : (
+              <>
+                No curated suppliers yet, so the fallback searches the open web ·{" "}
+                <Link to="/tools/supplier-discovery" className="underline underline-offset-2 hover:text-foreground">
+                  add some in Supplier Discovery
+                </Link>
+              </>
+            )}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
