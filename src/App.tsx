@@ -188,6 +188,7 @@ const InventoryRestoration = lazyWithRetry(() => import("./pages/tools/Inventory
 const CreatedListings = lazyWithRetry(() => import("./pages/tools/CreatedListings"));
 const StillThinking = lazyWithRetry(() => import("./pages/tools/StillThinking"));
 const Suppliers = lazyWithRetry(() => import("./pages/tools/Suppliers"));
+const ApiUsage = lazyWithRetry(() => import("./pages/tools/ApiUsage"));
 const Sales = lazyWithRetry(() => import("./pages/tools/Sales"));
 const ReportsAccounting = lazyWithRetry(() => import("./pages/tools/ReportsAccounting"));
 const Settlement = lazyWithRetry(() => import("./pages/tools/Settlement"));
@@ -335,6 +336,7 @@ function App() {
                   <Route path="/tools/created-listings" element={<ProtectedRoute><CreatedListings /></ProtectedRoute>} />
                   <Route path="/tools/still-thinking" element={<ProtectedRoute><ModuleGuard module="still_thinking" redirectTo="/tools" redirectToast="Access restricted: Still Thinking."><StillThinking /></ModuleGuard></ProtectedRoute>} />
                   <Route path="/tools/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
+                  <Route path="/tools/api-usage" element={<ProtectedRoute><ApiUsage /></ProtectedRoute>} />
                   <Route path="/tools/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
                   <Route path="/tools/reports" element={<ProtectedRoute><ReportsAccounting /></ProtectedRoute>} />
                   <Route path="/tools/profit-loss" element={<ProtectedRoute><ModuleGuard module="profit_loss" redirectTo="/tools" redirectToast="Access restricted: Profit & Loss."><ProfitLoss /></ModuleGuard></ProtectedRoute>} />

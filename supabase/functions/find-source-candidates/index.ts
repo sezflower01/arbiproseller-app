@@ -15,6 +15,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
 import { classifyGeminiFailure, recordGeminiCall, type GeminiFailure } from '../_shared/gemini-usage.ts';
+import { recordSearchApiCall } from '../_shared/search-usage.ts';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 
@@ -224,16 +225,21 @@ function queryWithScope(query: string, siteRestriction: string, queryExclusions:
   return siteRestriction ? `${query} ${siteRestriction}` : `${query} ${queryExclusions}`;
 }
 
-async function googleSearch(query: string, apiKey: string, cx: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+async function googleSearch(supabase: any, query: string, apiKey: string, cx: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
   const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
       console.warn('[find-source-candidates] Google CSE non-OK:', r.status);
+      await recordSearchApiCall(supabase, 'google_cse', false, false, r.status);
       return [];
     }
     const j = await r.json();
     const items = Array.isArray(j.items) ? j.items : [];
+    // Counted per QUERY, not per search: one search issues a UPC query and a
+    // title query, and the fallback pass adds another pair. Only a per-query
+    // count can be compared against CSE's 100/day free tier.
+    await recordSearchApiCall(supabase, 'google_cse', true, items.length === 0, r.status);
     return items
       .map((it: any) => ({
         url: it.link || '',
@@ -244,6 +250,7 @@ async function googleSearch(query: string, apiKey: string, cx: string, siteRestr
       .filter((c: RawCandidate) => c.url);
   } catch (e) {
     console.warn('[find-source-candidates] Google CSE error:', (e as Error).message);
+    await recordSearchApiCall(supabase, 'google_cse', false, false, undefined);
     return [];
   }
 }
@@ -252,30 +259,33 @@ async function googleSearch(query: string, apiKey: string, cx: string, siteRestr
 // quota exhausted, etc.) -- same fallback discover-source-candidates already
 // relies on. SerpAPI doesn't return pagemap image data, so imageUrl stays
 // null on this path; compareImages degrades gracefully (see _shared/image-compare.ts).
-async function serpApiSearch(query: string, apiKey: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+async function serpApiSearch(supabase: any, query: string, apiKey: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
   const url = `https://serpapi.com/search.json?q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
       console.warn('[find-source-candidates] SerpAPI non-OK:', r.status);
+      await recordSearchApiCall(supabase, 'serpapi', false, false, r.status);
       return [];
     }
     const j = await r.json();
     const items = Array.isArray(j.organic_results) ? j.organic_results : [];
+    await recordSearchApiCall(supabase, 'serpapi', true, items.length === 0, r.status);
     return items
       .map((it: any) => ({ url: it.link || '', title: it.title || '', snippet: it.snippet || '', imageUrl: null }))
       .filter((c: RawCandidate) => c.url);
   } catch (e) {
     console.warn('[find-source-candidates] SerpAPI error:', (e as Error).message);
+    await recordSearchApiCall(supabase, 'serpapi', false, false, undefined);
     return [];
   }
 }
 
-async function searchAll(query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = '', queryExclusions = ''): Promise<RawCandidate[]> {
-  const results = await googleSearch(query, googleKey, cx, siteRestriction, queryExclusions);
+async function searchAll(supabase: any, query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = '', queryExclusions = ''): Promise<RawCandidate[]> {
+  const results = await googleSearch(supabase, query, googleKey, cx, siteRestriction, queryExclusions);
   if (results.length > 0) return results;
   if (!serpApiKey) return [];
-  return serpApiSearch(query, serpApiKey, siteRestriction, queryExclusions);
+  return serpApiSearch(supabase, query, serpApiKey, siteRestriction, queryExclusions);
 }
 
 // NON_RETAIL_DOMAINS moved to STRUCTURAL_EXCLUSIONS and is now enforced in the
@@ -635,10 +645,10 @@ Deno.serve(async (req) => {
     const runPass = async (siteRestriction: string): Promise<RawCandidate[]> => {
       const searches = listing.upc
         ? await Promise.all([
-            searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
-            searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
+            searchAll(admin, listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
+            searchAll(admin, titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
           ])
-        : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions)];
+        : [await searchAll(admin, titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions)];
       const seenUrls = new Set<string>();
       let droppedForeign = 0;
       let droppedExcluded = 0;
