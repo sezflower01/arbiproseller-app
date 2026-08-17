@@ -583,9 +583,79 @@ Deno.serve(async (req) => {
               sales_rank: details?.salesRank ?? null,
               qualified: q.qualified,
               disqualified_reason: q.reason,
+              // Filled in below, for qualified rows only. Declared here so the
+              // column is always present rather than appearing on some rows and
+              // not others depending on which branch ran.
+              amazon_price_cents: null as number | null,
+              new_price_cents: null as number | null,
+              price_captured_at: null as string | null,
               detected_at: nowIso,
             };
           });
+
+          // PRICE CAPTURE, for ROI -- only on rows that QUALIFIED.
+          //
+          // Deliberately not on every detection. Measured 2026-08-17: 101 of
+          // 2,484 listings qualified (4%), so pricing everything would spend
+          // ~25x the tokens to price rows that will never be searched, never
+          // sourced, and never have an ROI computed.
+          //
+          // WHY A SEPARATE CALL. The Keepa /product above only runs for ASINs
+          // SP-API could not resolve, and since the batched catalog lookup
+          // landed that is nearly none -- so adding stats=1 there would capture
+          // almost nothing. This is its own call, and its own cost.
+          //
+          // COST, measured not assumed: /product is 1 token per ASIN and
+          // stats=1 adds ZERO (verified: plain call tokensConsumed 1, with
+          // stats=1 tokensConsumed 1). At ~4% of ~281 detections/day that is
+          // roughly 11 tokens/day against a 7,200/day refill.
+          //
+          // buybox=1 was measured at tokensConsumed 3 -- triple -- and is
+          // deliberately NOT used. stats.current[1] (lowest New) is the proxy;
+          // it is not the buy-box price and the column comment says so.
+          const needPrice = rows.filter((r: any) => r.qualified).map((r: any) => r.asin);
+          if (needPrice.length && Date.now() < deadlineAt) {
+            const priceSlot = await acquireSlotOrGiveUp(
+              admin, needPrice.length * KEEPA_COST.productPerAsin, deadlineAt,
+            );
+            if (priceSlot.ok) {
+              try {
+                const purl = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${needPrice.join(',')}&stats=1`;
+                const pres = await fetch(purl);
+                if (pres.ok) {
+                  const pjson = await pres.json().catch(() => ({}));
+                  await reportKeepaTokensLeft(admin, pjson?.tokensLeft, pjson?.refillRate);
+                  // Keepa signals failure in the body of a 200 -- same trap as
+                  // mobile-scan-price-history. Check it before reading products.
+                  if (pjson?.error) {
+                    console.warn('[check-seller-watchlist] price capture Keepa in-body error:',
+                      typeof pjson.error === 'string' ? pjson.error : JSON.stringify(pjson.error));
+                  } else {
+                    const nowIsoPrice = new Date().toISOString();
+                    for (const p of (Array.isArray(pjson?.products) ? pjson.products : [])) {
+                      const cur = p?.stats?.current;
+                      if (!p?.asin || !Array.isArray(cur)) continue;
+                      const row = rows.find((r: any) => r.asin === p.asin);
+                      if (!row) continue;
+                      // -1 is Keepa's "no data" and -2 is "unavailable". Neither
+                      // is a price, and storing either as one would silently
+                      // produce negative ROI.
+                      const clean = (v: unknown) =>
+                        typeof v === 'number' && v > 0 ? Math.round(v) : null;
+                      row.amazon_price_cents = clean(cur[0]);
+                      row.new_price_cents = clean(cur[1]);
+                      if (row.amazon_price_cents != null || row.new_price_cents != null) {
+                        row.price_captured_at = nowIsoPrice;
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('[check-seller-watchlist] price capture failed:', (e as Error).message);
+              }
+            }
+          }
+
           const { error: insertErr } = await admin
             .from('seller_watch_new_listings')
             .upsert(rows, { onConflict: 'watch_id,asin', ignoreDuplicates: true });
