@@ -45,6 +45,16 @@ export const KEEPA_COST = {
    * is what causes 429s.
    */
   productWithOffersPerAsin: 6,
+  /**
+   * /product with stats+history+offers=20+buybox -- the price-history call
+   * shape. MEASURED 2026-08-17 across four ASINs: consistently 5 tokens.
+   *
+   * offers=100 measured 6 on every one of them while returning an IDENTICAL
+   * offer list (84 / 162 / 363 / 400 offers), identical buyBoxSellerIdHistory
+   * and identical csv[18]. The parameter is a billing tier, not a result cap,
+   * so asking for 100 bought nothing and cost 20% more.
+   */
+  productPriceHistory: 5,
 } as const;
 
 /**

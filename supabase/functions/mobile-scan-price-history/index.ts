@@ -1,7 +1,11 @@
 // Mobile Scan – Price History (time-series) + Live Offers via Keepa
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { waitForApiToken } from "../_shared/rate-limiter.ts";
-import { reportKeepaTokensLeft, recordKeepa429 } from "../_shared/keepa-rate-gate.ts";
+import {
+  acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
+  KEEPA_COST, type KeepaSlotOptions,
+} from "../_shared/keepa-rate-gate.ts";
+
 import {
   KEEPA_EPOCH_MIN,
   KEEPA_EPOCH_MS_CONST,
@@ -9,6 +13,32 @@ import {
   summarizeCountSeries,
   computeBuyBoxOwnership,
 } from "../_shared/plRiskSeries.ts";
+
+/**
+ * Claim a Keepa slot for an INTERACTIVE request.
+ *
+ * This function was completely ungated -- it called Keepa directly with no
+ * awareness of the shared 5-tokens/min account budget, while being the single
+ * most expensive caller in the app at 5 tokens per call. Measured 2026-08-17:
+ * ~25 calls/day typical, but the bucket is only 300, so one browsing session
+ * of ~60 product views empties it outright. That is exactly what happened
+ * earlier that day -- tokens_left fell from 66 to 5.3 in eleven minutes and
+ * the panel silently degraded to Amazon-only price history.
+ *
+ * Interactive style, matching seller-storefront-snapshot: wait briefly and
+ * retry once rather than skipping. A background cron should skip and try again
+ * later; a person waiting on a chart should queue, not be dropped.
+ *
+ * The reserve is respected by default, so a burst of panel views can no longer
+ * eat into what repricer-sp-api-pricing depends on.
+ */
+async function acquireKeepaSlotWithRetry(supabase: any, options: KeepaSlotOptions = {}) {
+  const first = await acquireKeepaGlobalSlot(supabase, options);
+  if (first.ok) return first;
+  const waitMs = Math.min(first.waitSeconds, 15) * 1000;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+  return acquireKeepaGlobalSlot(supabase, options);
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -622,12 +652,29 @@ Deno.serve(async (req) => {
       asin,
       stats: String(requestedDays),
       history: '1',
-      // Keepa's max for this param (20-100 in steps of 20) -- was hardcoded
-      // to the minimum, silently truncating the fallback-path offer list at
-      // 20 even when a listing has more real competing sellers.
-      offers: '100',
+      // MEASURED 2026-08-17, correcting the assumption this line was raised
+      // on. offers=20 and offers=100 return an IDENTICAL offer list -- tested
+      // on four ASINs returning 84, 162, 363 and 400 offers, all matching
+      // exactly, along with identical buyBoxSellerIdHistory and csv[18].
+      // The parameter is a billing tier, not a result cap: 100 cost 6 tokens,
+      // 20 costs 5, for the same data. The earlier comment assumed truncation
+      // that does not happen.
+      offers: '20',
       buybox: '1',
     }).toString();
+
+    // Claim the budget BEFORE spending it. Failing here degrades to cache or
+    // SP-API with a stated reason, which is the whole point: a busy budget now
+    // produces a visible explanation instead of thin data nobody can account
+    // for.
+    const slot = await acquireKeepaSlotWithRetry(admin, {
+      estimatedTokens: KEEPA_COST.productPriceHistory,
+    });
+    if (!slot.ok) {
+      return await degradeFallback(
+        `Keepa budget busy — retry in ~${Math.max(1, Math.round(slot.waitSeconds))}s. Data below is incomplete.`,
+      );
+    }
 
     const ctrl = new AbortController();
     const tId = setTimeout(() => ctrl.abort(), 15000);
