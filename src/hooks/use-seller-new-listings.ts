@@ -49,11 +49,38 @@ const SELECT_COLS =
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;
 
+/**
+ * Rows fetched per tab.
+ *
+ * Was 50, inherited from the original single shared query and never revisited.
+ * The database does not care -- (user_id, detected_at DESC) is indexed and RLS
+ * already scopes by user -- so this is a UI choice, raised to make a backlog
+ * browsable.
+ */
+const PAGE_SIZE = 200;
+
+/**
+ * Ceiling on ASINs auto-checked for eligibility per load.
+ *
+ * This is the one thing that scaled 1:1 with PAGE_SIZE: every loaded row fed
+ * the eligibility fan-out, so raising 50 to 200 would have taken page load from
+ * ~3 check-product-eligibility invocations to ~20, every time. Verdicts cache
+ * server-side per ASIN so the SP-API work behind them is mostly free on repeat,
+ * but the invocations are not.
+ *
+ * The cap is applied to the most recent rows, which are the ones being triaged.
+ * Older rows simply render without a badge -- EligibilityBadge returns null for
+ * an unknown status -- rather than showing a wrong or invented one.
+ */
+const MAX_ELIGIBILITY_ASINS = 60;
+
 export function useSellerNewListings() {
   const [done, setDone] = useState<NewListing[]>([]);
   const [pending, setPending] = useState<NewListing[]>([]);
-  /** Total finished rows, which exceeds `done.length` whenever the 50 cap bites. */
+  /** Total finished rows, which exceeds `done.length` whenever PAGE_SIZE bites. */
   const [doneTotal, setDoneTotal] = useState(0);
+  /** Finished rows that found nothing — the low-value bulk of a backlog. */
+  const [noCandidatesTotal, setNoCandidatesTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
@@ -63,7 +90,14 @@ export function useSellerNewListings() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: doneRows, error }, { data: pendingRows }, { data: usageRow }, { data: watchRows }, { count: doneCount }] = await Promise.all([
+      const [
+        { data: doneRows, error },
+        { data: pendingRows },
+        { data: usageRow },
+        { data: watchRows },
+        { count: doneCount },
+        { count: noCandidatesCount },
+      ] = await Promise.all([
         // DONE and SEARCHING are fetched separately with their own limits.
         // A single combined query ordered by detected_at is exactly what buried
         // completed research: 281 detections in a day pushed the 78 finished
@@ -73,13 +107,13 @@ export function useSellerNewListings() {
           .select(SELECT_COLS)
           .in("source_status", ["candidates_found", "sourced", "no_candidates"])
           .order("detected_at", { ascending: false })
-          .limit(50),
+          .limit(PAGE_SIZE),
         supabase
           .from("seller_watch_new_listings")
           .select(SELECT_COLS)
           .in("source_status", ["unsourced", "sourcing"])
           .order("detected_at", { ascending: false })
-          .limit(50),
+          .limit(PAGE_SIZE),
         supabase
           .from("find_source_usage")
           .select("search_count")
@@ -99,11 +133,18 @@ export function useSellerNewListings() {
           .from("seller_watch_new_listings")
           .select("id", { count: "exact", head: true })
           .in("source_status", ["candidates_found", "sourced", "no_candidates"]),
+        // Counted separately so "Delete all with no candidates" can name a real
+        // number before the user commits to it.
+        supabase
+          .from("seller_watch_new_listings")
+          .select("id", { count: "exact", head: true })
+          .eq("source_status", "no_candidates"),
       ]);
       if (error) throw error;
       setDone((doneRows as unknown as NewListing[]) || []);
       setPending((pendingRows as unknown as NewListing[]) || []);
       setDoneTotal(doneCount ?? 0);
+      setNoCandidatesTotal(noCandidatesCount ?? 0);
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
@@ -139,11 +180,15 @@ export function useSellerNewListings() {
     if (!listings.length) return;
 
     const byMarketplace = new Map<string, string[]>();
+    let queued = 0;
     for (const l of listings) {
       if (eligibility[l.asin]) continue; // already known or in flight
+      // Bounded so the fan-out stops tracking PAGE_SIZE. Both lists are ordered
+      // newest-first, so what gets checked is what is actually being triaged.
+      if (queued >= MAX_ELIGIBILITY_ASINS) break;
       if (!byMarketplace.has(l.marketplace)) byMarketplace.set(l.marketplace, []);
       const arr = byMarketplace.get(l.marketplace)!;
-      if (!arr.includes(l.asin)) arr.push(l.asin);
+      if (!arr.includes(l.asin)) { arr.push(l.asin); queued++; }
     }
     if (byMarketplace.size === 0) return;
 
@@ -293,5 +338,35 @@ export function useSellerNewListings() {
     return removed;
   }, [refresh]);
 
-  return { done, pending, doneTotal, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings, refresh };
+  /**
+   * Delete every finished row matching a status, server-side.
+   *
+   * Deliberately NOT "select all then delete the ids": clearing a backlog by id
+   * requires first loading every row into the browser, which is exactly the
+   * wrong shape for the job -- these rows carry `candidates` JSONB and are the
+   * fattest in the table. This deletes by predicate in one request, so it is
+   * unaffected by PAGE_SIZE and costs the same whether it removes 20 or 2,000.
+   *
+   * RLS scopes it: the policy is FOR ALL with `auth.uid() = user_id`, so the
+   * filter here is the status only and Postgres restricts the rest.
+   *
+   * Same permanence as deleteListings -- detection diffs against
+   * seller_watchlist.known_asin_list, so nothing deleted here reappears.
+   */
+  const deleteByStatus = useCallback(async (statuses: NewListing["source_status"][]) => {
+    if (!statuses.length) return 0;
+    const { count, error } = await supabase
+      .from("seller_watch_new_listings")
+      .delete({ count: "exact" })
+      .in("source_status", statuses);
+    if (error) throw new Error(error.message);
+    await refresh();
+    return count ?? 0;
+  }, [refresh]);
+
+  return {
+    done, pending, doneTotal, noCandidatesTotal, loading, monthlySearchCount,
+    eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings,
+    deleteByStatus, refresh,
+  };
 }

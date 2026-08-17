@@ -109,7 +109,7 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { done, pending, doneTotal, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings } = useSellerNewListings();
+  const { done, pending, doneTotal, noCandidatesTotal, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings, deleteByStatus } = useSellerNewListings();
   const [tab, setTab] = useState("done");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
@@ -153,6 +153,19 @@ export default function NewListingsPanel() {
       toast({ title: `${label} ${n.toLocaleString()} listing${n === 1 ? "" : "s"}` });
     } catch (e) {
       toast({ title: "Could not remove listings", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const purge = async (statuses: Parameters<typeof deleteByStatus>[0], label: string) => {
+    setRemoving(true);
+    try {
+      const n = await deleteByStatus(statuses);
+      setSelected(new Set());
+      toast({ title: `Deleted ${n.toLocaleString()} ${label}` });
+    } catch (e) {
+      toast({ title: "Could not delete listings", description: (e as Error).message, variant: "destructive" });
     } finally {
       setRemoving(false);
     }
@@ -258,6 +271,72 @@ export default function NewListingsPanel() {
                         </AlertDialog>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Clearing a backlog by predicate, not by selection. These act
+                    on every matching row in the database, so they are unaffected
+                    by how many are loaded -- which is the whole point: selecting
+                    rows first would mean loading hundreds of the fattest rows in
+                    the table purely to delete them. */}
+                {key === "done" && doneTotal > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Clear in bulk:</span>
+
+                    {noCandidatesTotal > 0 && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={removing}>
+                            No candidates ({noCandidatesTotal.toLocaleString()})
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Delete {noCandidatesTotal.toLocaleString()} listing{noCandidatesTotal === 1 ? "" : "s"} with no candidates?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              These were searched and nothing usable was found — typically private-label
+                              or exclusive listings. Deleting is permanent and they will not be
+                              re-detected. Listings with candidates, and ones you marked as sourced,
+                              are not touched.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => purge(["no_candidates"], "listings with no candidates")}>
+                              Delete {noCandidatesTotal.toLocaleString()}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={removing}>
+                          Everything done ({doneTotal.toLocaleString()})
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Delete all {doneTotal.toLocaleString()} finished listing{doneTotal === 1 ? "" : "s"}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This includes listings with source candidates and any you marked as
+                            sourced — their saved sources go too. Permanent, and they will not be
+                            re-detected. Queued listings on the Searching tab are not affected.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => purge(["candidates_found", "sourced", "no_candidates"], "finished listings")}>
+                            Delete {doneTotal.toLocaleString()}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 )}
 
