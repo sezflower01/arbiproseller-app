@@ -492,6 +492,11 @@ Deno.serve(async (req) => {
       // query plus several Gemini calls -- the trade is heavily favourable.
       const eligibilityByAsin = new Map<string, 'approved' | 'approval_required' | 'restricted'>();
       let allowNeedsApproval = true;
+      // undefined = fall back to the built-in defaults in source-qualification.
+      // An empty result from the table would otherwise read as "exclude
+      // nothing", silently switching the filter off for a user whose seed rows
+      // failed to write.
+      const userExclusions: { groups?: Set<string>; brands?: Set<string> } = {};
       if (unionNewAsins.size > 0) {
         const uid = group[0].user_id;
         const { data: cfg } = await admin
@@ -501,6 +506,19 @@ Deno.serve(async (req) => {
           .maybeSingle();
         // Absent config means defaults, and the default is to allow.
         allowNeedsApproval = cfg?.search_needs_approval !== false;
+
+        const { data: terms } = await admin
+          .from('source_excluded_terms')
+          .select('kind, value')
+          .eq('user_id', uid);
+        if (terms?.length) {
+          userExclusions.groups = new Set(
+            terms.filter((t: any) => t.kind === 'category').map((t: any) => String(t.value)),
+          );
+          userExclusions.brands = new Set(
+            terms.filter((t: any) => t.kind === 'brand').map((t: any) => String(t.value)),
+          );
+        }
 
         const wanted = Array.from(unionNewAsins);
         const cached = await readEligibility(admin, uid, marketplace, wanted);
@@ -540,8 +558,11 @@ Deno.serve(async (req) => {
               productGroup: details?.productGroup ?? null,
               salesRank: details?.salesRank ?? null,
               upc: details?.upc ?? null,
+              brand: details?.brand ?? null,
               eligibility: eligibilityByAsin.get(asin) ?? null,
               allowNeedsApproval,
+              excludedGroups: userExclusions.groups,
+              excludedBrands: userExclusions.brands,
             });
             return {
               watch_id: w.id,

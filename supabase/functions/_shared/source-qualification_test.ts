@@ -116,3 +116,54 @@ Deno.test('UNKNOWN eligibility never disqualifies', () => {
     true,
   );
 });
+
+// ---- brand exclusion -------------------------------------------------------
+// Every case below is drawn from live SP-API data observed 2026-08-17, because
+// the intuitive version of this rule (substring match, treat null as generic)
+// is wrong in both directions and is exactly what a future edit would restore.
+
+Deno.test('excludes placeholder brands, matched exactly', () => {
+  for (const b of ['Generic', 'generic', '  Unbranded  ', 'No Brand', 'NoBrand', 'Unknown']) {
+    const r = qualifyListing({ productGroup: 'Toy', upc: '1', brand: b });
+    assertEquals(r.qualified, false, `${b} should be excluded`);
+    assertEquals(r.reason?.startsWith('excluded_brand:'), true);
+  }
+});
+
+Deno.test('NEVER substring-matches a brand', () => {
+  // "Publisher Unknown" is a real publisher seen in live data. A
+  // contains-'unknown' rule rejects it; an exact match must not.
+  // productGroup deliberately NOT 'Book' here: Book is itself an excluded
+  // category, so it would mask whatever the brand rule did.
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: 'Publisher Unknown' }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: 'Generic Electric' }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: 'Unbranded Co.' }).qualified, true);
+});
+
+Deno.test('real brands with generic-sounding names survive', () => {
+  // Deliberately absent from the defaults: Universal Studios / Universal Music
+  // are real brands, and OEM is a legitimate automotive-parts label.
+  for (const b of ['Universal', 'OEM', 'Universal Music', 'None The Richer']) {
+    assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: b }).qualified, true, `${b} must survive`);
+  }
+});
+
+Deno.test('a MISSING brand never disqualifies', () => {
+  // Measured: of 20 listings stored with brand NULL, SP-API returned a real
+  // brand for 20 of 20. Null is a coverage artefact, not "unbranded".
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: null }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: '   ' }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1' }).qualified, true);
+});
+
+Deno.test('per-user lists override the built-in defaults', () => {
+  // User removed 'generic' and added 'acme'.
+  const brands = new Set(['acme']);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: 'Generic', excludedBrands: brands }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', brand: 'ACME', excludedBrands: brands }).reason, 'excluded_brand:acme');
+
+  // User no longer excludes Book, but does exclude Toy.
+  const groups = new Set(['toy']);
+  assertEquals(qualifyListing({ productGroup: 'Book', upc: '1', excludedGroups: groups }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', excludedGroups: groups }).reason, 'excluded_group:toy');
+});

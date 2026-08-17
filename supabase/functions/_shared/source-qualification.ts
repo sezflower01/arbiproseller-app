@@ -25,6 +25,15 @@ export interface QualificationInput {
   eligibility?: EligibilityVerdict | null;
   /** auto_source_config.search_needs_approval. Default true. */
   allowNeedsApproval?: boolean;
+  /** SP-API summaries[].brand, falling back to manufacturer. */
+  brand?: string | null;
+  /**
+   * Per-user overrides from source_excluded_terms, already lowercased.
+   * Omitted means "use the built-in defaults", which is what keeps the Deno
+   * tests and any caller that has not been updated behaving exactly as before.
+   */
+  excludedGroups?: ReadonlySet<string>;
+  excludedBrands?: ReadonlySet<string>;
 }
 
 export interface QualificationResult {
@@ -44,6 +53,19 @@ export interface QualificationResult {
 export const EXCLUDED_PRODUCT_GROUPS = new Set([
   'book', 'digital text', 'magazine', 'music', 'digital music',
   'dvd', 'video', 'video dvd', 'blu-ray',
+]);
+
+/**
+ * Placeholder brand values Amazon actually ships, matched EXACTLY.
+ *
+ * Deliberately short. 'Universal' and 'OEM' are excluded because they are real
+ * brands (Universal Studios/Music; OEM as an automotive-parts label), and
+ * substring matching is never used because "Publisher Unknown" -- a genuine
+ * publisher observed in live data -- would be caught by a contains-'unknown'
+ * rule while failing an exact one.
+ */
+export const EXCLUDED_BRANDS = new Set([
+  'generic', 'unbranded', 'no brand', 'nobrand', 'unknown',
 ]);
 
 /**
@@ -78,8 +100,25 @@ export function qualifyListing(input: QualificationInput): QualificationResult {
   // queue. Same principle as the rank ceiling only applying when a rank exists.
 
   const group = (input.productGroup || '').trim().toLowerCase();
-  if (group && EXCLUDED_PRODUCT_GROUPS.has(group)) {
+  const groups = input.excludedGroups ?? EXCLUDED_PRODUCT_GROUPS;
+  if (group && groups.has(group)) {
     return { qualified: false, reason: `excluded_group:${group}` };
+  }
+
+  // EXACT match, never substring. Measured against live SP-API data on
+  // 2026-08-17: "Publisher Unknown" is a real publisher, so `contains
+  // "unknown"` would reject it. The same reasoning keeps 'Universal' and 'OEM'
+  // out of the defaults entirely -- Universal Studios and Universal Music are
+  // real brands, and OEM is a legitimate label on automotive parts.
+  //
+  // A MISSING brand is not a generic brand and never disqualifies. Of 20
+  // listings stored with brand NULL, SP-API returned a real brand for all 20 --
+  // the nulls were a lookup-coverage artefact, not a property of the product.
+  // Same principle as the rank ceiling only applying when a rank exists.
+  const brand = (input.brand || '').trim().toLowerCase();
+  const brands = input.excludedBrands ?? EXCLUDED_BRANDS;
+  if (brand && brands.has(brand)) {
+    return { qualified: false, reason: `excluded_brand:${brand}` };
   }
 
   // Strongest single signal (48% of detections). Principled rather than
