@@ -3,7 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, X } from "lucide-react";
+import { CATEGORY_MAP, MAPPED_VALUES } from "@/lib/amazon-display-groups";
 import {
   useQualificationExclusions,
   normalizeTerm,
@@ -12,6 +14,78 @@ import {
   type ExcludedTerm,
 } from "@/hooks/use-qualification-exclusions";
 import { useToast } from "@/hooks/use-toast";
+
+/**
+ * One switch per Amazon department. ON = search it, OFF = never search it.
+ *
+ * A label covers SEVERAL real API values, so the switch moves all of them
+ * together. "Partly off" is possible only if something edited the underlying
+ * values individually; it is shown rather than hidden, and flipping the switch
+ * resolves it.
+ */
+function CategoryToggles({
+  terms,
+  counts,
+  busy,
+  setExcluded,
+}: {
+  terms: ExcludedTerm[];
+  counts: PreviewEntry[];
+  busy: boolean;
+  setExcluded: (kind: ExclusionKind, values: string[], excluded: boolean) => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const excludedValues = new Set(terms.filter((t) => t.kind === "category").map((t) => t.value));
+  const countByValue = new Map(counts.map((c) => [c.value, c.n]));
+
+  const guard = (p: Promise<unknown>) =>
+    p.catch((e) => toast({ title: "Could not save", description: (e as Error).message, variant: "destructive" }));
+
+  // Real values in the listings that no mapped label reaches. Without these the
+  // category would be unreachable from this card entirely.
+  const unmapped = counts.filter((c) => !MAPPED_VALUES.has(c.value));
+
+  const rows: Array<{ label: string; values: string[]; observed?: boolean }> = [
+    ...CATEGORY_MAP,
+    ...unmapped.map((c) => ({ label: c.label, values: [c.value], observed: true })),
+  ];
+
+  return (
+    <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+      {rows.map((cat) => {
+        const offCount = cat.values.filter((v) => excludedValues.has(v)).length;
+        const searched = offCount === 0;
+        const partial = offCount > 0 && offCount < cat.values.length;
+        const n = cat.values.reduce((sum, v) => sum + (countByValue.get(v) ?? 0), 0);
+
+        return (
+          <label
+            key={cat.label}
+            className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none"
+          >
+            <span className="min-w-0 flex-1">
+              <span className={`text-sm ${searched ? "" : "text-muted-foreground line-through"}`}>
+                {cat.label}
+              </span>
+              {/* The count is the whole point: a mapping that reaches nothing
+                  says so instead of looking like a working switch. */}
+              <span className="ml-2 text-xs text-muted-foreground">
+                {n > 0 ? `${n.toLocaleString()} listing${n === 1 ? "" : "s"}` : "none yet"}
+              </span>
+              {partial && <span className="ml-2 text-xs text-amber-600">partly off</span>}
+            </span>
+            <Switch
+              checked={searched}
+              disabled={busy}
+              onCheckedChange={(on) => guard(setExcluded("category", cat.values, !on))}
+              aria-label={`Search ${cat.label}`}
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 // State is passed down rather than each list calling the hook itself: two
 // independent hook instances would each hold their own copy of the terms and
@@ -146,9 +220,12 @@ function ExclusionList({
  * contains-"unknown" rule would wrongly reject it.
  */
 export default function QualificationExclusionsPanel() {
-  const { terms, categoryCounts, brandCounts, loading, busy, add, remove, impactOf } =
+  const { terms, categoryCounts, brandCounts, loading, busy, add, remove, setExcluded, impactOf } =
     useQualificationExclusions();
   const shared = { terms, busy, add, remove, impactOf };
+  const excludedCategoryValues = new Set(
+    terms.filter((t) => t.kind === "category").map((t) => t.value),
+  );
 
   return (
     <Card>
@@ -167,14 +244,26 @@ export default function QualificationExclusionsPanel() {
           </div>
         ) : (
           <>
-            <ExclusionList
-              kind="category"
-              title="Categories"
-              blurb="Amazon's own category names, which are often not what you would call them — 'DVD' and 'Video' rather than 'Movies & TV'. The counts show what each rule holds back in your listings; Amazon's categories are coarse, so check before adding."
-              placeholder="e.g. Video Games"
-              suggestions={categoryCounts}
-              {...shared}
-            />
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="text-sm font-medium">Categories</h3>
+                <span className="text-xs text-muted-foreground">
+                  {CATEGORY_MAP.filter((c) => c.values.some((v) => excludedCategoryValues.has(v))).length} off
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Switch a department off to stop auto-searching it. Counts are your own listings —
+                a department showing "none yet" cannot affect anything today. Amazon's categories
+                are coarse and occasionally wrong (a LEGO minifigure came back as Apparel), so the
+                counts are worth a glance before switching one off.
+              </p>
+              <CategoryToggles
+                terms={terms}
+                counts={categoryCounts}
+                busy={busy}
+                setExcluded={setExcluded}
+              />
+            </div>
             <div className="border-t" />
             <ExclusionList
               kind="brand"

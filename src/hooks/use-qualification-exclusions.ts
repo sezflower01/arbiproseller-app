@@ -95,6 +95,46 @@ export function useQualificationExclusions() {
     }
   }, [refresh]);
 
+  /**
+   * Exclude or re-allow a whole set of API values at once.
+   *
+   * A friendly category label maps to several real websiteDisplayGroupName
+   * values ("Movies & TV" -> dvd, video, video dvd, blu-ray), so a toggle has
+   * to move all of them together. Done as one insert and one delete rather
+   * than a loop of single calls, so a half-applied toggle cannot leave a label
+   * in a state its own switch does not describe.
+   */
+  const setExcluded = useCallback(async (kind: ExclusionKind, values: string[], excluded: boolean) => {
+    if (!values.length) return;
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth?.user?.id;
+    if (!userId) throw new Error("Please log in to change this setting.");
+
+    setBusy(true);
+    try {
+      if (excluded) {
+        const existing = new Set(terms.filter((t) => t.kind === kind).map((t) => t.value));
+        const rows = values
+          .filter((v) => !existing.has(v))
+          .map((v) => ({ user_id: userId, kind, value: v, label: v }));
+        if (rows.length) {
+          const { error } = await supabase.from("source_excluded_terms").insert(rows);
+          if (error) throw new Error(error.message);
+        }
+      } else {
+        const { error } = await supabase
+          .from("source_excluded_terms")
+          .delete()
+          .eq("kind", kind)
+          .in("value", values);
+        if (error) throw new Error(error.message);
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }, [terms, refresh]);
+
   /** How many current listings a rule would hit. null = none seen in your data. */
   const impactOf = useCallback((kind: ExclusionKind, value: string): number | null => {
     const list = kind === "category" ? categoryCounts : brandCounts;
@@ -104,6 +144,6 @@ export function useQualificationExclusions() {
 
   return {
     terms, categoryCounts, brandCounts, loading, busy,
-    add, remove, refresh, impactOf,
+    add, remove, setExcluded, refresh, impactOf,
   };
 }
