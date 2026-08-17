@@ -26,7 +26,10 @@ export interface NewListing {
   image_url: string | null;
   upc: string | null;
   detected_at: string;
-  source_status: "unsourced" | "sourcing" | "candidates_found" | "sourced" | "no_candidates";
+  source_status: "unsourced" | "sourcing" | "candidates_found" | "sourced" | "no_candidates" | "expired";
+  /** Passed auto-source qualification. false = deliberately never searched. */
+  qualified: boolean | null;
+  disqualified_reason: string | null;
   candidates: SourceCandidate[] | null;
   sourced_candidate: SourceCandidate | null;
   /** URLs the user ruled out; excluded from future searches. */
@@ -38,30 +41,18 @@ function currentMonthKey(): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-async function getFunctionErrorMessage(error: unknown, fallback: string) {
-  const err = error as { message?: string; context?: Response } | null;
-  const response = err?.context;
-  if (response?.clone) {
-    const text = await response.clone().text().catch(() => "");
-    if (text) {
-      try {
-        const body = JSON.parse(text);
-        return body?.error || body?.message || text;
-      } catch {
-        return text;
-      }
-    }
-  }
-  return err?.message || fallback;
-}
+
+const SELECT_COLS =
+  "id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, " +
+  "source_status, qualified, disqualified_reason, candidates, sourced_candidate, rejected_candidate_urls";
 
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;
 
 export function useSellerNewListings() {
-  const [listings, setListings] = useState<NewListing[]>([]);
+  const [done, setDone] = useState<NewListing[]>([]);
+  const [pending, setPending] = useState<NewListing[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchingId, setSearchingId] = useState<string | null>(null);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
   /** `${seller_id}|${marketplace}` -> seller_name, for listings to show their origin. */
@@ -70,10 +61,21 @@ export function useSellerNewListings() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: rows, error }, { data: usageRow }, { data: watchRows }] = await Promise.all([
+      const [{ data: doneRows, error }, { data: pendingRows }, { data: usageRow }, { data: watchRows }] = await Promise.all([
+        // DONE and SEARCHING are fetched separately with their own limits.
+        // A single combined query ordered by detected_at is exactly what buried
+        // completed research: 281 detections in a day pushed the 78 finished
+        // rows past a shared 50-row window.
         supabase
           .from("seller_watch_new_listings")
-          .select("id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, source_status, candidates, sourced_candidate, rejected_candidate_urls")
+          .select(SELECT_COLS)
+          .in("source_status", ["candidates_found", "sourced", "no_candidates"])
+          .order("detected_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("seller_watch_new_listings")
+          .select(SELECT_COLS)
+          .in("source_status", ["unsourced", "sourcing"])
           .order("detected_at", { ascending: false })
           .limit(50),
         supabase
@@ -90,7 +92,8 @@ export function useSellerNewListings() {
           .neq("status", "cancelled"),
       ]);
       if (error) throw error;
-      setListings((rows as unknown as NewListing[]) || []);
+      setDone((doneRows as unknown as NewListing[]) || []);
+      setPending((pendingRows as unknown as NewListing[]) || []);
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
@@ -122,6 +125,7 @@ export function useSellerNewListings() {
    * give a confidently wrong answer.
    */
   useEffect(() => {
+    const listings = [...done, ...pending];
     if (!listings.length) return;
 
     const byMarketplace = new Map<string, string[]>();
@@ -181,30 +185,7 @@ export function useSellerNewListings() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listings]);
-
-  const findSource = useCallback(async (listingId: string) => {
-    setSearchingId(listingId);
-    try {
-      const { data: authData } = await supabase.auth.getSession();
-      const token = authData.session?.access_token;
-      if (!token) throw new Error("Please log in to search for sources.");
-
-      const { data: res, error } = await supabase.functions.invoke("find-source-candidates", {
-        body: { listingId },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw new Error(await getFunctionErrorMessage(error, "Failed to search for sources"));
-      if ((res as any)?.error) throw new Error((res as any).error);
-
-      const result = res as { status: NewListing["source_status"]; candidates: SourceCandidate[]; usage: { searchCount: number } };
-      setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: result.status, candidates: result.candidates } : l)));
-      setMonthlySearchCount(result.usage.searchCount);
-      return result;
-    } finally {
-      setSearchingId(null);
-    }
-  }, []);
+  }, [done, pending]);
 
   /**
    * Mark a candidate as NOT the source.
@@ -221,7 +202,7 @@ export function useSellerNewListings() {
    * excellent in that case, which is exactly why the candidate keeps ranking.
    */
   const rejectCandidate = useCallback(async (listingId: string, candidate: SourceCandidate) => {
-    const listing = listings.find((l) => l.id === listingId);
+    const listing = done.find((l) => l.id === listingId);
     if (!listing) return;
 
     const remaining = (listing.candidates || []).filter((c) => c.url !== candidate.url);
@@ -242,7 +223,7 @@ export function useSellerNewListings() {
       .eq("id", listingId);
     if (error) throw new Error(error.message);
 
-    setListings((prev) =>
+    setDone((prev) =>
       prev.map((l) =>
         l.id === listingId
           ? {
@@ -254,7 +235,7 @@ export function useSellerNewListings() {
           : l,
       ),
     );
-  }, [listings]);
+  }, [done, pending]);
 
   const markAsSourced = useCallback(async (listingId: string, candidate: SourceCandidate) => {
     const { error } = await supabase
@@ -262,8 +243,8 @@ export function useSellerNewListings() {
       .update({ source_status: "sourced", sourced_at: new Date().toISOString(), sourced_candidate: candidate })
       .eq("id", listingId);
     if (error) throw new Error(error.message);
-    setListings((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
+    setDone((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
   }, []);
 
-  return { listings, loading, searchingId, monthlySearchCount, eligibility, sellerNames, findSource, markAsSourced, rejectCandidate, refresh };
+  return { done, pending, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, refresh };
 }

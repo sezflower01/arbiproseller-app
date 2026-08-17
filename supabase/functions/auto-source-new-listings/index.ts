@@ -42,6 +42,11 @@ const MAX_PER_RUN = 6;
 // likely about to look at.
 const CANDIDATE_SCAN = 60;
 
+// An unsearched listing older than this has lost its arbitrage window; holding
+// it forever only grows a queue nobody will work through. Terminal status
+// 'expired' stays distinguishable from a real "no candidates" result.
+const EXPIRE_AFTER_DAYS = 5;
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
@@ -69,6 +74,18 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    // Retire listings that were never searched. Runs first and unconditionally:
+    // it is a cheap single UPDATE, and if it sat after the search loop an
+    // exhausted cap would skip it and the queue would never drain.
+    let expired = 0;
+    try {
+      const { data } = await admin.rpc('expire_stale_new_listings', { p_days: EXPIRE_AFTER_DAYS });
+      expired = typeof data === 'number' ? data : 0;
+      if (expired) console.log(`[auto-source] expired ${expired} unsearched listing(s) older than ${EXPIRE_AFTER_DAYS}d`);
+    } catch (e) {
+      console.warn('[auto-source] expiry sweep failed:', (e as Error).message);
+    }
+
     // Listings never searched. 'unsourced' is the only status meaning "no
     // search has run" -- candidates_found / no_candidates / sourced have all
     // been through it, and re-searching them automatically would spend budget
@@ -77,11 +94,16 @@ Deno.serve(async (req) => {
       .from('seller_watch_new_listings')
       .select('id, user_id, asin, detected_at')
       .eq('source_status', 'unsourced')
+      // Only rows that passed qualification at detection time. The verdict is
+      // stamped once by check-seller-watchlist rather than re-derived here, so
+      // this stays a cheap indexed read -- and a disqualified row keeps its
+      // reason for auditing instead of silently never being picked up.
+      .eq('qualified', true)
       .order('detected_at', { ascending: false })
       .limit(CANDIDATE_SCAN);
     if (error) return jsonResponse({ error: error.message }, 500);
     if (!pending?.length) {
-      return jsonResponse({ ok: true, pending: 0, searched: 0, elapsedMs: Date.now() - startedAt });
+      return jsonResponse({ ok: true, pending: 0, searched: 0, expired, elapsedMs: Date.now() - startedAt });
     }
 
     // Group by user: the cap is per user, and claiming once per user beats one
@@ -164,6 +186,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       ok: true,
       pending: pending.length,
+      expired,
       searched,
       cappedListings: capped,
       failed,

@@ -30,6 +30,19 @@ export interface CatalogItemDetails {
   brand: string | null;
   /** identifiers[] UPC/EAN — Keepa's upcList equivalent. */
   upc: string | null;
+  /**
+   * summaries[].websiteDisplayGroupName — the TOP-LEVEL department (Book, DVD,
+   * Toy). Deliberately not browseClassification, which returns leaf nodes like
+   * "Toggle Valves" that no category rule could sensibly match.
+   */
+  productGroup: string | null;
+  /**
+   * salesRanks[].displayGroupRanks[].rank — the BROAD rank sellers mean by BSR.
+   * Deliberately not classificationRanks, which is a narrow subcategory rank
+   * ("PlayStation 4 Games" #194 against "Video Games" #4,540) and is not
+   * comparable between products.
+   */
+  salesRank: number | null;
 }
 
 const SPAPI_HOSTS: Record<string, string> = {
@@ -100,7 +113,7 @@ export async function fetchCatalogItemDetails(
   asin: string,
   marketplaceCode: string,
 ): Promise<CatalogItemDetails> {
-  const empty: CatalogItemDetails = { title: null, image: null, brand: null, upc: null };
+  const empty: CatalogItemDetails = { title: null, image: null, brand: null, upc: null, productGroup: null, salesRank: null };
   try {
     const marketplaceId = MARKETPLACE_META[marketplaceCode]?.amazonMarketplaceId;
     const host = SPAPI_HOSTS[marketplaceCode];
@@ -113,7 +126,8 @@ export async function fetchCatalogItemDetails(
     // identifiers added so this covers everything the Keepa /product metadata
     // call was fetching (title, brand, image, upc) -- otherwise callers would
     // still need Keepa just for the barcode.
-    url.searchParams.set('includedData', 'summaries,images,identifiers');
+    // salesRanks rides along free -- same call, same catalog_api quota.
+    url.searchParams.set('includedData', 'summaries,images,identifiers,salesRanks');
 
     const res = await fetch(url.toString(), {
       headers: { 'x-amz-access-token': accessToken, 'Content-Type': 'application/json' },
@@ -151,11 +165,18 @@ export async function fetchCatalogItemDetails(
       upc = byType('UPC') || byType('EAN') || null;
     }
 
+    const rankGroup = (json?.salesRanks || []).find((r: any) => r.marketplaceId === marketplaceId)
+      || (json?.salesRanks || [])[0];
+    const broadRanks = (rankGroup?.displayGroupRanks || [])
+      .map((r: any) => r?.rank).filter((n: any) => typeof n === 'number');
+
     return {
       title: summary?.itemName || null,
       image,
       brand: summary?.brand || summary?.manufacturer || null,
       upc,
+      productGroup: summary?.websiteDisplayGroupName || summary?.websiteDisplayGroup || null,
+      salesRank: broadRanks.length ? Math.min(...broadRanks) : null,
     };
   } catch (e) {
     console.warn(`[spapi-catalog-image] ${asin} failed:`, (e as Error).message);

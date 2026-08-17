@@ -40,6 +40,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
+import { qualifyListing } from '../_shared/source-qualification.ts';
 
 // Bound on SP-API catalog lookups per run. These cost no Keepa tokens, but
 // they do cost wall-clock inside the run budget, and a run only processes a
@@ -383,7 +384,10 @@ Deno.serve(async (req) => {
       // group -- title/brand/image/upc, needed for the new-listings feed and
       // Find Source's search query. /product bills 1 token PER ASIN, so this
       // reserves for the real batch size rather than "one call".
-      const productDetails = new Map<string, { title: string | null; brand: string | null; image: string | null; upc: string | null }>();
+      const productDetails = new Map<string, {
+        title: string | null; brand: string | null; image: string | null; upc: string | null;
+        productGroup?: string | null; salesRank?: number | null;
+      }>();
       if (unionNewAsins.size > 0) {
         const asinsToFetch = Array.from(unionNewAsins).slice(0, MAX_PRODUCT_DETAIL_ASINS);
 
@@ -403,8 +407,11 @@ Deno.serve(async (req) => {
           for (const asin of asinsToFetch.slice(0, MAX_SPAPI_IMAGE_LOOKUPS)) {
             if (Date.now() >= deadlineAt) break;
             const sp = await fetchCatalogItemDetails(admin, spApiToken, asin, marketplace);
-            if (sp.title || sp.image) {
-              productDetails.set(asin, { title: sp.title, brand: sp.brand, image: sp.image, upc: sp.upc });
+            if (sp.title || sp.image || sp.productGroup) {
+              productDetails.set(asin, {
+                title: sp.title, brand: sp.brand, image: sp.image, upc: sp.upc,
+                productGroup: sp.productGroup, salesRank: sp.salesRank,
+              });
             }
           }
         }
@@ -487,6 +494,15 @@ Deno.serve(async (req) => {
         if (newAsins.length > 0) {
           const rows = newAsins.map((asin) => {
             const details = productDetails.get(asin);
+            // Decide here, once, whether this is worth an automatic source
+            // search. Storing the verdict (and WHY) means the worker does a
+            // cheap indexed read instead of re-deriving it, and a surprising
+            // exclusion can be explained after the fact rather than guessed at.
+            const q = qualifyListing({
+              productGroup: details?.productGroup ?? null,
+              salesRank: details?.salesRank ?? null,
+              upc: details?.upc ?? null,
+            });
             return {
               watch_id: w.id,
               user_id: w.user_id,
@@ -497,6 +513,10 @@ Deno.serve(async (req) => {
               brand: details?.brand ?? null,
               image_url: details?.image ?? null,
               upc: details?.upc ?? null,
+              product_group: details?.productGroup ?? null,
+              sales_rank: details?.salesRank ?? null,
+              qualified: q.qualified,
+              disqualified_reason: q.reason,
               detected_at: nowIso,
             };
           });

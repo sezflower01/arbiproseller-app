@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ExternalLink, Package, Store, Check, X } from "lucide-react";
@@ -95,10 +97,11 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { listings, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate } = useSellerNewListings();
+  const { done, pending, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate } = useSellerNewListings();
+  const [tab, setTab] = useState("done");
   const { toast } = useToast();
 
-  if (!loading && listings.length === 0) return null;
+  if (!loading && done.length === 0 && pending.length === 0) return null;
 
   const onReject = async (listingId: string, candidate: SourceCandidate) => {
     try {
@@ -126,8 +129,30 @@ export default function NewListingsPanel() {
           <div className="text-xs text-muted-foreground">{monthlySearchCount} source search{monthlySearchCount === 1 ? "" : "es"} used this month</div>
         </div>
 
-        <div className="space-y-3">
-          {listings.map((listing) => {
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="mb-3">
+            <TabsTrigger value="done" className="gap-2">
+              Done
+              {done.length > 0 && <Badge variant="secondary">{done.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="searching" className="gap-2">
+              Searching
+              {pending.length > 0 && <Badge variant="secondary">{pending.length}</Badge>}
+            </TabsTrigger>
+          </TabsList>
+
+          {(["done", "searching"] as const).map((key) => {
+            const rows = key === "done" ? done : pending;
+            return (
+              <TabsContent key={key} value={key} className="mt-0 space-y-3">
+                {rows.length === 0 && (
+                  <p className="py-8 text-center text-xs text-muted-foreground">
+                    {key === "done"
+                      ? "No completed searches yet. Results appear here once the worker has looked for sources."
+                      : "Nothing queued — every detected listing has been searched."}
+                  </p>
+                )}
+                {rows.map((listing) => {
             const showCandidates = listing.source_status === "candidates_found" || listing.source_status === "sourced";
             const showNoCandidates = listing.source_status === "no_candidates";
 
@@ -185,9 +210,17 @@ export default function NewListingsPanel() {
                       queued, not stuck -- saying so is the difference between
                       waiting and wondering. */}
                   {!showCandidates && !showNoCandidates && (
-                    <span className="text-xs text-muted-foreground shrink-0 inline-flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Searching…
-                    </span>
+                    listing.source_status === "sourcing" ? (
+                      <span className="text-xs text-muted-foreground shrink-0 inline-flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Searching…
+                      </span>
+                    ) : (
+                      // 'unsourced' means waiting for a slot, not in flight. A
+                      // spinner here claimed work that was not happening --
+                      // with 204 rows behind a daily cap, most of these will
+                      // wait hours or expire unsearched.
+                      <span className="text-xs text-muted-foreground shrink-0">Queued</span>
+                    )
                   )}
                 </div>
 
@@ -214,9 +247,12 @@ export default function NewListingsPanel() {
                   </div>
                 )}
               </div>
+                );
+                })}
+              </TabsContent>
             );
           })}
-        </div>
+        </Tabs>
       </CardContent>
     </Card>
   );

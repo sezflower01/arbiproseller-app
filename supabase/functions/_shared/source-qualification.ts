@@ -1,0 +1,68 @@
+// Decide whether a newly detected listing is worth an automatic source search.
+//
+// Every rule here comes from probing 40 REAL detections through SP-API Catalog
+// Items on 2026-08-16 (spapi-rank-probe), not from intuition. Two of the
+// intuitive versions were measurably wrong and are called out below, because
+// they are the ones a future edit is most likely to reintroduce.
+//
+// Extracted rather than inlined so the thresholds are testable without
+// standing up an edge function -- see source-qualification_test.ts.
+
+export interface QualificationInput {
+  /** SP-API summaries[].websiteDisplayGroupName. Top-level department. */
+  productGroup?: string | null;
+  /** SP-API salesRanks[].displayGroupRanks[].rank. The BROAD rank. */
+  salesRank?: number | null;
+  upc?: string | null;
+}
+
+export interface QualificationResult {
+  qualified: boolean;
+  /** Machine-readable reason, null when qualified. Stored for auditing. */
+  reason: string | null;
+}
+
+/**
+ * Amazon's ACTUAL productGroup strings, which differ from how a person would
+ * name these categories. The observed values were 'Book' (not "Books"), and
+ * 'DVD' / 'Video' rather than any "Movies & TV". A list written from intuition
+ * matches nothing at all -- that mistake was caught only by probing.
+ *
+ * 'Digital Text' is Kindle; 'Magazine' covers periodicals.
+ */
+export const EXCLUDED_PRODUCT_GROUPS = new Set([
+  'book', 'digital text', 'magazine', 'music', 'digital music',
+  'dvd', 'video', 'video dvd', 'blu-ray',
+]);
+
+/**
+ * Broad-rank ceiling. Measured distribution: p25 28,335 / median 80,142 /
+ * p75 511,275 / max 1,886,054. 500,000 trims roughly the worst quartile while
+ * leaving the median comfortably through.
+ *
+ * Applied ONLY when a rank exists. 60% of detections carry no broad rank, and
+ * excluding those would reject for missing data rather than for being bad --
+ * a filter should act on evidence, not on its absence.
+ */
+export const MAX_SALES_RANK = 500_000;
+
+export function qualifyListing(input: QualificationInput): QualificationResult {
+  const group = (input.productGroup || '').trim().toLowerCase();
+  if (group && EXCLUDED_PRODUCT_GROUPS.has(group)) {
+    return { qualified: false, reason: `excluded_group:${group}` };
+  }
+
+  // Strongest single signal (48% of detections). Principled rather than
+  // arbitrary: find-source-candidates searches UPC-first and degrades to
+  // brand+title without one, which is precisely why untagged items come back
+  // "no likely sources" after spending a full verification budget.
+  if (!input.upc || !String(input.upc).trim()) {
+    return { qualified: false, reason: 'no_upc' };
+  }
+
+  if (typeof input.salesRank === 'number' && input.salesRank > MAX_SALES_RANK) {
+    return { qualified: false, reason: `rank_over_${MAX_SALES_RANK}:${input.salesRank}` };
+  }
+
+  return { qualified: true, reason: null };
+}
