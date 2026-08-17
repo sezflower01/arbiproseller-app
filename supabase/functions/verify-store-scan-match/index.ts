@@ -1271,7 +1271,7 @@ Deno.serve(async (req) => {
         const amazonImg = amzDetails?.image_url ?? it.amz_image_url ?? null;
         const [aiVerdict, imgCompare] = await Promise.all([
           callAI(it, GEMINI_API_KEY, amzDetails, supDetails),
-          compareImages(supplierImg, amazonImg, GEMINI_API_KEY).catch((e) => {
+          compareImages(supplierImg, amazonImg, GEMINI_API_KEY, { supabase: admin }).catch((e) => {
             console.warn("[verify] image compare failed:", e instanceof Error ? (e as Error).message : String(e));
             return null as ImageCompareResult | null;
           }),

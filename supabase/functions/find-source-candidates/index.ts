@@ -709,7 +709,7 @@ Deno.serve(async (req) => {
     const verified = await Promise.all(scored.map(async (c) => {
       const [textOutcome, image] = await Promise.all([
         geminiTextVerify(admin, listing, c, GEMINI_API_KEY),
-        compareImages(c.imageUrl, listing.image_url, GEMINI_API_KEY),
+        compareImages(c.imageUrl, listing.image_url, GEMINI_API_KEY, { supabase: admin }),
       ]);
       const gemini = textOutcome.ok ? textOutcome : null;
       if (!textOutcome.ok && !aiFailure) aiFailure = textOutcome.failure;

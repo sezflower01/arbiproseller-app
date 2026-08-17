@@ -10,6 +10,8 @@
 // Designed to be a SUPPORTING signal: callers should boost / demote confidence
 // but NEVER drive the final verdict on image alone.
 
+import { recordGeminiCall } from "./gemini-usage.ts";
+
 const GEMINI_AI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const VISION_MODEL = "gemini-3-flash-preview";
 
@@ -183,6 +185,7 @@ async function aiVisionCompare(
   supplierUrl: string,
   amazonUrl: string,
   apiKey: string,
+  supabase?: unknown,
 ): Promise<{ verdict: "same_product" | "same_franchise_diff_item" | "different_product"; confidence: number; reason: string } | null> {
   try {
     const resp = await fetch(GEMINI_AI_URL, {
@@ -236,21 +239,36 @@ async function aiVisionCompare(
       }),
     });
 
-    if (!resp.ok) return null;
+    // Recorded, not just returned. The vision call was the last Gemini caller
+    // whose failures were invisible: a 429 here returns null, the result
+    // degrades to verdict 'unavailable', and callers correctly stop weighting
+    // image evidence -- which is right, but left the daily counters showing a
+    // healthier picture than reality because only the text verifier reported.
+    if (!resp.ok) {
+      await recordGeminiCall(supabase, false, resp.status, 'image-compare/vision');
+      return null;
+    }
     const j = await resp.json();
     const call = j?.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) return null;
+    if (!call) {
+      await recordGeminiCall(supabase, false, undefined, 'image-compare/vision');
+      return null;
+    }
     const args = JSON.parse(call.function?.arguments ?? "{}");
     const verdict = args.verdict;
     if (verdict !== "same_product" && verdict !== "same_franchise_diff_item" && verdict !== "different_product") {
+      await recordGeminiCall(supabase, false, undefined, 'image-compare/vision');
       return null;
     }
+    await recordGeminiCall(supabase, true, resp.status, 'image-compare/vision');
     return {
       verdict,
       confidence: Math.max(0, Math.min(100, parseInt(String(args.confidence ?? 0), 10))),
       reason: String(args.reason ?? "").slice(0, 120),
     };
-  } catch {
+  } catch (e) {
+    await recordGeminiCall(supabase, false, undefined, 'image-compare/vision');
+    console.warn('[image-compare] vision call failed:', (e as Error).message);
     return null;
   }
 }
@@ -264,12 +282,16 @@ async function aiVisionCompare(
  * @param apiKey       GEMINI_API_KEY (used only when AI fallback fires).
  * @param opts.useAi   When true (default), run the AI fallback for borderline
  *                     pHash scores. Set false to limit to free pHash only.
+ * @param opts.supabase  Optional admin client. When supplied, Gemini call
+ *                     outcomes are counted in gemini_daily_usage. Optional so
+ *                     existing callers keep working unchanged -- without it the
+ *                     failure still logs, which beats the previous silence.
  */
 export async function compareImages(
   supplierUrl: string | null | undefined,
   amazonUrl: string | null | undefined,
   apiKey: string,
-  opts: { useAi?: boolean } = {},
+  opts: { useAi?: boolean; supabase?: unknown } = {},
 ): Promise<ImageCompareResult> {
   if (!supplierUrl || !amazonUrl) return empty("missing_url");
 
@@ -316,7 +338,7 @@ export async function compareImages(
       };
     } else if (useAi) {
       // Borderline — call AI vision
-      const ai = await aiVisionCompare(supplierUrl, amazonUrl, apiKey);
+      const ai = await aiVisionCompare(supplierUrl, amazonUrl, apiKey, opts.supabase);
       if (!ai) {
         // AI failed: fall back to pHash midpoint verdict
         result = {
