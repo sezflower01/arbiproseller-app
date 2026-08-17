@@ -252,16 +252,43 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const authHeader = req.headers.get('Authorization') || '';
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const body = await req.json();
+
+    // Two callers, two auth shapes -- same pattern as find-source-candidates.
+    //
+    // The UI presents a user JWT. The auto-source cron has no session, so it
+    // presents the internal secret and names the user it acts for. That path
+    // exists because a restricted ASIN must be identified BEFORE a search is
+    // spent on it, and the worker runs hours before anyone opens the page.
+    //
+    // Note verify_jwt stays true on this function (the browser calls it), so
+    // an internal caller must ALSO send a service-role bearer to satisfy the
+    // platform gateway -- see CLAUDE.md on the verify_jwt trap.
+    const INTERNAL_SECRET = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
+    const providedSecret = req.headers.get('x-internal-secret') || '';
+    const isInternal = !!INTERNAL_SECRET && providedSecret === INTERNAL_SECRET;
+
+    let user: { id: string } | null = null;
+    if (isInternal) {
+      const uid = String(body.userId || '').trim();
+      if (!uid) {
+        return new Response(JSON.stringify({ error: 'userId is required for internal calls' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      user = { id: uid };
+    } else {
+      const authHeader = req.headers.get('Authorization') || '';
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !authUser) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      user = authUser;
     }
 
-    const body = await req.json();
     const marketplace = body.marketplace || 'US';
     const freshnessDays = body.freshness_days || 7;
     const forceRescan = body.force_rescan === true;

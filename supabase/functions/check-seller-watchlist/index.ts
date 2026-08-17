@@ -41,6 +41,7 @@ import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_s
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
+import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
 
 // Bound on SP-API catalog lookups per run. These cost no Keepa tokens, but
 // they do cost wall-clock inside the run budget, and a run only processes a
@@ -476,6 +477,35 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Eligibility for the ASINs about to be written. Restricted items are
+      // excluded from auto-search entirely, so resolving this BEFORE the row
+      // is stamped avoids ever queueing an unsellable product. One
+      // listings_api call (5 req/s) against a search chain costing a CSE
+      // query plus several Gemini calls -- the trade is heavily favourable.
+      const eligibilityByAsin = new Map<string, 'approved' | 'approval_required' | 'restricted'>();
+      let allowNeedsApproval = true;
+      if (unionNewAsins.size > 0) {
+        const uid = group[0].user_id;
+        const { data: cfg } = await admin
+          .from('auto_source_config')
+          .select('search_needs_approval')
+          .eq('user_id', uid)
+          .maybeSingle();
+        // Absent config means defaults, and the default is to allow.
+        allowNeedsApproval = cfg?.search_needs_approval !== false;
+
+        const wanted = Array.from(unionNewAsins);
+        const cached = await readEligibility(admin, uid, marketplace, wanted);
+        const unknown = wanted.filter((a) => !cached.has(a));
+        for (const [a, v] of cached) eligibilityByAsin.set(a, v);
+        if (unknown.length && Date.now() < deadlineAt) {
+          const fresh = await resolveEligibility(
+            admin, SUPABASE_URL, serviceRoleKey, internalSecret, uid, marketplace, unknown,
+          );
+          for (const [a, v] of fresh) eligibilityByAsin.set(a, v);
+        }
+      }
+
       // Pass 2: seed first-check watches, persist new-listing rows, email, update.
       for (const w of group) {
         checked++;
@@ -502,6 +532,8 @@ Deno.serve(async (req) => {
               productGroup: details?.productGroup ?? null,
               salesRank: details?.salesRank ?? null,
               upc: details?.upc ?? null,
+              eligibility: eligibilityByAsin.get(asin) ?? null,
+              allowNeedsApproval,
             });
             return {
               watch_id: w.id,

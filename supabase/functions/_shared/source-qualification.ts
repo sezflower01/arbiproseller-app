@@ -8,12 +8,23 @@
 // Extracted rather than inlined so the thresholds are testable without
 // standing up an edge function -- see source-qualification_test.ts.
 
+/** Lowercase verdicts as check-product-eligibility stores them. */
+export type EligibilityVerdict = 'approved' | 'approval_required' | 'restricted';
+
 export interface QualificationInput {
   /** SP-API summaries[].websiteDisplayGroupName. Top-level department. */
   productGroup?: string | null;
   /** SP-API salesRanks[].displayGroupRanks[].rank. The BROAD rank. */
   salesRank?: number | null;
   upc?: string | null;
+  /**
+   * From user_approved_products.approval_status -- the SAME rows that drive
+   * the EligibilityBadge, so the filter and the UI cannot disagree.
+   * undefined/null means "not checked yet", which is NOT a disqualification.
+   */
+  eligibility?: EligibilityVerdict | null;
+  /** auto_source_config.search_needs_approval. Default true. */
+  allowNeedsApproval?: boolean;
 }
 
 export interface QualificationResult {
@@ -47,6 +58,25 @@ export const EXCLUDED_PRODUCT_GROUPS = new Set([
 export const MAX_SALES_RANK = 500_000;
 
 export function qualifyListing(input: QualificationInput): QualificationResult {
+  // Checked FIRST and unconditionally. A restricted ASIN cannot be sold at
+  // any price, so no other property can redeem it -- and reporting
+  // "restricted" rather than a downstream reason like no_upc tells the user
+  // the actionable fact.
+  if (input.eligibility === 'restricted') {
+    return { qualified: false, reason: 'restricted' };
+  }
+
+  // Gated items stay searchable by default: they are often worth sourcing
+  // before deciding whether to apply for approval. Opt-out only.
+  if (input.eligibility === 'approval_required' && input.allowNeedsApproval === false) {
+    return { qualified: false, reason: 'needs_approval_excluded' };
+  }
+
+  // Anything else -- 'approved', or no verdict yet -- falls through. Absence
+  // of a verdict must never disqualify: most freshly detected ASINs have not
+  // been checked, and treating unknown as restricted would silently empty the
+  // queue. Same principle as the rank ceiling only applying when a rank exists.
+
   const group = (input.productGroup || '').trim().toLowerCase();
   if (group && EXCLUDED_PRODUCT_GROUPS.has(group)) {
     return { qualified: false, reason: `excluded_group:${group}` };

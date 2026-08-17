@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { useAutoSourceConfig } from "@/hooks/use-auto-source-config";
 import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +65,7 @@ export default function SellerAnalyzer() {
   const [marketplace, setMarketplace] = useState("US");
   const [tab, setTab] = useState("add");
   const [watchFilter, setWatchFilter] = useState("");
+  const { config: autoCfg, usedToday, saving: cfgSaving, update: updateAutoCfg } = useAutoSourceConfig();
 
   const { toast } = useToast();
   const { watches, createWatch, cancelWatch, bulkAddWatches, timing } = useSellerWatchlist();
@@ -188,6 +191,45 @@ export default function SellerAnalyzer() {
               currentWatchCount={watches.length}
               onBulkAdd={handleBulkAdd}
             />
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 className="text-sm font-semibold">Automatic source search</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {usedToday} of {autoCfg.daily_cap} used today
+                  </span>
+                </div>
+
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm">Search "Needs Approval" listings</div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Gated products are searched by default — a source is often worth finding
+                      before deciding whether to apply. Turn this off to spend the daily budget
+                      only on products you can already sell.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={autoCfg.search_needs_approval}
+                    disabled={cfgSaving}
+                    onCheckedChange={(v) => {
+                      updateAutoCfg({ search_needs_approval: v }).catch((e) =>
+                        toast({ title: "Could not save setting", description: e.message, variant: "destructive" }),
+                      );
+                    }}
+                    aria-label="Search Needs Approval listings"
+                  />
+                </div>
+
+                {/* Stated plainly because it is NOT configurable: a restricted
+                    ASIN cannot be sold at any price, so searching one is pure
+                    waste no matter how the toggle above is set. */}
+                <p className="text-xs text-muted-foreground border-t pt-3">
+                  <strong>Restricted</strong> listings are never searched. This setting does not affect them.
+                </p>
+              </CardContent>
+            </Card>
 
             {/* The watchlist belongs with the controls that manage it, not with
                 results. It is the record of what you added, and at 400+ rows it

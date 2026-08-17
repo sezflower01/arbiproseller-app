@@ -23,6 +23,7 @@
 // the cap defaults below that line and is claimed ATOMICALLY -- see
 // claim_auto_source_budget in migration 20260816140000.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { readEligibility } from '../_shared/eligibility-lookup.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -92,7 +93,7 @@ Deno.serve(async (req) => {
     // re-answering settled questions.
     const { data: pending, error } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, detected_at')
+      .select('id, user_id, asin, marketplace, detected_at')
       .eq('source_status', 'unsourced')
       // Only rows that passed qualification at detection time. The verdict is
       // stamped once by check-seller-watchlist rather than re-derived here, so
@@ -117,7 +118,7 @@ Deno.serve(async (req) => {
     let searched = 0;
     let capped = 0;
     let failed = 0;
-    const perUser: Record<string, { granted: number; ran: number }> = {};
+    const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number }> = {};
 
     for (const [userId, rows] of byUser) {
       if (Date.now() >= deadlineAt) break;
@@ -137,9 +138,42 @@ Deno.serve(async (req) => {
       perUser[userId] = { granted, ran: 0 };
       if (granted <= 0) { capped += rows.length; continue; }
 
+      // SAFETY RE-CHECK. Qualification is stamped at detection, when a
+      // verdict often does not exist yet -- unknown deliberately qualifies, so
+      // a row can be marked searchable and only later be revealed as
+      // restricted (typically when the user opens the page and the badge
+      // resolves). Re-reading the cache immediately before spending is a cheap
+      // table read that stops the one case the detection-time check cannot
+      // catch. No API call: cached verdicts only.
+      const claimed = rows.slice(0, granted);
+      const byMarket = new Map<string, string[]>();
+      for (const r of claimed) {
+        const m = r.marketplace || 'US';
+        if (!byMarket.has(m)) byMarket.set(m, []);
+        byMarket.get(m)!.push(r.asin);
+      }
+      const nowRestricted = new Set<string>();
+      for (const [m, asins] of byMarket) {
+        const verdicts = await readEligibility(admin, userId, m, asins);
+        for (const [asin, v] of verdicts) if (v === 'restricted') nowRestricted.add(asin);
+      }
+      if (nowRestricted.size) {
+        // Record WHY, so a row that vanishes from the queue is explainable
+        // rather than mysteriously never searched.
+        await admin
+          .from('seller_watch_new_listings')
+          .update({ qualified: false, disqualified_reason: 'restricted' })
+          .eq('user_id', userId)
+          .in('asin', Array.from(nowRestricted))
+          .eq('source_status', 'unsourced');
+        console.log(`[auto-source] skipped ${nowRestricted.size} newly-restricted ASIN(s) before searching`);
+      }
+
       let ran = 0;
-      for (const row of rows.slice(0, granted)) {
+      let skippedRestricted = 0;
+      for (const row of claimed) {
         if (Date.now() >= deadlineAt) break;
+        if (nowRestricted.has(row.asin)) { skippedRestricted++; continue; }
         try {
           // Both headers, deliberately. find-source-candidates keeps
           // verify_jwt = true because it is called from the browser with a
@@ -175,6 +209,7 @@ Deno.serve(async (req) => {
         }
       }
       perUser[userId].ran = ran;
+      if (skippedRestricted) perUser[userId].skippedRestricted = skippedRestricted;
 
       // Give back what was claimed but never spent -- a claim that did not
       // become a search would otherwise silently shrink today's allowance.

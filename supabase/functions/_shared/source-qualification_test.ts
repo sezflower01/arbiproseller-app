@@ -66,3 +66,53 @@ Deno.test('group exclusion is checked before UPC, so the reason is the useful on
   // A book with no UPC is excluded for BEING a book -- the actionable fact.
   assertEquals(qualifyListing({ productGroup: 'Book', upc: null }).reason, 'excluded_group:book');
 });
+
+Deno.test('restricted is excluded regardless of everything else', () => {
+  // A perfect listing on every other axis still fails: it cannot be sold.
+  const r = qualifyListing({
+    productGroup: 'Toy', salesRank: 100, upc: '123456789012', eligibility: 'restricted',
+  });
+  assertEquals(r.qualified, false);
+  assertEquals(r.reason, 'restricted');
+});
+
+Deno.test('restricted wins over other disqualifiers, so the reason is actionable', () => {
+  // Also has no UPC. "restricted" is the fact worth surfacing -- fixing the
+  // UPC would not make this searchable.
+  assertEquals(qualifyListing({ eligibility: 'restricted', upc: null }).reason, 'restricted');
+  assertEquals(qualifyListing({ eligibility: 'restricted', productGroup: 'Book' }).reason, 'restricted');
+});
+
+Deno.test('needs-approval qualifies by DEFAULT', () => {
+  const r = qualifyListing({ productGroup: 'Toy', upc: '1', eligibility: 'approval_required' });
+  assertEquals(r.qualified, true);
+});
+
+Deno.test('needs-approval is excluded only when the toggle is off', () => {
+  const off = qualifyListing({
+    productGroup: 'Toy', upc: '1', eligibility: 'approval_required', allowNeedsApproval: false,
+  });
+  assertEquals(off.qualified, false);
+  assertEquals(off.reason, 'needs_approval_excluded');
+
+  const on = qualifyListing({
+    productGroup: 'Toy', upc: '1', eligibility: 'approval_required', allowNeedsApproval: true,
+  });
+  assertEquals(on.qualified, true);
+});
+
+Deno.test('the toggle does NOT affect restricted or approved', () => {
+  assertEquals(qualifyListing({ upc: '1', eligibility: 'restricted', allowNeedsApproval: true }).reason, 'restricted');
+  assertEquals(qualifyListing({ upc: '1', eligibility: 'approved', allowNeedsApproval: false }).qualified, true);
+});
+
+Deno.test('UNKNOWN eligibility never disqualifies', () => {
+  // Most freshly detected ASINs have no verdict yet. Treating absence as
+  // restricted would silently empty the queue.
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1' }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', eligibility: null }).qualified, true);
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', upc: '1', eligibility: null, allowNeedsApproval: false }).qualified,
+    true,
+  );
+});
