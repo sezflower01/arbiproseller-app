@@ -34,6 +34,11 @@ export interface NewListing {
   sourced_candidate: SourceCandidate | null;
   /** URLs the user ruled out; excluded from future searches. */
   rejected_candidate_urls: string[] | null;
+  /** Amazon-side price captured overnight, in cents. Null = not captured. */
+  amazon_price_cents: number | null;
+  new_price_cents: number | null;
+  /** SP-API fee estimate priced against the captured price, in cents. */
+  total_fees_cents: number | null;
 }
 
 function currentMonthKey(): string {
@@ -44,7 +49,8 @@ function currentMonthKey(): string {
 
 const SELECT_COLS =
   "id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, " +
-  "source_status, qualified, disqualified_reason, candidates, sourced_candidate, rejected_candidate_urls";
+  "source_status, qualified, disqualified_reason, candidates, sourced_candidate, rejected_candidate_urls, " +
+  "amazon_price_cents, new_price_cents, total_fees_cents";
 
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;

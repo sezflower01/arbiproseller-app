@@ -39,7 +39,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
-import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch } from '../_shared/spapi-catalog-image.ts';
+import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch, SPAPI_HOSTS } from '../_shared/spapi-catalog-image.ts';
+import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
+import { waitForApiToken } from '../_shared/rate-limiter.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
 import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
 
@@ -589,6 +591,10 @@ Deno.serve(async (req) => {
               amazon_price_cents: null as number | null,
               new_price_cents: null as number | null,
               price_captured_at: null as string | null,
+              referral_fee_cents: null as number | null,
+              fba_fee_cents: null as number | null,
+              total_fees_cents: null as number | null,
+              fees_captured_at: null as string | null,
               detected_at: nowIso,
             };
           });
@@ -652,6 +658,69 @@ Deno.serve(async (req) => {
                 }
               } catch (e) {
                 console.warn('[check-seller-watchlist] price capture failed:', (e as Error).message);
+              }
+            }
+          }
+
+          // FEES, for the rows that got a price.
+          //
+          // The Fees API needs the sell price as an input, so this must follow
+          // price capture and cannot be done in the browser from cached data.
+          // Captured once here rather than when the Done tab opens, which would
+          // burst one call per visible row on every page view.
+          //
+          // fees_api is a SEPARATE bucket from the contended pricing_api
+          // (measured: capacity 2 / refill 1s, versus 1 / 0.5s shared with the
+          // repricer), which is what makes this affordable at all.
+          const needFees = rows.filter((r: any) => r.new_price_cents || r.amazon_price_cents);
+          if (needFees.length && Date.now() < deadlineAt) {
+            const feeToken = await getCatalogAccessToken(admin, group[0].user_id, marketplace);
+            const mpId = MARKETPLACE_META[marketplace]?.amazonMarketplaceId;
+            const spHost = SPAPI_HOSTS[marketplace];
+            if (feeToken && mpId && spHost) {
+              for (const row of needFees) {
+                if (Date.now() >= deadlineAt) break;
+                const cents = row.new_price_cents ?? row.amazon_price_cents;
+                if (!cents) continue;
+                try {
+                  await waitForApiToken(admin, 'fees_api');
+                  const fres = await fetch(
+                    `https://${spHost}/products/fees/v0/items/${row.asin}/feesEstimate`,
+                    {
+                      method: 'POST',
+                      headers: { 'x-amz-access-token': feeToken, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        FeesEstimateRequest: {
+                          MarketplaceId: mpId,
+                          IsAmazonFulfilled: true,
+                          Identifier: row.asin,
+                          PriceToEstimateFees: {
+                            ListingPrice: { CurrencyCode: 'USD', Amount: cents / 100 },
+                          },
+                        },
+                      }),
+                    },
+                  );
+                  if (!fres.ok) { console.warn(`[check-seller-watchlist] fees HTTP ${fres.status} for ${row.asin}`); continue; }
+                  const fj = await fres.json().catch(() => ({}));
+                  const result = fj?.payload?.FeesEstimateResult;
+                  // Amazon reports per-item failure INSIDE a 200 via Status.
+                  if (result?.Status !== 'Success') {
+                    console.warn(`[check-seller-watchlist] fees status ${result?.Status} for ${row.asin}`);
+                    continue;
+                  }
+                  const det = result?.FeesEstimate?.FeeDetailList || [];
+                  const pick = (t: string) =>
+                    Number(det.find((d: any) => d?.FeeType === t)?.FeeAmount?.Amount ?? 0);
+                  const total = Number(result?.FeesEstimate?.TotalFeesEstimate?.Amount ?? 0);
+                  if (!(total > 0)) continue;
+                  row.referral_fee_cents = Math.round(pick('ReferralFee') * 100);
+                  row.fba_fee_cents = Math.round(pick('FBAFees') * 100);
+                  row.total_fees_cents = Math.round(total * 100);
+                  row.fees_captured_at = new Date().toISOString();
+                } catch (e) {
+                  console.warn(`[check-seller-watchlist] fee capture failed for ${row.asin}:`, (e as Error).message);
+                }
               }
             }
           }

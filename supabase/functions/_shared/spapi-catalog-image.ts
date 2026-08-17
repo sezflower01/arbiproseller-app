@@ -45,7 +45,7 @@ export interface CatalogItemDetails {
   salesRank: number | null;
 }
 
-const SPAPI_HOSTS: Record<string, string> = {
+export const SPAPI_HOSTS: Record<string, string> = {
   US: 'sellingpartnerapi-na.amazon.com',
   CA: 'sellingpartnerapi-na.amazon.com',
   MX: 'sellingpartnerapi-na.amazon.com',

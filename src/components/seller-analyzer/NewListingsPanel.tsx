@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Loader2, ExternalLink, Package, Store, Check, X, Trash2, ChevronDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
+import { useSellerNewListings, type SourceCandidate, type NewListing } from "@/hooks/use-seller-new-listings";
+import RoiFilterBar, { ROI_MIN, ROI_MAX, type RoiSort } from "@/components/seller-analyzer/RoiFilterBar";
+import { computeListingRoi, blockerLabel } from "@/lib/listing-roi";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
 
@@ -145,6 +147,14 @@ export default function NewListingsPanel() {
   const [tab, setTab] = useState("done");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
+  const [roiRange, setRoiRange] = useState<[number, number]>([ROI_MIN, ROI_MAX]);
+  // 40% default agreed deliberately: below it a candidate is more likely the
+  // wrong product than a bad deal, and an authoritative-looking ROI on a
+  // mismatch is worse than no ROI.
+  const [minConfidence, setMinConfidence] = useState(40);
+  const [roiSort, setRoiSort] = useState<RoiSort>("newest");
+
+  const roiOf = (l: NewListing) => computeListingRoi(l, minConfidence);
   const { toast } = useToast();
 
   // Selection is cleared when the tab changes. One Set backs both tabs, and a
@@ -260,7 +270,44 @@ export default function NewListingsPanel() {
             // searched" is a real question, and disqualified_reason has been
             // stored on every row all along without ever being shown.
             const blocked = isDone ? [] : rows.filter((l) => l.qualified === false);
-            const shown = isDone ? rows : rows.filter((l) => l.qualified !== false);
+            let shown = isDone ? rows : rows.filter((l) => l.qualified !== false);
+
+            // ROI filter, Done tab only. Rows WITHOUT an ROI are never silently
+            // dropped -- they are only hidden when the range is actively
+            // narrowed, and the bar always reports how many that was.
+            let roiFilteredOut = 0;
+            let roiUnavailable = 0;
+            if (isDone) {
+              const rangeActive = roiRange[0] !== ROI_MIN || roiRange[1] !== ROI_MAX;
+              shown = shown.filter((l) => {
+                const r = roiOf(l);
+                if (!r.ok || r.roi === null) {
+                  roiUnavailable++;
+                  return !rangeActive;
+                }
+                // 300 is an open top end: anything above it is almost always a
+                // mismatched candidate, and clipping it keeps such rows visible
+                // rather than excluded by an arbitrary ceiling.
+                const capped = Math.min(r.roi, ROI_MAX);
+                const inRange = capped >= roiRange[0] && capped <= roiRange[1];
+                if (!inRange) roiFilteredOut++;
+                return inRange;
+              });
+              if (roiSort !== "newest") {
+                const dir = roiSort === "roi_desc" ? -1 : 1;
+                shown = [...shown].sort((a, b) => {
+                  const ra = roiOf(a).roi;
+                  const rb = roiOf(b).roi;
+                  // Rows with no ROI sort last in BOTH directions -- "unknown"
+                  // is not "worst", and floating them to the top of an
+                  // ascending sort would bury the real answers.
+                  if (ra === null && rb === null) return 0;
+                  if (ra === null) return 1;
+                  if (rb === null) return -1;
+                  return (ra - rb) * dir;
+                });
+              }
+            }
             const ids = rows.map((l) => l.id);
             const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
             // Only the loaded rows can ever be selected, so the label says so
@@ -268,6 +315,21 @@ export default function NewListingsPanel() {
             const truncated = total > rows.length;
             return (
               <TabsContent key={key} value={key} className="mt-0 space-y-3">
+                {isDone && rows.length > 0 && (
+                  <RoiFilterBar
+                    range={roiRange}
+                    onRangeChange={setRoiRange}
+                    minConfidence={minConfidence}
+                    onMinConfidenceChange={setMinConfidence}
+                    sort={roiSort}
+                    onSortChange={setRoiSort}
+                    matching={shown.length}
+                    filteredOut={roiFilteredOut}
+                    unavailable={roiUnavailable}
+                    onReset={() => { setRoiRange([ROI_MIN, ROI_MAX]); setMinConfidence(40); setRoiSort("newest"); }}
+                  />
+                )}
+
                 {rows.length > 0 && (
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
                     <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
@@ -479,6 +541,36 @@ export default function NewListingsPanel() {
                       </a>
                       {" "}· detected {new Date(listing.detected_at).toLocaleString()}
                     </div>
+                    {/* ROI, with the match confidence ALWAYS beside it. A
+                        -54.7% on a 19%-confidence candidate almost certainly
+                        means the wrong product was matched, not a bad deal --
+                        showing the number without the confidence would turn a
+                        matching failure into a pricing conclusion. */}
+                    {isDone && (() => {
+                      const r = roiOf(listing);
+                      if (!r.ok || r.roi === null) {
+                        return (
+                          <div className="text-xs text-muted-foreground">
+                            {blockerLabel(r.blocker)}
+                            {r.confidence !== null && <> · match {r.confidence}%</>}
+                          </div>
+                        );
+                      }
+                      const tone = r.roi >= 50 ? "text-emerald-600"
+                        : r.roi >= 0 ? "text-amber-600"
+                        : "text-destructive";
+                      return (
+                        <div className="text-xs">
+                          <span className={`font-medium ${tone}`}>{r.roi}% ROI</span>
+                          <span className="text-muted-foreground">
+                            {" "}· ${r.sourcePrice?.toFixed(2)} → ${r.amazonPrice?.toFixed(2)}
+                            {" "}· ${r.totalFees?.toFixed(2)} fees
+                            {" "}· match {r.confidence}%
+                            {r.candidate?.domain ? ` · ${r.candidate.domain}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {/* Which seller listed it. With hundreds of watched
                         sellers the row is otherwise anonymous, and "who is
                         selling this" is the first thing needed to judge it --
