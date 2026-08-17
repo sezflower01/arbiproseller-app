@@ -39,6 +39,23 @@ const RUN_BUDGET_MS = 95_000;
 // invocation cannot monopolise the shared Gemini/CSE quotas in a burst.
 const MAX_PER_RUN = 6;
 
+// Do not START a search unless there is time to FINISH it.
+//
+// Checking `now >= deadline` alone only proves the budget has not run out yet,
+// not that the next search fits: a search beginning at 94s of a 95s budget
+// still runs its full length and blows through the cron's 120s wall, killing
+// the function mid-flight and stranding the listing in source_status
+// 'sourcing' with nothing to move it on.
+//
+// Measured 2026-08-17 on a live run: 58.6s for a three-candidate search
+// (one candidate hit a Firecrawl phase2_timeout, which is the slow path).
+// Pricing all three candidates instead of only the top one made searches
+// materially longer, so the reserve is sized from that observed worst case.
+// The practical effect is one search per invocation; at a run every 10
+// minutes that is still ~144 opportunities a day against an 80/day cap, so
+// the cap keeps binding and throughput is unchanged.
+const SEARCH_RESERVE_MS = 70_000;
+
 // Newest first: a listing detected minutes ago is the one someone is most
 // likely about to look at.
 const CANDIDATE_SCAN = 60;
@@ -123,7 +140,13 @@ Deno.serve(async (req) => {
     for (const [userId, rows] of byUser) {
       if (Date.now() >= deadlineAt) break;
 
-      const wanted = Math.min(rows.length, MAX_PER_RUN - searched);
+      // Claim only what there is TIME to run, not just what the cap allows.
+      // claim_auto_source_budget decrements the daily counter at claim time, so
+      // granting 6 and then running 1 before the deadline would silently spend
+      // five searches that never happened -- exhausting an 80/day cap in about
+      // fourteen runs while performing fourteen searches.
+      const timeCapacity = Math.max(0, Math.floor((deadlineAt - Date.now()) / SEARCH_RESERVE_MS));
+      const wanted = Math.min(rows.length, MAX_PER_RUN - searched, timeCapacity);
       if (wanted <= 0) break;
 
       const { data: grantedRaw, error: claimErr } = await admin.rpc('claim_auto_source_budget', {
@@ -172,7 +195,7 @@ Deno.serve(async (req) => {
       let ran = 0;
       let skippedRestricted = 0;
       for (const row of claimed) {
-        if (Date.now() >= deadlineAt) break;
+        if (Date.now() + SEARCH_RESERVE_MS > deadlineAt) break;
         if (nowRestricted.has(row.asin)) { skippedRestricted++; continue; }
         try {
           // Both headers, deliberately. find-source-candidates keeps

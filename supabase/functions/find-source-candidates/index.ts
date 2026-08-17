@@ -142,8 +142,53 @@ function isUsServableDomain(rawUrl: string): boolean {
   }
 }
 
-async function googleSearch(query: string, apiKey: string, cx: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
-  const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(`${query} ${QUERY_EXCLUSIONS}`)}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
+/**
+ * Restrict a search to the user's allowlisted retailers.
+ *
+ * Google treats `(site:a.com OR site:b.com)` as a hard filter, unlike gl/cr
+ * which are only ranking hints -- so this is what actually stops the search
+ * returning aggregators and cross-border resellers, rather than us paying to
+ * verify them and then throwing them away.
+ *
+ * Capped at MAX_SITE_TERMS. Google's query parser degrades on very long OR
+ * chains, and a silently-truncated restriction would look like a working
+ * allowlist while quietly ignoring the tail of the list. Ordering is decided by
+ * the caller (most-used first), and any drop is logged rather than swallowed.
+ */
+const MAX_SITE_TERMS = 20;
+
+function buildSiteRestriction(domains: string[]): string {
+  if (!domains.length) return '';
+  const used = domains.slice(0, MAX_SITE_TERMS);
+  if (domains.length > used.length) {
+    console.log(`[find-source-candidates] allowlist has ${domains.length} domains, using top ${used.length} in the query restriction`);
+  }
+  return `(${used.map((d) => `site:${d}`).join(' OR ')})`;
+}
+
+/** Canonical allowlist domain this URL belongs to, or null. */
+function matchAllowedDomain(rawUrl: string, domains: string[]): string | null {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+    for (const d of domains) {
+      if (host === d || host.endsWith(`.${d}`)) return d;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// When the query is already restricted to specific retailers, the exclusion
+// blocklist is dead weight -- a result cannot be from amazon.com and from
+// walmart.com at once -- and query length is the scarce resource on the
+// allowlist pass.
+function queryWithScope(query: string, siteRestriction: string): string {
+  return siteRestriction ? `${query} ${siteRestriction}` : `${query} ${QUERY_EXCLUSIONS}`;
+}
+
+async function googleSearch(query: string, apiKey: string, cx: string, siteRestriction: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+  const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(queryWithScope(query, siteRestriction))}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
@@ -170,8 +215,8 @@ async function googleSearch(query: string, apiKey: string, cx: string, num = MAX
 // quota exhausted, etc.) -- same fallback discover-source-candidates already
 // relies on. SerpAPI doesn't return pagemap image data, so imageUrl stays
 // null on this path; compareImages degrades gracefully (see _shared/image-compare.ts).
-async function serpApiSearch(query: string, apiKey: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
-  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(`${query} ${QUERY_EXCLUSIONS}`)}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
+async function serpApiSearch(query: string, apiKey: string, siteRestriction: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(queryWithScope(query, siteRestriction))}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
@@ -189,11 +234,11 @@ async function serpApiSearch(query: string, apiKey: string, num = MAX_CANDIDATES
   }
 }
 
-async function searchAll(query: string, googleKey: string, cx: string, serpApiKey: string | undefined): Promise<RawCandidate[]> {
-  const results = await googleSearch(query, googleKey, cx);
+async function searchAll(query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = ''): Promise<RawCandidate[]> {
+  const results = await googleSearch(query, googleKey, cx, siteRestriction);
   if (results.length > 0) return results;
   if (!serpApiKey) return [];
-  return serpApiSearch(query, serpApiKey);
+  return serpApiSearch(query, serpApiKey, siteRestriction);
 }
 
 const NON_RETAIL_DOMAINS = new Set([
@@ -319,6 +364,84 @@ function confidenceLabel(score: number): string {
   return 'Possible match';
 }
 
+/**
+ * Where this user's searches are allowed to look.
+ *
+ * Two lists, deliberately different sizes and different jobs:
+ *
+ *  - `allowlist` is small and user-editable, and goes INTO the query as a
+ *    `site:` restriction. It has to stay short (see MAX_SITE_TERMS).
+ *  - `registry` is the 777-domain curated `suppliers` table. Far too large to
+ *    put in a query, but ideal as a filter on open-web results: it turns the
+ *    fallback from "whatever Google returned" into "a trusted supplier we
+ *    already vetted". Measured 2026-08-17: without it, the top fallback
+ *    domains were etsy, mercari, abebooks and four university library
+ *    catalogues -- none of them a place to buy stock.
+ */
+interface SearchScope {
+  allowlist: string[];
+  registry: Set<string>;
+  fallbackAllowed: boolean;
+}
+
+// PostgREST caps rows per response, so a plain select would silently return a
+// prefix of the registry and quietly shrink the trusted set.
+async function selectAllDomains(admin: any, table: string, filter: (q: any) => any): Promise<string[]> {
+  const out: string[] = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await filter(admin.from(table).select('domain')).range(from, from + 999);
+    if (error) {
+      console.warn(`[find-source-candidates] ${table} read failed:`, error.message);
+      break;
+    }
+    if (!data?.length) break;
+    for (const r of data) if (r?.domain) out.push(String(r.domain).toLowerCase());
+    if (data.length < 1000) break;
+  }
+  return out;
+}
+
+async function loadSearchScope(admin: any, userId: string): Promise<SearchScope> {
+  const [allowRows, registryRows, cfg] = await Promise.all([
+    // Most-used first, so if the list ever outgrows MAX_SITE_TERMS the domains
+    // that actually produce candidates are the ones that stay in the query.
+    admin
+      .from('source_retailers')
+      .select('domain')
+      .eq('user_id', userId)
+      .eq('enabled', true)
+      .order('search_hits', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(200),
+    selectAllDomains(admin, 'suppliers', (q: any) => q.eq('user_id', userId)),
+    admin.from('auto_source_config').select('allow_open_web_fallback').eq('user_id', userId).maybeSingle(),
+  ]);
+
+  return {
+    allowlist: (allowRows?.data || []).map((r: any) => String(r.domain).toLowerCase()),
+    registry: new Set(registryRows),
+    // Column default is true; a user with no config row yet must not lose the
+    // fallback and get an empty result screen.
+    fallbackAllowed: cfg?.data?.allow_open_web_fallback !== false,
+  };
+}
+
+/** Longest-suffix lookup against the registry Set -- O(labels), not O(777). */
+function matchRegistryDomain(rawUrl: string, registry: Set<string>): string | null {
+  if (!registry.size) return null;
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+    const parts = host.split('.');
+    for (let i = 0; i < parts.length - 1; i++) {
+      const candidate = parts.slice(i).join('.');
+      if (registry.has(candidate)) return candidate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function monthKey(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -411,40 +534,80 @@ Deno.serve(async (req) => {
     // and bathandbodyworks.com directly.
     const titleHasBrand = listing.brand && listing.title?.toLowerCase().startsWith(listing.brand.toLowerCase());
     const titleQuery = `${listing.brand && !titleHasBrand ? listing.brand + ' ' : ''}${listing.title}`.slice(0, 120);
-    const searches = listing.upc
-      ? await Promise.all([searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY')), searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))])
-      : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, Deno.env.get('SERPAPI_API_KEY'))];
-    const seenUrls = new Set<string>();
-    let droppedForeign = 0;
-    const raw = searches.flat().filter((c) => {
-      if (seenUrls.has(c.url)) return false;
-      seenUrls.add(c.url);
-      if (!isUsServableDomain(c.url)) { droppedForeign++; return false; }
-      return true;
-    });
-    if (droppedForeign) {
-      console.log(`[find-source-candidates] dropped ${droppedForeign} non-US domain(s) before scoring`);
-    }
+    const serpKey = Deno.env.get('SERPAPI_API_KEY');
 
-    let scored = raw
-      .map((c) => ({ ...c, score: ruleScore(c, listing) }))
-      .filter((c) => c.score >= MIN_SCORE_TO_SHOW)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_CANDIDATES_VERIFIED);
+    const scope = await loadSearchScope(admin, userId);
 
-    if (scored.length === 0) {
-      await admin.from('seller_watch_new_listings').update({ source_status: 'no_candidates', candidates: [] }).eq('id', listingId);
-      return jsonResponse({ ok: true, status: 'no_candidates', candidates: [], usage: { searchCount: newCount, monthKey: mKey } });
-    }
-
-    // Candidates the user explicitly ruled out. Filtered BEFORE verification
-    // so a rejected URL does not consume a Gemini/vision slot on its way to
-    // being discarded, and cannot reappear after "Search again".
+    // Candidates the user explicitly ruled out. Applied BEFORE ranking rather
+    // than after slicing to the top 3 -- filtering afterwards silently returned
+    // fewer than three candidates when a rejected URL happened to rank high,
+    // even though acceptable candidates were sitting just below the cut.
     const rejectedUrls = new Set<string>(
       Array.isArray(listing.rejected_candidate_urls) ? listing.rejected_candidate_urls : [],
     );
-    if (rejectedUrls.size) {
-      scored = scored.filter((c: any) => !rejectedUrls.has(c.url));
+
+    const runPass = async (siteRestriction: string): Promise<RawCandidate[]> => {
+      const searches = listing.upc
+        ? await Promise.all([
+            searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction),
+            searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction),
+          ])
+        : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction)];
+      const seenUrls = new Set<string>();
+      let droppedForeign = 0;
+      const out = searches.flat().filter((c) => {
+        if (seenUrls.has(c.url)) return false;
+        seenUrls.add(c.url);
+        if (!isUsServableDomain(c.url)) { droppedForeign++; return false; }
+        return !rejectedUrls.has(c.url);
+      });
+      if (droppedForeign) {
+        console.log(`[find-source-candidates] dropped ${droppedForeign} non-US domain(s) before scoring`);
+      }
+      return out;
+    };
+
+    const rank = (rows: RawCandidate[]) => rows
+      .map((c) => ({ ...c, score: ruleScore(c, listing) }))
+      .filter((c) => c.score >= MIN_SCORE_TO_SHOW)
+      .sort((a, b) => b.score - a.score);
+
+    // Pass A -- the user's own retailers, enforced in the query itself.
+    // The post-filter behind it is a safety net: `site:` is a hard filter for
+    // Google, but the SerpAPI fallback path parses the same operator with its
+    // own engine, so nothing here trusts the upstream to have obeyed.
+    let searchPass: 'allowlist' | 'registry_fallback' | 'open_web' = 'allowlist';
+    let ranked: Array<RawCandidate & { score: number }> = [];
+
+    if (scope.allowlist.length) {
+      const rawA = await runPass(buildSiteRestriction(scope.allowlist));
+      ranked = rank(rawA.filter((c) => matchAllowedDomain(c.url, scope.allowlist)));
+    }
+
+    // Pass B -- only when the allowlist genuinely found nothing. ONE extra
+    // search, filtered in two tiers: trusted suppliers first, anything second.
+    // Tiering the filter rather than issuing two more queries is what keeps the
+    // worst case at 2 search passes instead of 3.
+    if (!ranked.length && scope.fallbackAllowed) {
+      const rawB = await runPass('');
+      const rankedB = rank(rawB);
+      const trusted = rankedB.filter((c) => matchRegistryDomain(c.url, scope.registry));
+      if (trusted.length) {
+        ranked = trusted;
+        searchPass = 'registry_fallback';
+      } else {
+        ranked = rankedB;
+        searchPass = 'open_web';
+      }
+    }
+
+    console.log(`[find-source-candidates] pass=${searchPass} allowlist=${scope.allowlist.length} registry=${scope.registry.size} ranked=${ranked.length}`);
+
+    const scored = ranked.slice(0, MAX_CANDIDATES_VERIFIED);
+
+    if (scored.length === 0) {
+      await admin.from('seller_watch_new_listings').update({ source_status: 'no_candidates', candidates: [] }).eq('id', listingId);
+      return jsonResponse({ ok: true, status: 'no_candidates', candidates: [], searchPass, usage: { searchCount: newCount, monthKey: mKey } });
     }
 
     const verified = await Promise.all(scored.map(async (c) => {
@@ -481,41 +644,82 @@ Deno.serve(async (req) => {
         price: null as number | null,
         currency: null as string | null,
         availability: null as string | null,
+        // Why the price is (or isn't) there -- surfaced so a missing price can
+        // be read as "blocked" vs "page had none" instead of a silent null.
+        priceResolution: null as string | null,
       };
     }));
 
     verified.sort((a, b) => b.confidence - a.confidence);
 
-    // Live price check on only the top candidate -- keeps per-search cost
-    // bounded regardless of how many candidates were verified.
-    if (verified[0] && INTERNAL_SECRET) {
-      try {
-        const priceRes = await fetch(`${SUPABASE_URL}/functions/v1/extract-product-price`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
-          body: JSON.stringify({ url: verified[0].url, user_id: userId }),
-        });
-        if (priceRes.ok) {
+    // Price EVERY verified candidate, not just the top one.
+    //
+    // Pricing only verified[0] was a cost guard, but it made candidates 2 and 3
+    // structurally useless for a buying decision: their "price not confirmed"
+    // never meant the page hid its price, only that nobody looked. Three
+    // extractions in parallel cost wall-clock, not quota -- extract-product-price
+    // is our own function, and it escalates to a paid render only when the cheap
+    // static parse fails.
+    //
+    // `priceResolution` records WHY an extraction failed (blocked_phase1,
+    // not_found_unblocked, ...) so the per-domain hit rate below can be read as
+    // a diagnosis rather than just a disappointing number.
+    if (INTERNAL_SECRET) {
+      await Promise.all(verified.map(async (v) => {
+        try {
+          const priceRes = await fetch(`${SUPABASE_URL}/functions/v1/extract-product-price`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+            body: JSON.stringify({ url: v.url, user_id: userId }),
+          });
+          if (!priceRes.ok) {
+            v.priceResolution = `http_${priceRes.status}`;
+            return;
+          }
           const priceJson = await priceRes.json().catch(() => ({}));
           if (typeof priceJson?.price_current === 'number') {
-            verified[0].price = priceJson.price_current;
-            verified[0].currency = priceJson.currency || null;
-            verified[0].availability = priceJson.availability_status || null;
+            v.price = priceJson.price_current;
+            v.currency = priceJson.currency || null;
+            v.availability = priceJson.availability_status || null;
           }
+          v.priceResolution = priceJson?.final_resolution || (v.price == null ? 'no_price' : 'price_extracted');
           // SerpAPI results never carry an image (no pagemap data); backfill
           // from the page itself if the search step didn't already have one.
-          if (!verified[0].imageUrl && priceJson?.image_url) {
-            verified[0].imageUrl = priceJson.image_url;
-          }
+          if (!v.imageUrl && priceJson?.image_url) v.imageUrl = priceJson.image_url;
+        } catch (e) {
+          v.priceResolution = 'error';
+          console.warn(`[find-source-candidates] price check failed for ${v.domain}:`, (e as Error).message);
         }
-      } catch (e) {
-        console.warn('[find-source-candidates] price check failed:', (e as Error).message);
+      }));
+    }
+
+    // Per-domain outcomes, so "which retailers earn their place" is answered by
+    // counters rather than impressions. Only allowlisted domains are recorded --
+    // the RPC updates existing rows and never inserts, so an open-web fallback
+    // result cannot quietly add itself to the allowlist.
+    const stats = new Map<string, { domain: string; hits: number; price_attempts: number; price_success: number }>();
+    for (const v of verified) {
+      const canonical = matchAllowedDomain(v.url, scope.allowlist);
+      if (!canonical) continue;
+      const row = stats.get(canonical) || { domain: canonical, hits: 0, price_attempts: 0, price_success: 0 };
+      row.hits++;
+      if (INTERNAL_SECRET) {
+        row.price_attempts++;
+        if (v.price != null) row.price_success++;
       }
+      stats.set(canonical, row);
+    }
+    if (stats.size) {
+      const { error: statsErr } = await admin.rpc('bump_source_retailer_stats', {
+        p_user_id: userId,
+        p_stats: [...stats.values()],
+      });
+      if (statsErr) console.warn('[find-source-candidates] stats bump failed:', statsErr.message);
     }
 
     await admin.from('seller_watch_new_listings').update({ source_status: 'candidates_found', candidates: verified }).eq('id', listingId);
 
-    return jsonResponse({ ok: true, status: 'candidates_found', candidates: verified, usage: { searchCount: newCount, monthKey: mKey } });
+    return jsonResponse({ ok: true, status: 'candidates_found', candidates: verified, searchPass, usage: { searchCount: newCount, monthKey: mKey } });
   } catch (e) {
     console.error('[find-source-candidates] error', (e as Error).message);
     return jsonResponse({ error: (e as Error).message }, 500);

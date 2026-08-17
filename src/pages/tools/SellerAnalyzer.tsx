@@ -11,6 +11,7 @@ import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
+import SourceRetailersPanel from "@/components/seller-analyzer/SourceRetailersPanel";
 import BulkAddPanel from "@/components/seller-analyzer/BulkAddPanel";
 import { Helmet } from "react-helmet-async";
 
@@ -230,6 +231,16 @@ export default function SellerAnalyzer() {
                 </p>
               </CardContent>
             </Card>
+
+            <SourceRetailersPanel
+              fallbackEnabled={autoCfg.allow_open_web_fallback}
+              fallbackSaving={cfgSaving}
+              onFallbackChange={(v) => {
+                updateAutoCfg({ allow_open_web_fallback: v }).catch((e) =>
+                  toast({ title: "Could not save setting", description: e.message, variant: "destructive" }),
+                );
+              }}
+            />
 
             {/* The watchlist belongs with the controls that manage it, not with
                 results. It is the record of what you added, and at 400+ rows it

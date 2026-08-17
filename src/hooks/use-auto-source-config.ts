@@ -6,10 +6,17 @@ export interface AutoSourceConfig {
   daily_cap: number;
   /** Gated ASINs are auto-searched when true. Restricted are ALWAYS excluded. */
   search_needs_approval: boolean;
+  /** When the retailer allowlist finds nothing, search wider (filtered to trusted suppliers). */
+  allow_open_web_fallback: boolean;
 }
 
 /** Mirrors the column defaults, used before a row exists for this user. */
-const DEFAULTS: AutoSourceConfig = { enabled: true, daily_cap: 80, search_needs_approval: true };
+const DEFAULTS: AutoSourceConfig = {
+  enabled: true,
+  daily_cap: 80,
+  search_needs_approval: true,
+  allow_open_web_fallback: true,
+};
 
 /**
  * Read/write the per-user auto-source settings.
@@ -30,7 +37,10 @@ export function useAutoSourceConfig() {
     try {
       const today = new Date().toISOString().slice(0, 10);
       const [{ data: cfg }, { data: usage }] = await Promise.all([
-        supabase.from("auto_source_config").select("enabled, daily_cap, search_needs_approval").maybeSingle(),
+        supabase
+          .from("auto_source_config")
+          .select("enabled, daily_cap, search_needs_approval, allow_open_web_fallback")
+          .maybeSingle(),
         supabase.from("auto_source_daily_usage").select("search_count").eq("day", today).maybeSingle(),
       ]);
       if (cfg) setConfig({ ...DEFAULTS, ...(cfg as Partial<AutoSourceConfig>) });
