@@ -101,7 +101,33 @@ interface RawCandidate {
 // result slots on pages we're going to zero-score anyway -- popular branded
 // products otherwise return an Amazon-dominated page 1 with little room
 // left for genuine third-party retailers.
-const QUERY_EXCLUSIONS = "-site:amazon.com -site:ebay.com -site:aliexpress.com -site:alibaba.com -site:wish.com -site:pinterest.com";
+/**
+ * Domains that are never a retail product page for anyone.
+ *
+ * Hardcoded on purpose, and kept separate from the user's own exclusion list.
+ * A reddit thread or a Wikipedia article is not a sourcing decision anybody
+ * makes differently, so making these editable would only let someone break
+ * their own search. Judgement calls -- eBay, Etsy, AliExpress -- live in
+ * source_excluded_domains instead, seeded per user.
+ *
+ * amazon.com is here because it is the marketplace being sourced FOR: buying
+ * from it to sell on it is not arbitrage.
+ */
+const STRUCTURAL_EXCLUSIONS: readonly string[] = [
+  'amazon.com', 'pinterest.com', 'reddit.com', 'youtube.com', 'facebook.com',
+  'instagram.com', 'twitter.com', 'x.com', 'tiktok.com', 'quora.com',
+  'wikipedia.org',
+];
+
+/**
+ * Cap on `-site:` terms in the query string.
+ *
+ * Same reasoning as MAX_SITE_TERMS: Google's parser degrades on long operator
+ * chains, and a silently-truncated exclusion list would look like it was
+ * working. Overflow is logged, and the post-filter enforces the full list
+ * regardless of what made it into the query.
+ */
+const MAX_QUERY_EXCLUSION_TERMS = 25;
 
 /**
  * Reject retailers that cannot serve a US arbitrage buy.
@@ -179,16 +205,26 @@ function matchAllowedDomain(rawUrl: string, domains: string[]): string | null {
   }
 }
 
+/** `-site:` terms for the open-web pass, so Google spends result slots on
+ *  pages we might actually buy from instead of ones we are about to discard. */
+function buildQueryExclusions(exclusions: string[]): string {
+  const used = exclusions.slice(0, MAX_QUERY_EXCLUSION_TERMS);
+  if (exclusions.length > used.length) {
+    console.log(`[find-source-candidates] ${exclusions.length} exclusions, ${used.length} sent to the query; the rest are enforced by the post-filter`);
+  }
+  return used.map((d) => `-site:${d}`).join(' ');
+}
+
 // When the query is already restricted to specific retailers, the exclusion
 // blocklist is dead weight -- a result cannot be from amazon.com and from
 // walmart.com at once -- and query length is the scarce resource on the
-// allowlist pass.
-function queryWithScope(query: string, siteRestriction: string): string {
-  return siteRestriction ? `${query} ${siteRestriction}` : `${query} ${QUERY_EXCLUSIONS}`;
+// allowlist pass. The post-filter still applies on both passes.
+function queryWithScope(query: string, siteRestriction: string, queryExclusions: string): string {
+  return siteRestriction ? `${query} ${siteRestriction}` : `${query} ${queryExclusions}`;
 }
 
-async function googleSearch(query: string, apiKey: string, cx: string, siteRestriction: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
-  const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(queryWithScope(query, siteRestriction))}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
+async function googleSearch(query: string, apiKey: string, cx: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+  const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
@@ -215,8 +251,8 @@ async function googleSearch(query: string, apiKey: string, cx: string, siteRestr
 // quota exhausted, etc.) -- same fallback discover-source-candidates already
 // relies on. SerpAPI doesn't return pagemap image data, so imageUrl stays
 // null on this path; compareImages degrades gracefully (see _shared/image-compare.ts).
-async function serpApiSearch(query: string, apiKey: string, siteRestriction: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
-  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(queryWithScope(query, siteRestriction))}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
+async function serpApiSearch(query: string, apiKey: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+  const url = `https://serpapi.com/search.json?q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
@@ -234,34 +270,21 @@ async function serpApiSearch(query: string, apiKey: string, siteRestriction: str
   }
 }
 
-async function searchAll(query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = ''): Promise<RawCandidate[]> {
-  const results = await googleSearch(query, googleKey, cx, siteRestriction);
+async function searchAll(query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = '', queryExclusions = ''): Promise<RawCandidate[]> {
+  const results = await googleSearch(query, googleKey, cx, siteRestriction, queryExclusions);
   if (results.length > 0) return results;
   if (!serpApiKey) return [];
-  return serpApiSearch(query, serpApiKey, siteRestriction);
+  return serpApiSearch(query, serpApiKey, siteRestriction, queryExclusions);
 }
 
-const NON_RETAIL_DOMAINS = new Set([
-  'pinterest.com', 'reddit.com', 'youtube.com', 'facebook.com', 'instagram.com',
-  'twitter.com', 'x.com', 'tiktok.com', 'quora.com', 'wikipedia.org', 'amazon.com',
-]);
-
-// Hard exclude, not a ranking preference -- gl=us/cr=countryUS on the search
-// call are only ranking hints, not filters, so a query can still surface
-// foreign-TLD retailers (confirmed live: desertcart.ie, desertcart.in on a
-// US-only account). ccTLD suffix check; generic TLDs (.com/.us/.net/.org/etc)
-// pass through untouched.
-const NON_US_TLD_SUFFIXES = [
-  '.ie', '.uk', '.co.uk', '.ca', '.de', '.fr', '.it', '.es', '.nl', '.se', '.pl',
-  '.jp', '.co.jp', '.in', '.au', '.com.au', '.mx', '.com.mx', '.br', '.com.br',
-  '.cn', '.ru', '.sg', '.ae', '.sa', '.tr', '.com.tr', '.nz', '.co.nz', '.za',
-  '.co.za', '.eu', '.ch', '.at', '.be', '.dk', '.no', '.fi', '.pt', '.gr', '.hk',
-  '.tw', '.kr', '.co.kr', '.th', '.vn', '.id', '.ph', '.my', '.il', '.pk',
-];
-
-function isNonUsDomain(domain: string): boolean {
-  return NON_US_TLD_SUFFIXES.some((suffix) => domain.endsWith(suffix));
-}
+// NON_RETAIL_DOMAINS moved to STRUCTURAL_EXCLUSIONS and is now enforced in the
+// single pre-scoring filter, so a junk domain is dropped before it costs any
+// scoring work rather than being scored to zero and discarded afterwards.
+//
+// NON_US_TLD_SUFFIXES and isNonUsDomain were deleted as dead code. Every suffix
+// in that list resolved to a two-letter TLD (".co.uk" -> "uk", ".com.au" ->
+// "au"), and isUsServableDomain already rejects those in the pre-scoring
+// filter, which runs BEFORE ruleScore. The check could never fire.
 
 function getDomain(url: string): string {
   try {
@@ -272,8 +295,10 @@ function getDomain(url: string): string {
 }
 
 function ruleScore(c: RawCandidate, listing: { upc: string | null; brand: string | null; title: string | null }): number {
+  // Exclusions and the US-servable check both run in the pre-scoring filter,
+  // so anything reaching here has already passed them.
   const domain = getDomain(c.url);
-  if (!domain || NON_RETAIL_DOMAINS.has(domain) || isNonUsDomain(domain)) return 0;
+  if (!domain) return 0;
 
   const haystack = `${c.title} ${c.snippet}`.toLowerCase();
   let score = 0;
@@ -381,6 +406,8 @@ function confidenceLabel(score: number): string {
 interface SearchScope {
   allowlist: string[];
   registry: Set<string>;
+  /** Structural floor + the user's own list, merged and deduped. */
+  exclusions: string[];
   fallbackAllowed: boolean;
 }
 
@@ -402,7 +429,7 @@ async function selectAllDomains(admin: any, table: string, filter: (q: any) => a
 }
 
 async function loadSearchScope(admin: any, userId: string): Promise<SearchScope> {
-  const [allowRows, registryRows, cfg] = await Promise.all([
+  const [allowRows, registryRows, cfg, excludedRows] = await Promise.all([
     // Most-used first, so if the list ever outgrows MAX_SITE_TERMS the domains
     // that actually produce candidates are the ones that stay in the query.
     admin
@@ -415,26 +442,51 @@ async function loadSearchScope(admin: any, userId: string): Promise<SearchScope>
       .limit(200),
     selectAllDomains(admin, 'suppliers', (q: any) => q.eq('user_id', userId)),
     admin.from('auto_source_config').select('allow_open_web_fallback').eq('user_id', userId).maybeSingle(),
+    selectAllDomains(admin, 'source_excluded_domains', (q: any) => q.eq('user_id', userId)),
   ]);
 
+  // One merged set, so there is a single answer to "is this domain excluded"
+  // instead of the four overlapping checks this replaced.
+  const exclusions = Array.from(new Set([...STRUCTURAL_EXCLUSIONS, ...excludedRows]));
+
+  // Exclusion beats allowlist. Deny-over-allow is the safer default, and a
+  // domain on both lists is a mistake worth resolving predictably rather than
+  // by whichever check happened to run first.
+  const excludedSet = new Set(exclusions);
+  const allowlist = (allowRows?.data || [])
+    .map((r: any) => String(r.domain).toLowerCase())
+    .filter((d: string) => {
+      if (!excludedSet.has(d)) return true;
+      console.log(`[find-source-candidates] ${d} is both allowed and excluded; excluding`);
+      return false;
+    });
+
   return {
-    allowlist: (allowRows?.data || []).map((r: any) => String(r.domain).toLowerCase()),
+    allowlist,
     registry: new Set(registryRows),
+    exclusions,
     // Column default is true; a user with no config row yet must not lose the
     // fallback and get an empty result screen.
     fallbackAllowed: cfg?.data?.allow_open_web_fallback !== false,
   };
 }
 
-/** Longest-suffix lookup against the registry Set -- O(labels), not O(777). */
-function matchRegistryDomain(rawUrl: string, registry: Set<string>): string | null {
-  if (!registry.size) return null;
+/**
+ * Longest-suffix lookup against a domain Set -- O(labels), not O(set size).
+ *
+ * Shared by the registry check and the exclusion check because both ask the
+ * same question: does this URL belong to one of these domains, including
+ * subdomains. "motors.ebay.com" has to match "ebay.com" or the exclusion is
+ * trivially bypassed.
+ */
+function matchDomainSet(rawUrl: string, domains: Set<string>): string | null {
+  if (!domains.size) return null;
   try {
     const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
     const parts = host.split('.');
     for (let i = 0; i < parts.length - 1; i++) {
       const candidate = parts.slice(i).join('.');
-      if (registry.has(candidate)) return candidate;
+      if (domains.has(candidate)) return candidate;
     }
     return null;
   } catch {
@@ -546,23 +598,34 @@ Deno.serve(async (req) => {
       Array.isArray(listing.rejected_candidate_urls) ? listing.rejected_candidate_urls : [],
     );
 
+    // ONE filter, applied to both passes because runPass is shared -- an
+    // exclusion cannot be enforced on the allowlist pass but forgotten on the
+    // fallback, which is exactly the failure the four scattered checks allowed.
+    const exclusionSet = new Set(scope.exclusions);
+    const queryExclusions = buildQueryExclusions(scope.exclusions);
+
     const runPass = async (siteRestriction: string): Promise<RawCandidate[]> => {
       const searches = listing.upc
         ? await Promise.all([
-            searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction),
-            searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction),
+            searchAll(listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
+            searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
           ])
-        : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction)];
+        : [await searchAll(titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions)];
       const seenUrls = new Set<string>();
       let droppedForeign = 0;
+      let droppedExcluded = 0;
       const out = searches.flat().filter((c) => {
         if (seenUrls.has(c.url)) return false;
         seenUrls.add(c.url);
         if (!isUsServableDomain(c.url)) { droppedForeign++; return false; }
+        // Post-filter regardless of the -site: terms above: those are only a
+        // hint Google may ignore, the SerpAPI fallback parses them with its own
+        // engine, and neither covers a subdomain reliably.
+        if (matchDomainSet(c.url, exclusionSet)) { droppedExcluded++; return false; }
         return !rejectedUrls.has(c.url);
       });
-      if (droppedForeign) {
-        console.log(`[find-source-candidates] dropped ${droppedForeign} non-US domain(s) before scoring`);
+      if (droppedForeign || droppedExcluded) {
+        console.log(`[find-source-candidates] dropped ${droppedForeign} non-US and ${droppedExcluded} excluded domain(s) before scoring`);
       }
       return out;
     };
@@ -591,7 +654,7 @@ Deno.serve(async (req) => {
     if (!ranked.length && scope.fallbackAllowed) {
       const rawB = await runPass('');
       const rankedB = rank(rawB);
-      const trusted = rankedB.filter((c) => matchRegistryDomain(c.url, scope.registry));
+      const trusted = rankedB.filter((c) => matchDomainSet(c.url, scope.registry));
       if (trusted.length) {
         ranked = trusted;
         searchPass = 'registry_fallback';

@@ -24,6 +24,7 @@ import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/us
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
 import SourceRetailersPanel from "@/components/seller-analyzer/SourceRetailersPanel";
+import ExcludedDomainsPanel from "@/components/seller-analyzer/ExcludedDomainsPanel";
 import BulkAddPanel from "@/components/seller-analyzer/BulkAddPanel";
 import { Helmet } from "react-helmet-async";
 
@@ -298,6 +299,8 @@ export default function SellerAnalyzer() {
                 );
               }}
             />
+
+            <ExcludedDomainsPanel />
 
             {/* The watchlist belongs with the controls that manage it, not with
                 results. It is the record of what you added, and at 400+ rows it
