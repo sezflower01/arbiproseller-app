@@ -81,6 +81,8 @@ export function useSellerNewListings() {
   const [doneTotal, setDoneTotal] = useState(0);
   /** Finished rows that found nothing — the low-value bulk of a backlog. */
   const [noCandidatesTotal, setNoCandidatesTotal] = useState(0);
+  /** Total queued rows, which exceeds `pending.length` whenever PAGE_SIZE bites. */
+  const [pendingTotal, setPendingTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
@@ -97,6 +99,7 @@ export function useSellerNewListings() {
         { data: watchRows },
         { count: doneCount },
         { count: noCandidatesCount },
+        { count: pendingCount },
       ] = await Promise.all([
         // DONE and SEARCHING are fetched separately with their own limits.
         // A single combined query ordered by detected_at is exactly what buried
@@ -139,12 +142,17 @@ export function useSellerNewListings() {
           .from("seller_watch_new_listings")
           .select("id", { count: "exact", head: true })
           .eq("source_status", "no_candidates"),
+        supabase
+          .from("seller_watch_new_listings")
+          .select("id", { count: "exact", head: true })
+          .in("source_status", ["unsourced", "sourcing"]),
       ]);
       if (error) throw error;
       setDone((doneRows as unknown as NewListing[]) || []);
       setPending((pendingRows as unknown as NewListing[]) || []);
       setDoneTotal(doneCount ?? 0);
       setNoCandidatesTotal(noCandidatesCount ?? 0);
+      setPendingTotal(pendingCount ?? 0);
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
@@ -365,7 +373,7 @@ export function useSellerNewListings() {
   }, [refresh]);
 
   return {
-    done, pending, doneTotal, noCandidatesTotal, loading, monthlySearchCount,
+    done, pending, doneTotal, pendingTotal, noCandidatesTotal, loading, monthlySearchCount,
     eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings,
     deleteByStatus, refresh,
   };
