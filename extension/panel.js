@@ -971,7 +971,24 @@
     if (offers.length && typeof totalCount === "number" && totalCount > offers.length) {
       countLabel += ` of ${totalCount} (Amazon API limit)`;
     }
+    // Why the data is incomplete, when the server said so.
+    //
+    // mobile-scan-price-history returns { degraded, degraded_reason } whenever
+    // it fell back to SP-API or stale cache -- Keepa quota exhausted, timeout,
+    // 5xx. Until now the panel dropped both fields on the floor, so an
+    // exhausted Keepa bucket looked identical to a product that genuinely has
+    // no history: thin price series, no graph, "Not enough data" for PL risk,
+    // and nothing anywhere saying why. That is a temporary failure rendered as
+    // a permanent verdict, and it sent a real debugging session chasing the
+    // wrong cause.
+    //
+    // Appended to the existing count badge rather than given its own element:
+    // it belongs beside the number it is qualifying, and it must not shift the
+    // layout when absent (which is the normal case).
+    const degradedReason = state.history?.degraded ? state.history?.degraded_reason : null;
+    if (degradedReason) countLabel += ` — ${degradedReason}`;
     $("apx-sellers-count").textContent = countLabel;
+    $("apx-sellers-count").title = degradedReason || "";
 
     list.innerHTML = "";
     if (!offers.length) {
