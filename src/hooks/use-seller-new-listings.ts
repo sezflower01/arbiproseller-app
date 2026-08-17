@@ -52,6 +52,8 @@ const ELIGIBILITY_BATCH = 20;
 export function useSellerNewListings() {
   const [done, setDone] = useState<NewListing[]>([]);
   const [pending, setPending] = useState<NewListing[]>([]);
+  /** Total finished rows, which exceeds `done.length` whenever the 50 cap bites. */
+  const [doneTotal, setDoneTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
@@ -61,7 +63,7 @@ export function useSellerNewListings() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: doneRows, error }, { data: pendingRows }, { data: usageRow }, { data: watchRows }] = await Promise.all([
+      const [{ data: doneRows, error }, { data: pendingRows }, { data: usageRow }, { data: watchRows }, { count: doneCount }] = await Promise.all([
         // DONE and SEARCHING are fetched separately with their own limits.
         // A single combined query ordered by detected_at is exactly what buried
         // completed research: 281 detections in a day pushed the 78 finished
@@ -90,10 +92,18 @@ export function useSellerNewListings() {
           .from("seller_watchlist")
           .select("seller_id, marketplace, seller_name")
           .neq("status", "cancelled"),
+        // Counted, not fetched. Bulk delete can only ever act on the 50 rows
+        // on screen, so the UI has to be able to say "50 of 213" rather than
+        // implying a Select-all reached everything.
+        supabase
+          .from("seller_watch_new_listings")
+          .select("id", { count: "exact", head: true })
+          .in("source_status", ["candidates_found", "sourced", "no_candidates"]),
       ]);
       if (error) throw error;
       setDone((doneRows as unknown as NewListing[]) || []);
       setPending((pendingRows as unknown as NewListing[]) || []);
+      setDoneTotal(doneCount ?? 0);
       setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
@@ -246,5 +256,42 @@ export function useSellerNewListings() {
     setDone((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
   }, []);
 
-  return { done, pending, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, refresh };
+  /**
+   * Permanently delete listing rows.
+   *
+   * A real DELETE, not the soft cancel the watchlist uses -- verified safe:
+   * nothing in the schema has a foreign key to seller_watch_new_listings(id),
+   * so the row is a leaf and takes only its own candidates and
+   * rejected_candidate_urls with it.
+   *
+   * It also does NOT come back. Detection diffs against
+   * seller_watchlist.known_asin_list, never against this table, and that list
+   * already contains the ASIN -- so a deleted row is not re-detected on the
+   * next check. That makes this irreversible from the UI, which is what the
+   * confirm dialog is for.
+   *
+   * Chunked at 100 for the same reason as cancelWatches: the ids ride in the
+   * DELETE query string, and a few hundred UUIDs overflow what proxies accept
+   * while failing as an opaque server error.
+   */
+  const deleteListings = useCallback(async (ids: string[]) => {
+    if (!ids.length) return 0;
+    const CHUNK = 100;
+    let removed = 0;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const { error } = await supabase.from("seller_watch_new_listings").delete().in("id", slice);
+      if (error) {
+        // Say what actually landed -- a partial delete reported as total
+        // failure sends the user back to re-select rows that are already gone.
+        await refresh();
+        throw new Error(`${error.message} (removed ${removed} of ${ids.length} before failing)`);
+      }
+      removed += slice.length;
+    }
+    await refresh();
+    return removed;
+  }, [refresh]);
+
+  return { done, pending, doneTotal, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings, refresh };
 }

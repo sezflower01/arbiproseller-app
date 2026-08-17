@@ -3,7 +3,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ExternalLink, Package, Store, Check, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Loader2, ExternalLink, Package, Store, Check, X, Trash2 } from "lucide-react";
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
@@ -97,9 +109,54 @@ function CandidateRow({
 }
 
 export default function NewListingsPanel() {
-  const { done, pending, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate } = useSellerNewListings();
+  const { done, pending, doneTotal, loading, monthlySearchCount, eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings } = useSellerNewListings();
   const [tab, setTab] = useState("done");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
   const { toast } = useToast();
+
+  const doneIds = done.map((l) => l.id);
+  const allDoneSelected = doneIds.length > 0 && doneIds.every((id) => selected.has(id));
+  // Only the 50 loaded rows can ever be selected, so the panel says so rather
+  // than letting "Select all" imply it reached all 213.
+  const doneTruncated = doneTotal > done.length;
+
+  const toggleAllDone = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of doneIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const removeIds = async (ids: string[], label: string) => {
+    setRemoving(true);
+    try {
+      const n = await deleteListings(ids);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      toast({ title: `${label} ${n.toLocaleString()} listing${n === 1 ? "" : "s"}` });
+    } catch (e) {
+      toast({ title: "Could not remove listings", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   if (!loading && done.length === 0 && pending.length === 0) return null;
 
@@ -145,6 +202,72 @@ export default function NewListingsPanel() {
             const rows = key === "done" ? done : pending;
             return (
               <TabsContent key={key} value={key} className="mt-0 space-y-3">
+                {/* Bulk clearing is a Done-tab action. Deleting a queued row
+                    would also stop it ever being searched, which is a different
+                    decision from discarding a finished result. */}
+                {key === "done" && rows.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                      <Checkbox
+                        checked={allDoneSelected}
+                        onCheckedChange={(v) => toggleAllDone(v === true)}
+                        aria-label="Select all listings shown"
+                      />
+                      <span>
+                        Select all shown ({done.length.toLocaleString()})
+                        {doneTruncated && (
+                          <span className="text-muted-foreground">
+                            {" "}of {doneTotal.toLocaleString()}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+
+                    {selected.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{selected.size.toLocaleString()} selected</span>
+                        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
+                          Clear
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button type="button" variant="destructive" size="sm" className="h-7 text-xs" disabled={removing}>
+                              {removing && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                              Remove {selected.size.toLocaleString()}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Delete {selected.size.toLocaleString()} listing{selected.size === 1 ? "" : "s"}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Permanently deleted, along with their source candidates. They will not
+                                come back on the next seller check — detection compares against each
+                                seller's known-ASIN baseline, which already includes them. This cannot
+                                be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => removeIds(Array.from(selected), "Deleted")}>
+                                Delete {selected.size.toLocaleString()}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {key === "done" && doneTruncated && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing the {done.length} most recent of {doneTotal.toLocaleString()}. Remove these
+                    to reveal older ones.
+                  </p>
+                )}
+
                 {rows.length === 0 && (
                   <p className="py-8 text-center text-xs text-muted-foreground">
                     {key === "done"
@@ -159,6 +282,14 @@ export default function NewListingsPanel() {
             return (
               <div key={listing.id} className="border-b last:border-b-0 pb-3 last:pb-0">
                 <div className="flex items-center gap-3">
+                  {key === "done" && (
+                    <Checkbox
+                      checked={selected.has(listing.id)}
+                      onCheckedChange={(v) => toggleOne(listing.id, v === true)}
+                      aria-label={`Select ${listing.title || listing.asin}`}
+                      className="shrink-0"
+                    />
+                  )}
                   <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0 overflow-hidden">
                     {listing.image_url ? (
                       <img src={listing.image_url} alt="" className="h-full w-full object-cover" />
@@ -221,6 +352,23 @@ export default function NewListingsPanel() {
                       // wait hours or expire unsearched.
                       <span className="text-xs text-muted-foreground shrink-0">Queued</span>
                     )
+                  )}
+
+                  {/* Single-row delete. No confirm: one row is cheap to lose and
+                      the bulk path is where an accident would actually hurt. */}
+                  {key === "done" && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      disabled={removing}
+                      onClick={() => removeIds([listing.id], "Deleted")}
+                      title="Delete this listing permanently"
+                      aria-label={`Delete ${listing.title || listing.asin}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
 
