@@ -14,6 +14,7 @@
 // produces ranked candidates for the user to verify.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
+import { classifyGeminiFailure, recordGeminiCall, type GeminiFailure } from '../_shared/gemini-usage.ts';
 import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 
@@ -316,11 +317,23 @@ function ruleScore(c: RawCandidate, listing: { upc: string | null; brand: string
   return Math.min(70, score); // pre-AI ceiling -- rule matching alone never claims high confidence
 }
 
+/**
+ * Text verdict, with the FAILURE distinguished from "no opinion".
+ *
+ * This used to return null for both, so a 429 read as a weak match rather than
+ * as the AI not having run -- see _shared/gemini-usage.ts. The outcome is now
+ * discriminated so the caller can say which happened.
+ */
+type TextVerifyOutcome =
+  | { ok: true; verdict: 'same_product' | 'same_franchise_diff_item' | 'different_product'; confidence: number }
+  | { ok: false; failure: GeminiFailure };
+
 async function geminiTextVerify(
+  supabase: any,
   listing: { title: string | null; brand: string | null; upc: string | null },
   candidate: RawCandidate,
   apiKey: string,
-): Promise<{ verdict: 'same_product' | 'same_franchise_diff_item' | 'different_product'; confidence: number } | null> {
+): Promise<TextVerifyOutcome> {
   try {
     const resp = await fetch(GEMINI_URL, {
       method: 'POST',
@@ -357,16 +370,31 @@ async function geminiTextVerify(
         tool_choice: { type: 'function', function: { name: 'verify' } },
       }),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      const failure = classifyGeminiFailure(resp.status);
+      await recordGeminiCall(supabase, false, resp.status, 'find-source-candidates/textVerify');
+      return { ok: false, failure };
+    }
     const j = await resp.json();
     const call = j?.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) return null;
+    if (!call) {
+      await recordGeminiCall(supabase, false, undefined, 'find-source-candidates/textVerify');
+      return { ok: false, failure: { kind: 'malformed', message: 'AI returned no verdict' } };
+    }
     const args = JSON.parse(call.function?.arguments ?? '{}');
-    if (!['same_product', 'same_franchise_diff_item', 'different_product'].includes(args.verdict)) return null;
-    return { verdict: args.verdict, confidence: Math.max(0, Math.min(100, parseInt(String(args.confidence ?? 0), 10))) };
+    if (!['same_product', 'same_franchise_diff_item', 'different_product'].includes(args.verdict)) {
+      await recordGeminiCall(supabase, false, undefined, 'find-source-candidates/textVerify');
+      return { ok: false, failure: { kind: 'malformed', message: 'AI returned an unrecognised verdict' } };
+    }
+    await recordGeminiCall(supabase, true, resp.status, 'find-source-candidates/textVerify');
+    return {
+      ok: true,
+      verdict: args.verdict,
+      confidence: Math.max(0, Math.min(100, parseInt(String(args.confidence ?? 0), 10))),
+    };
   } catch (e) {
-    console.warn('[find-source-candidates] Gemini verify failed:', (e as Error).message);
-    return null;
+    await recordGeminiCall(supabase, false, undefined, 'find-source-candidates/textVerify');
+    return { ok: false, failure: classifyGeminiFailure(undefined, (e as Error).message) };
   }
 }
 
@@ -673,11 +701,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, status: 'no_candidates', candidates: [], searchPass, usage: { searchCount: newCount, monthKey: mKey } });
     }
 
+    // Set when the AI genuinely could not run, as opposed to having no opinion.
+    // Reported on the candidate so a quota outage is never mistaken for a weak
+    // product match -- the two used to be indistinguishable.
+    let aiFailure: GeminiFailure | null = null;
+
     const verified = await Promise.all(scored.map(async (c) => {
-      const [gemini, image] = await Promise.all([
-        geminiTextVerify(listing, c, GEMINI_API_KEY),
+      const [textOutcome, image] = await Promise.all([
+        geminiTextVerify(admin, listing, c, GEMINI_API_KEY),
         compareImages(c.imageUrl, listing.image_url, GEMINI_API_KEY),
       ]);
+      const gemini = textOutcome.ok ? textOutcome : null;
+      if (!textOutcome.ok && !aiFailure) aiFailure = textOutcome.failure;
       const confidence = blendConfidence(c.score, gemini, image);
 
       // The reason string used to be derived from the Gemini TEXT verdict
@@ -690,7 +725,12 @@ Deno.serve(async (req) => {
       // gathered overstates the case for exactly the mid-confidence matches a
       // user leans on the reason to judge.
       const imageCompared = !!image && image.verdict !== 'unavailable';
-      const reason = !gemini
+      const reason = !textOutcome.ok
+        // Names the OUTAGE rather than implying a weak match. "Based on text
+        // match only" was the same string whether the AI declined or was
+        // unreachable, which is what made a quota failure invisible.
+        ? `${textOutcome.failure.message} — scored on text match only`
+        : !gemini
         ? 'Based on text match only'
         : gemini.verdict === 'same_product'
           ? (imageCompared ? 'Text and image signals align' : 'Text signals align — no image to compare')
@@ -782,7 +822,13 @@ Deno.serve(async (req) => {
 
     await admin.from('seller_watch_new_listings').update({ source_status: 'candidates_found', candidates: verified }).eq('id', listingId);
 
-    return jsonResponse({ ok: true, status: 'candidates_found', candidates: verified, searchPass, usage: { searchCount: newCount, monthKey: mKey } });
+    // Reported on the response too, so a caller can tell "the AI was down"
+    // from "these were weak matches" without reading each candidate's reason.
+    return jsonResponse({
+      ok: true, status: 'candidates_found', candidates: verified, searchPass,
+      aiUnavailable: aiFailure ? (aiFailure as GeminiFailure).message : null,
+      usage: { searchCount: newCount, monthKey: mKey },
+    });
   } catch (e) {
     console.error('[find-source-candidates] error', (e as Error).message);
     return jsonResponse({ error: (e as Error).message }, 500);

@@ -24,6 +24,7 @@
 // claim_auto_source_budget in migration 20260816140000.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { readEligibility } from '../_shared/eligibility-lookup.ts';
+import { withCronLock } from '../_shared/cron-lock.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -89,8 +90,21 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   const deadlineAt = startedAt + RUN_BUDGET_MS;
 
-  try {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+  // Wrapped so every run leaves a record in cron_run_history.
+  //
+  // Auditing today's cap consumption was impossible: search_count said 80, but
+  // last_searched_at lives on the listing rows and those had been deleted, so
+  // "was that 80 real searches" had no answer at all. Per-run granted/ran/failed
+  // is now persisted independently of the listings, so the same question is
+  // answerable tomorrow even if every row is cleared.
+  //
+  // The lock matters on its own too: runs are every 10 minutes but a single run
+  // can take ~60s per search, and two overlapping runs would each claim budget
+  // against the same daily cap.
+  let outcome: Record<string, unknown> = {};
+  const lock = await withCronLock(admin, 'auto-source-new-listings', 300, async () => {
 
     // Retire listings that were never searched. Runs first and unconditionally:
     // it is a cheap single UPDATE, and if it sat after the search loop an
@@ -119,9 +133,10 @@ Deno.serve(async (req) => {
       .eq('qualified', true)
       .order('detected_at', { ascending: false })
       .limit(CANDIDATE_SCAN);
-    if (error) return jsonResponse({ error: error.message }, 500);
+    if (error) throw new Error(error.message);
     if (!pending?.length) {
-      return jsonResponse({ ok: true, pending: 0, searched: 0, expired, elapsedMs: Date.now() - startedAt });
+      outcome = { ok: true, pending: 0, searched: 0, expired, elapsedMs: Date.now() - startedAt };
+      return { items_processed: 0, detail: { expired, pending: 0 } };
     }
 
     // Group by user: the cap is per user, and claiming once per user beats one
@@ -241,7 +256,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({
+    outcome = {
       ok: true,
       pending: pending.length,
       expired,
@@ -250,9 +265,21 @@ Deno.serve(async (req) => {
       failed,
       perUser,
       elapsedMs: Date.now() - startedAt,
-    });
-  } catch (e) {
-    console.error('[auto-source-new-listings] error', (e as Error).message);
-    return jsonResponse({ error: (e as Error).message }, 500);
+    };
+    // granted vs ran per user is the pair that makes the daily count auditable:
+    // a gap between them is budget claimed and not spent.
+    return {
+      items_processed: searched,
+      detail: { pending: pending.length, expired, searched, capped, failed, perUser },
+    };
+  });
+
+  if (lock.skipped) {
+    return jsonResponse({ ok: true, skipped_locked: true, reason: 'a previous run is still in flight' });
   }
+  if (lock.status === 'failed') {
+    console.error('[auto-source-new-listings] error', lock.error);
+    return jsonResponse({ error: lock.error || 'run failed' }, 500);
+  }
+  return jsonResponse(outcome);
 });
