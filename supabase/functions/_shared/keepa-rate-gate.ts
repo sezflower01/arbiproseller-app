@@ -147,6 +147,53 @@ export async function reportKeepaTokensLeft(
   if (error) console.warn('[Keepa] failed to record observed tokensLeft:', error.message);
 }
 
+/**
+ * Record that Keepa refused a call with 429, and the balance at that moment.
+ *
+ * PURELY OBSERVATIONAL -- changes no behaviour, gates nothing. It exists
+ * because a real failure ("the analyzer page fails to load most of the time")
+ * could not be diagnosed: keepa_daily_usage.keepa_429_count read 0 on every
+ * row because only repricer-sp-api-pricing ever incremented it, and
+ * keepa_token_budget is service-role-only, so every past failure left no
+ * trace at all. Plausible was as far as the analysis could get.
+ *
+ * Pass tokensLeft when the 429 body carries it -- the balance AT the moment of
+ * refusal is the number that turns "the background workers might be starving
+ * interactive requests" into a measurement.
+ */
+export async function recordKeepa429(
+  supabase: any,
+  tokensLeft?: unknown,
+  caller?: string,
+): Promise<void> {
+  const usageDate = new Date().toISOString().split('T')[0];
+  try {
+    const { data: row } = await supabase
+      .from('keepa_daily_usage')
+      .select('keepa_429_count')
+      .eq('usage_date', usageDate)
+      .maybeSingle();
+
+    await supabase
+      .from('keepa_daily_usage')
+      .upsert(
+        { usage_date: usageDate, keepa_429_count: (row?.keepa_429_count ?? 0) + 1 },
+        { onConflict: 'usage_date' },
+      );
+
+    // Logged as well as counted: the counter shows how often, the log line
+    // shows when and with what balance, which is what a correlation needs.
+    console.warn(
+      `[Keepa] 429 refused${caller ? ` for ${caller}` : ''}` +
+      `${typeof tokensLeft === 'number' ? ` (tokensLeft=${tokensLeft})` : ''} at ${new Date().toISOString()}`,
+    );
+  } catch (e) {
+    console.warn('[Keepa] failed to record 429:', (e as Error).message);
+  }
+
+  if (typeof tokensLeft === 'number') await reportKeepaTokensLeft(supabase, tokensLeft);
+}
+
 // --- Layer 1 implementation (original call-rate claim, unchanged) ---------
 async function acquireCallRateSlot(supabase: any): Promise<{ ok: boolean; waitSeconds: number }> {
   const usageDate = new Date().toISOString().split('T')[0];

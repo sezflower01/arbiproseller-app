@@ -4,6 +4,11 @@
 // connected their account. Results are cached per (asin, marketplace) for 30 min.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+// Observation only. reportKeepaTokensLeft / recordKeepa429 write what Keepa
+// reports; NO gate is acquired here on purpose. Adding one would change when
+// this function runs, and the point of this pass is to measure the existing
+// behaviour rather than alter it before the cause is proven.
+import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
 import { summarizeCountSeries, computeBuyBoxOwnership } from '../_shared/plRiskSeries.ts';
 import { computePrivateLabelRisk, plRiskCategoricalLabel } from '../_shared/plRisk.ts';
 
@@ -283,6 +288,11 @@ Deno.serve(async (req) => {
       console.error('[analyzer-product-snapshot] Keepa /product failed', resp.status, txt.slice(0, 400));
       // 429 fallback: return stale cache if any
       if (resp.status === 429) {
+        // Keepa puts tokensLeft in the 429 body too -- capturing it here is
+        // the whole point: it records the balance AT the moment of refusal.
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* body not JSON */ }
+        await recordKeepa429(supabase, tl, 'analyzer-product-snapshot /product');
         const { data: stale } = await supabase
           .from('product_analyzer_snapshot_cache')
           .select('snapshot, fetched_at')
@@ -311,6 +321,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: `Keepa HTTP ${resp.status}: ${txt.slice(0, 200) || 'rate limited or invalid key'}` }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     const json = await resp.json().catch((e) => { console.error('[analyzer-product-snapshot] Keepa JSON parse failed', e); return {}; });
+    // Ground truth from a successful call. Without this the budget table only
+    // ever hears from the background workers, so a dip caused by interactive
+    // use is invisible.
+    await reportKeepaTokensLeft(supabase, json?.tokensLeft, json?.refillRate);
     const p = json?.products?.[0];
     if (!p) {
       console.error('[analyzer-product-snapshot] Product not found in Keepa response', { asin, tokensLeft: json?.tokensLeft, error: json?.error, refillIn: json?.refillIn });
@@ -431,8 +445,18 @@ Deno.serve(async (req) => {
             const t = setTimeout(() => ctrl.abort(), 12000);
             const sRes = await fetch(sUrl, { signal: ctrl.signal });
             clearTimeout(t);
-            if (!sRes.ok) continue;
+            if (!sRes.ok) {
+              // The seller lookup is a SECOND Keepa spend on the same page
+              // load (a flat 10 tokens per call, measured), so its refusals
+              // matter as much as the product call's. Previously it just
+              // `continue`d and the failure vanished.
+              if (sRes.status === 429) {
+                await recordKeepa429(supabase, undefined, 'analyzer-product-snapshot /seller');
+              }
+              continue;
+            }
             const sJson = await sRes.json();
+            await reportKeepaTokensLeft(supabase, sJson?.tokensLeft, sJson?.refillRate);
             const sellers = sJson?.sellers || {};
             for (const id of slice) {
               const s = sellers[id];
