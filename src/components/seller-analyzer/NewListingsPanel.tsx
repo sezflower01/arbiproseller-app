@@ -15,7 +15,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader2, ExternalLink, Package, Store, Check, X, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, Package, Store, Check, X, Trash2, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSellerNewListings, type SourceCandidate } from "@/hooks/use-seller-new-listings";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +44,37 @@ function amazonListingUrl(asin: string, marketplace: string): string {
 function amazonStorefrontUrl(sellerId: string, marketplace: string): string {
   const host = MARKETPLACE_DOMAIN[marketplace.toUpperCase()] || "amazon.com";
   return `https://www.${host}/s?i=merchant-items&me=${encodeURIComponent(sellerId)}`;
+}
+
+/**
+ * Turn a stored disqualified_reason into something a person can act on.
+ *
+ * The raw values carry a payload after a colon (`excluded_group:dvd`,
+ * `rank_over_500000:1254159`) because the worker records what it actually saw
+ * rather than a generic label -- that detail is the difference between "some
+ * rule blocked this" and "this is rank 1.2M, far past your ceiling".
+ */
+function formatDisqualifiedReason(raw: string | null): string {
+  if (!raw) return "Not searchable";
+  const [kind, detail] = raw.split(":");
+  switch (kind) {
+    case "restricted":
+      return "Restricted — cannot be sold";
+    case "needs_approval_excluded":
+      return "Needs approval — excluded by your setting";
+    case "no_upc":
+      return "No UPC — nothing to search with";
+    case "excluded_group":
+      return `Excluded category${detail ? `: ${detail}` : ""}`;
+    case "rank_over_500000":
+      return detail
+        ? `Sales rank ${Number(detail).toLocaleString()} — over the 500,000 limit`
+        : "Sales rank over the limit";
+    case "expired":
+      return "Expired unsearched after 5 days";
+    default:
+      return raw;
+  }
 }
 
 function CandidateRow({
@@ -217,6 +249,18 @@ export default function NewListingsPanel() {
             const isDone = key === "done";
             const rows = isDone ? done : pending;
             const total = isDone ? doneTotal : pendingTotal;
+            // A row with qualified === false will NEVER be searched -- the
+            // auto-source worker filters on .eq('qualified', true). Listing it
+            // as "Queued" promised work that was never going to happen, which
+            // is what made a DVD-heavy seller look like it was flooding the
+            // search budget when in fact none of those rows were reachable.
+            // Measured 2026-08-17: 2,383 of 2,484 rows are disqualified.
+            //
+            // Separated rather than hidden: "why is this listing not being
+            // searched" is a real question, and disqualified_reason has been
+            // stored on every row all along without ever being shown.
+            const blocked = isDone ? [] : rows.filter((l) => l.qualified === false);
+            const shown = isDone ? rows : rows.filter((l) => l.qualified !== false);
             const ids = rows.map((l) => l.id);
             const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
             // Only the loaded rows can ever be selected, so the label says so
@@ -396,7 +440,7 @@ export default function NewListingsPanel() {
                       : "Nothing queued — every detected listing has been searched."}
                   </p>
                 )}
-                {rows.map((listing) => {
+                {shown.map((listing) => {
             const showCandidates = listing.source_status === "candidates_found" || listing.source_status === "sourced";
             const showNoCandidates = listing.source_status === "no_candidates";
 
@@ -514,6 +558,67 @@ export default function NewListingsPanel() {
               </div>
                 );
                 })}
+
+                {blocked.length > 0 && (
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground hover:bg-muted/50"
+                      >
+                        <span>
+                          {blocked.length.toLocaleString()} not searchable — these will never be
+                          searched
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2 divide-y rounded-md border">
+                      {/* Compact deliberately: a row that will never be searched
+                          has no candidates to show and no source to mark, so the
+                          full layout would be mostly empty controls. */}
+                      {blocked.map((listing) => (
+                        <div key={listing.id} className="flex items-center gap-3 px-3 py-2">
+                          <Checkbox
+                            checked={selected.has(listing.id)}
+                            onCheckedChange={(v) => toggleOne(listing.id, v === true)}
+                            aria-label={`Select ${listing.title || listing.asin}`}
+                            className="shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="truncate text-sm">{listing.title || listing.asin}</span>
+                              <EligibilityBadge status={eligibility[listing.asin]} />
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              <a
+                                href={amazonListingUrl(listing.asin, listing.marketplace)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                {listing.asin}
+                              </a>
+                              {" "}· {formatDisqualifiedReason(listing.disqualified_reason)}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                            disabled={removing}
+                            onClick={() => removeIds([listing.id], "Deleted")}
+                            title="Delete this listing permanently"
+                            aria-label={`Delete ${listing.title || listing.asin}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
               </TabsContent>
             );
           })}
