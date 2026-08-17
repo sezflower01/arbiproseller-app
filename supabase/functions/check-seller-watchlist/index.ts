@@ -497,15 +497,20 @@ Deno.serve(async (req) => {
       // nothing", silently switching the filter off for a user whose seed rows
       // failed to write.
       const userExclusions: { groups?: Set<string>; brands?: Set<string> } = {};
+      // Per-user alert address. NULL means the account email, which is what
+      // seller_watchlist.notify_email already holds -- so the fallback below is
+      // the existing behaviour, unchanged.
+      let notifyOverride: string | null = null;
       if (unionNewAsins.size > 0) {
         const uid = group[0].user_id;
         const { data: cfg } = await admin
           .from('auto_source_config')
-          .select('search_needs_approval')
+          .select('search_needs_approval, notify_email')
           .eq('user_id', uid)
           .maybeSingle();
         // Absent config means defaults, and the default is to allow.
         allowNeedsApproval = cfg?.search_needs_approval !== false;
+        notifyOverride = cfg?.notify_email?.trim() || null;
 
         const { data: terms } = await admin
           .from('source_excluded_terms')
@@ -591,7 +596,12 @@ Deno.serve(async (req) => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
               body: JSON.stringify({
-                to: w.notify_email,
+                // Resolved at SEND time, not baked into the watch row. A user
+                // who changes their address gets it applied to all 400+ existing
+                // watches immediately, with no bulk update and nothing to
+                // backfill. Falls back to the per-watch address, which is the
+                // account email the creator functions stamped.
+                to: notifyOverride || w.notify_email,
                 name: 'there',
                 emailType: 'seller-watch-new-listings',
                 sellerWatch: {

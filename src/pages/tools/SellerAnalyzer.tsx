@@ -23,6 +23,7 @@ import { Loader2, Store, BellPlus, Bell, BellOff } from "lucide-react";
 import { useSellerWatchlist, formatDuration, type SellerWatch } from "@/hooks/use-seller-watchlist";
 import { useToast } from "@/hooks/use-toast";
 import NewListingsPanel from "@/components/seller-analyzer/NewListingsPanel";
+import NotifyEmailField from "@/components/seller-analyzer/NotifyEmailField";
 import SourceRetailersPanel from "@/components/seller-analyzer/SourceRetailersPanel";
 import ExcludedDomainsPanel from "@/components/seller-analyzer/ExcludedDomainsPanel";
 import QualificationExclusionsPanel from "@/components/seller-analyzer/QualificationExclusionsPanel";
@@ -288,6 +289,12 @@ export default function SellerAnalyzer() {
                 <p className="text-xs text-muted-foreground border-t pt-3">
                   <strong>Restricted</strong> listings are never searched. This setting does not affect them.
                 </p>
+
+                <NotifyEmailField
+                  value={autoCfg.notify_email}
+                  saving={cfgSaving}
+                  onSave={(email) => updateAutoCfg({ notify_email: email })}
+                />
               </CardContent>
             </Card>
 

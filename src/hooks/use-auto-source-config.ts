@@ -8,6 +8,8 @@ export interface AutoSourceConfig {
   search_needs_approval: boolean;
   /** When the retailer allowlist finds nothing, search wider (filtered to trusted suppliers). */
   allow_open_web_fallback: boolean;
+  /** Where new-listing alerts go. null = the account login email. */
+  notify_email: string | null;
 }
 
 /** Mirrors the column defaults, used before a row exists for this user. */
@@ -16,6 +18,7 @@ const DEFAULTS: AutoSourceConfig = {
   daily_cap: 80,
   search_needs_approval: true,
   allow_open_web_fallback: true,
+  notify_email: null,
 };
 
 /**
@@ -39,7 +42,7 @@ export function useAutoSourceConfig() {
       const [{ data: cfg }, { data: usage }] = await Promise.all([
         supabase
           .from("auto_source_config")
-          .select("enabled, daily_cap, search_needs_approval, allow_open_web_fallback")
+          .select("enabled, daily_cap, search_needs_approval, allow_open_web_fallback, notify_email")
           .maybeSingle(),
         supabase.from("auto_source_daily_usage").select("search_count").eq("day", today).maybeSingle(),
       ]);
