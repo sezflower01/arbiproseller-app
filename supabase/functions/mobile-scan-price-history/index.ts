@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { waitForApiToken } from "../_shared/rate-limiter.ts";
 import {
   acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
-  KEEPA_COST, type KeepaSlotOptions,
+  KEEPA_COST, KEEPA_RESERVE, type KeepaSlotOptions,
 } from "../_shared/keepa-rate-gate.ts";
 
 import {
@@ -667,8 +667,13 @@ Deno.serve(async (req) => {
     // SP-API with a stated reason, which is the whole point: a busy budget now
     // produces a visible explanation instead of thin data nobody can account
     // for.
+    // INTERACTIVE tier (reserve 0). At the default 60 floor this claim was
+    // arithmetically impossible below 65 tokens — measured live at 24.19 on
+    // 2026-08-18 12:52 UTC, refusing every panel view while UNGATED callers
+    // kept draining the same bucket. No Layer 1 claimants are added here.
     const slot = await acquireKeepaSlotWithRetry(admin, {
       estimatedTokens: KEEPA_COST.productPriceHistory,
+      minReserve: KEEPA_RESERVE.interactive,
     });
     if (!slot.ok) {
       return await degradeFallback(

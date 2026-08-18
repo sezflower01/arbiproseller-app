@@ -459,3 +459,10 @@ verify_jwt = false
 
 [functions.find-source-candidates]
 verify_jwt = true
+
+# Cron-invoked hourly floor-drop worker. Same reason as auto-source-new-listings:
+# pg_cron sends only x-internal-secret and no Authorization header, so platform
+# JWT verification would reject the call before the function runs. Auth is done
+# in-function by requireInternalCall() (internal secret or service-role bearer).
+[functions.repricer-auto-lower-min]
+verify_jwt = false

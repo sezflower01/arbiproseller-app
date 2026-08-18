@@ -264,3 +264,32 @@ async function acquireCallRateSlot(supabase: any): Promise<{ ok: boolean; waitSe
 
   return { ok: false, waitSeconds: Math.ceil(waitMs / 1000) };
 }
+
+/**
+ * Priority tiers, expressed as reserve floors.
+ *
+ * claim_keepa_tokens allows a claim when `balance - cost >= minReserve`, so a
+ * caller passing a LOWER floor outranks one passing a higher floor.
+ *
+ * MEASURED LIVE 2026-08-18 12:52 UTC, mid-incident: tokens_left 24.19,
+ * denied_count 489 and climbing, last denial 9s old. At the default floor of
+ * 60 the analyzer needs 24.19 - 5 >= 60, which is false, so EVERY panel view
+ * was refused. At interactive (0) the same claim is 19.19 >= 0 and succeeds.
+ *
+ * The perverse part, and the reason this is not optional: the callers draining
+ * the bucket to 24 are the UNGATED ones (mobile-scan-price-stability,
+ * asin-dimensions, analyzer-product-snapshot, check-price-alerts). They spend
+ * without claiming, while the one gated interactive caller is locked out by a
+ * floor held for repricer-sp-api-pricing -- which does not claim tokens at all
+ * and made 0 Keepa calls in the 30 days to 2026-08-17. The panel was starving
+ * itself.
+ *
+ * NOTE: Layer 1 (4 calls/min) has no priority concept -- these floors apply to
+ * Layer 2 only. Gating MORE functions adds Layer 1 claimants and made the
+ * extension unusable earlier tonight (reverted in 9cc781d). Do not re-gate the
+ * three analyzer callers without first giving Layer 1 an interactive lane.
+ */
+export const KEEPA_RESERVE = {
+  interactive: 0,
+  background: 120,
+} as const;
