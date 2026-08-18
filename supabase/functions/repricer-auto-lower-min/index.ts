@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
     }
 
     // ── 6. Decide ──────────────────────────────────────────────────────────
-    const writes: { id: string; newMin: number; nextCount: number; invId?: string }[] = [];
+    const writes: { id: string; newMin: number; nextCount: number; invId?: string; baseline?: number }[] = [];
 
     for (const a of assignments) {
       const mp = a.marketplace;
@@ -292,7 +292,24 @@ Deno.serve(async (req) => {
       if (drops >= MAX_DROPS) { push("exhausted_drop_count"); continue; }
 
       // RULE 1 — exhausted by cumulative %. Baseline is the ORIGINAL floor.
-      const manualMin = a.manual_min_price != null ? Number(a.manual_min_price) : null;
+      // SELF-HEALING BASELINE.
+      //
+      // manual_min_price is the anchor for the cumulative cap. It was only ever
+      // populated by a one-time backfill in migration 20260323123515 — there is
+      // no trigger, so ANY route that turns auto_lower_min_price on (the UI, a
+      // hand-written UPDATE, a future feature) leaves it NULL and silently
+      // disables the cumulative guard. The per-run cap alone still permits
+      // 0.7^5 ≈ 17% of the original price across five drops — an 83% fall where
+      // the rule intends to stop at 30%.
+      //
+      // So the worker anchors it itself rather than trusting callers to
+      // remember. The value snapshotted is the floor as it stands BEFORE this
+      // run's drop, which is exactly what the original migration captured, and
+      // it is persisted with the write so it holds for every later run.
+      const manualMin = a.manual_min_price != null
+        ? Number(a.manual_min_price)
+        : (Number(currentMin) > 0 ? Number(currentMin) : null);
+      const baselineWasMissing = a.manual_min_price == null;
       if (manualMin != null && manualMin > 0) {
         const cumulativePct = ((manualMin - Number(currentMin)) / manualMin) * 100;
         d.cumulative_drop_pct = round2(cumulativePct);
@@ -394,6 +411,9 @@ Deno.serve(async (req) => {
         newMin,
         nextCount: drops + 1,
         invId: mp === "US" ? (inv.id as string) : undefined,
+        // Persist the anchor on the very first drop, so the cumulative guard is
+        // live from run two onward regardless of how the flag was enabled.
+        baseline: baselineWasMissing && manualMin != null ? manualMin : undefined,
       });
     }
 
@@ -407,6 +427,9 @@ Deno.serve(async (req) => {
             min_price_override: w.newMin,
             auto_floor_drop_count: w.nextCount,
             updated_at: new Date().toISOString(),
+            // Only ever written when it was NULL — the anchor must never move
+            // once set, or the cumulative cap would follow the price down.
+            ...(w.baseline != null ? { manual_min_price: w.baseline } : {}),
           })
           .eq("id", w.id);
         if (uErr) {
