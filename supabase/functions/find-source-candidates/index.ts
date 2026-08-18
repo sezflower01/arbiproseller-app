@@ -716,10 +716,93 @@ Deno.serve(async (req) => {
     // product match -- the two used to be indistinguishable.
     let aiFailure: GeminiFailure | null = null;
 
-    const verified = await Promise.all(scored.map(async (c) => {
+    // ── Stage 1: price every candidate BEFORE verifying it ──
+    //
+    // The ordering here is load-bearing, not stylistic. extract-product-price
+    // already returns the page's product image (og:image / JSON-LD / retailer
+    // payload) as a byproduct of the fetch it makes for the price. Until
+    // 2026-08-18 that image arrived AFTER compareImages had already run, so it
+    // could only ever fill a thumbnail: the confidence blend was frozen without
+    // it. Candidate images otherwise come only from Google CSE's pagemap, which
+    // many results simply do not carry, and the SerpAPI fallback path never sets
+    // one at all -- so the 25% image weight in blendConfidence() was being
+    // forfeited on exactly the candidates least able to spare it.
+    //
+    // Pricing first costs no extra fetches: the same three extractions already
+    // ran, just later. Wall-clock is unchanged -- max(price) + max(verify)
+    // either way. It does mean more image comparisons now genuinely execute,
+    // which is the point, and a fraction land in compareImages' borderline pHash
+    // band (0.35-0.86) and spend a Gemini vision call. That is the real cost.
+    //
+    // Known limit, measured 2026-08-18: this only helps pages that expose an
+    // image in STATIC html. Heavy-JS retailers (bathandbodyworks.com ships 11
+    // meta tags, none og:, and an Organization-only JSON-LD block; Instacart is
+    // the same shape) sit under DEFAULT_POLICY with try_phase2=false, so nothing
+    // renders them and they stay image-less. Not a regression -- they had no
+    // image before either.
+    type PricedCandidate = {
+      price: number | null;
+      currency: string | null;
+      availability: string | null;
+      priceResolution: string | null;
+      imageUrl: string | null;
+      // 'search' = Google CSE pagemap, 'page' = scraped from the product page.
+      // Recorded so the value of this change is countable rather than assumed.
+      imageSource: 'search' | 'page' | null;
+    };
+
+    const priced: PricedCandidate[] = await Promise.all(
+      scored.map(async (c): Promise<PricedCandidate> => {
+        const out: PricedCandidate = {
+          price: null,
+          currency: null,
+          availability: null,
+          priceResolution: null,
+          imageUrl: c.imageUrl,
+          imageSource: c.imageUrl ? 'search' : null,
+        };
+        if (!INTERNAL_SECRET) return out;
+        try {
+          const priceRes = await fetch(`${SUPABASE_URL}/functions/v1/extract-product-price`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+            body: JSON.stringify({ url: c.url, user_id: userId }),
+          });
+          if (!priceRes.ok) {
+            out.priceResolution = `http_${priceRes.status}`;
+            return out;
+          }
+          const priceJson = await priceRes.json().catch(() => ({}));
+          if (typeof priceJson?.price_current === 'number') {
+            out.price = priceJson.price_current;
+            out.currency = priceJson.currency || null;
+            out.availability = priceJson.availability_status || null;
+          }
+          out.priceResolution = priceJson?.final_resolution || (out.price == null ? 'no_price' : 'price_extracted');
+          // Kept even when the price extraction failed: extract-product-price
+          // still returns og:image on its blocked and no-price paths, and an
+          // image is worth having on its own.
+          if (!out.imageUrl && typeof priceJson?.image_url === 'string' && priceJson.image_url) {
+            out.imageUrl = priceJson.image_url;
+            out.imageSource = 'page';
+          }
+        } catch (e) {
+          out.priceResolution = 'error';
+          console.warn(`[find-source-candidates] price check failed for ${getDomain(c.url)}:`, (e as Error).message);
+        }
+        return out;
+      }),
+    );
+
+    const pageSourced = priced.filter((p) => p.imageSource === 'page').length;
+    console.log(`[find-source-candidates] images: ${priced.filter((p) => p.imageUrl).length}/${priced.length} (${pageSourced} scraped from page)`);
+
+    // ── Stage 2: verify, now that the scraped image can actually count ──
+    const verified = await Promise.all(scored.map(async (c, i) => {
+      const p = priced[i];
       const [textOutcome, image] = await Promise.all([
         geminiTextVerify(admin, listing, c, GEMINI_API_KEY),
-        compareImages(c.imageUrl, listing.image_url, GEMINI_API_KEY, { supabase: admin }),
+        compareImages(p.imageUrl, listing.image_url, GEMINI_API_KEY, { supabase: admin }),
       ]);
       const gemini = textOutcome.ok ? textOutcome : null;
       if (!textOutcome.ok && !aiFailure) aiFailure = textOutcome.failure;
@@ -750,61 +833,28 @@ Deno.serve(async (req) => {
         url: c.url,
         domain: getDomain(c.url),
         title: c.title,
-        imageUrl: c.imageUrl,
+        imageUrl: p.imageUrl,
+        imageSource: p.imageSource,
         confidence,
         label: confidenceLabel(confidence),
         reason,
-        price: null as number | null,
-        currency: null as string | null,
-        availability: null as string | null,
+        price: p.price,
+        currency: p.currency,
+        availability: p.availability,
         // Why the price is (or isn't) there -- surfaced so a missing price can
         // be read as "blocked" vs "page had none" instead of a silent null.
-        priceResolution: null as string | null,
+        priceResolution: p.priceResolution,
       };
     }));
 
     verified.sort((a, b) => b.confidence - a.confidence);
 
-    // Price EVERY verified candidate, not just the top one.
-    //
-    // Pricing only verified[0] was a cost guard, but it made candidates 2 and 3
-    // structurally useless for a buying decision: their "price not confirmed"
-    // never meant the page hid its price, only that nobody looked. Three
-    // extractions in parallel cost wall-clock, not quota -- extract-product-price
-    // is our own function, and it escalates to a paid render only when the cheap
-    // static parse fails.
-    //
-    // `priceResolution` records WHY an extraction failed (blocked_phase1,
-    // not_found_unblocked, ...) so the per-domain hit rate below can be read as
-    // a diagnosis rather than just a disappointing number.
-    if (INTERNAL_SECRET) {
-      await Promise.all(verified.map(async (v) => {
-        try {
-          const priceRes = await fetch(`${SUPABASE_URL}/functions/v1/extract-product-price`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
-            body: JSON.stringify({ url: v.url, user_id: userId }),
-          });
-          if (!priceRes.ok) {
-            v.priceResolution = `http_${priceRes.status}`;
-            return;
-          }
-          const priceJson = await priceRes.json().catch(() => ({}));
-          if (typeof priceJson?.price_current === 'number') {
-            v.price = priceJson.price_current;
-            v.currency = priceJson.currency || null;
-            v.availability = priceJson.availability_status || null;
-          }
-          v.priceResolution = priceJson?.final_resolution || (v.price == null ? 'no_price' : 'price_extracted');
-          // SerpAPI results never carry an image (no pagemap data); backfill
-          // from the page itself if the search step didn't already have one.
-          if (!v.imageUrl && priceJson?.image_url) v.imageUrl = priceJson.image_url;
-        } catch (e) {
-          v.priceResolution = 'error';
-          console.warn(`[find-source-candidates] price check failed for ${v.domain}:`, (e as Error).message);
-        }
-      }));
-    }
+    // NOTE: pricing used to happen HERE, after verification. It now runs in
+    // stage 1 above so the page image it returns reaches compareImages. Every
+    // candidate is still priced, not just verified[0] -- that remains
+    // deliberate: candidates 2 and 3 with "price not confirmed" were
+    // structurally useless for a buying decision when it only meant nobody
+    // looked. Three extractions in parallel cost wall-clock, not quota.
 
     // Per-domain outcomes, so "which retailers earn their place" is answered by
     // counters rather than impressions. Only allowlisted domains are recorded --

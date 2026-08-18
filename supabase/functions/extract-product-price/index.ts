@@ -973,9 +973,33 @@ function extractTitle(html: string): string | null {
   return t ? t[1].trim().slice(0, 250) : null;
 }
 
+// Candidate product image, taken from HTML we already hold — no extra fetch.
+//
+// The original single pattern required property BEFORE content on the same tag.
+// That is only a convention, not a rule: React Helmet, Next's <Head>, and most
+// CMS templates emit `<meta content="..." property="og:image">` just as often,
+// and every one of those was silently missed. Measured 2026-08-18 while checking
+// why candidate thumbnails were sparse.
+//
+// Ordered by trustworthiness: og:image is the social-preview image sites curate
+// deliberately; twitter:image is usually the same asset; link rel=image_src is
+// the older equivalent and still emitted by several retail platforms.
 function extractImage(html: string): string | null {
-  const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
-  return og ? og[1].trim() : null;
+  const patterns: RegExp[] = [
+    /<meta[^>]+property=["']og:image(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url|:url)?["']/i,
+    /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i,
+    /<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    const v = m?.[1]?.trim();
+    // Reject data: URIs and protocol-relative junk — compareImages needs a
+    // fetchable absolute URL, and a bad one costs a wasted download.
+    if (v && /^https?:\/\//i.test(v)) return v;
+  }
+  return null;
 }
 
 // ── Availability normalization ──
