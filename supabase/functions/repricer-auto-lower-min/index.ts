@@ -78,7 +78,7 @@ import { requireInternalCall } from "../_shared/require-internal.ts";
 import { withCronLock } from "../_shared/cron-lock.ts";
 import { getUsdToRate } from "../_shared/fx-utils.ts";
 import { marketplaceCurrency } from "../_shared/marketplace-map.ts";
-import { roiAtPrice, priceForRoi } from "../_shared/roi-floor.ts";
+import { roiAtPrice, priceForRoi, mergeFeeSources } from "../_shared/roi-floor.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -137,6 +137,8 @@ interface Decision {
   drop_count?: number;
   cumulative_drop_pct?: number | null;
   fx_rate?: number;
+  /** Which fee source backed the ROI maths: asin_fee_cache or inventory. */
+  fee_source?: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -220,6 +222,20 @@ Deno.serve(async (req) => {
       const k = `${s.asin}::${s.marketplace}`;
       if (!snapBy.has(k)) snapBy.set(k, s);
     }
+
+    // ── 3b. Per-ASIN fee cache ─────────────────────────────────────────────
+    // fees_json alone is not a sufficient fee source: dry run #2 refused all 18
+    // remaining candidates as `fees_unresolvable` without this. See
+    // mergeFeeSources() for why guessing the gap is not an option.
+    const { data: feeRows } = await admin
+      .from("asin_fee_cache")
+      .select("user_id, asin, marketplace, referral_rate, fba_fee_fixed, fee_source")
+      .in("user_id", userIds)
+      .in("asin", asins)
+      .in("marketplace", marketplaces)
+      .limit(20000);
+    const feeBy = new Map<string, Record<string, unknown>>();
+    for (const f of feeRows ?? []) feeBy.set(`${f.user_id}::${f.asin}::${f.marketplace}`, f);
 
     // ── 4. Rule-level ROI floors ───────────────────────────────────────────
     const { data: rules } = await admin
@@ -314,7 +330,14 @@ Deno.serve(async (req) => {
       const roiFloor = ruleFloor == null ? policyFloor : Math.max(policyFloor, ruleFloor);
       d.roi_floor = roiFloor;
 
-      const floorPrice = priceForRoi(Number(inv.cost), inv.fees_json, roiFloor, fx, mp);
+      // Merge the row's fees with the per-ASIN cache before any ROI maths.
+      const feeCache = feeBy.get(`${a.user_id}::${a.asin}::${mp}`) as
+        | { referral_rate?: number | null; fba_fee_fixed?: number | null; fee_source?: string | null }
+        | undefined;
+      const fees = mergeFeeSources(inv.fees_json, feeCache, mp);
+      d.fee_source = feeCache ? String(feeCache.fee_source ?? "asin_fee_cache") : "inventory";
+
+      const floorPrice = priceForRoi(Number(inv.cost), fees, roiFloor, fx, mp);
       if (floorPrice == null) { push("fees_unresolvable"); continue; }
 
       // Target: undercut the lowest by one cent.
@@ -351,7 +374,7 @@ Deno.serve(async (req) => {
       // Independent re-verification after rounding. The entire point of this
       // worker is that a floor is never set below its ROI limit — so prove it
       // from the final number rather than trusting the algebra that produced it.
-      const verifyRoi = roiAtPrice(Number(inv.cost), inv.fees_json, newMin, fx, mp);
+      const verifyRoi = roiAtPrice(Number(inv.cost), fees, newMin, fx, mp);
       if (verifyRoi == null) { push("roi_verify_unavailable"); continue; }
       if (verifyRoi < roiFloor - ROI_VERIFY_TOLERANCE) {
         d.roi_at_new_min = verifyRoi;

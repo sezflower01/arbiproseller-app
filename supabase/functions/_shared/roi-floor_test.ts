@@ -16,7 +16,7 @@
 //   deno test supabase/functions/_shared/roi-floor_test.ts
 
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1";
-import { priceForRoi, roiAtPrice } from "./roi-floor.ts";
+import { mergeFeeSources, priceForRoi, roiAtPrice } from "./roi-floor.ts";
 
 // Rate-based fee shape, as written by asin_fee_cache.
 const RATE_FEES = { referral_rate: 0.15, fba_fee_fixed: 3.22, marketplace: "US" };
@@ -105,6 +105,50 @@ Deno.test("refuses to guess fees rather than assuming a flat 15%", () => {
   );
   // ...but the same shape WITH a capture price is usable.
   assert(priceForRoi(10, { referralFee: 3.0, fbaFee: 4.0, price: 20 }, 70, 1, "US") !== null);
+});
+
+Deno.test("asin_fee_cache rescues rows fees_json alone cannot resolve", () => {
+  // Dry run #2 refused all 18 candidates as `fees_unresolvable` because
+  // inventory.fees_json carries no usable structure on this account. The cache
+  // supplies fba_fee_fixed, which is the missing piece.
+  const cache = { referral_rate: 0.15, fba_fee_fixed: 3.5, fee_source: "spapi" };
+  assertEquals(roiAtPrice(10.51, null, 14.15, 1, "US"), null, "no cache -> refuse");
+
+  const merged = mergeFeeSources(null, cache, "US");
+  const roi = roiAtPrice(10.51, merged, 14.15, 1, "US");
+  assert(roi !== null, "cache-backed fees must resolve");
+});
+
+Deno.test("regression B074678KNX: real fees turn a fake profit into a real loss", () => {
+  // Dry run #1 reported +1.7% ROI on this ASIN off a flat-15% assumption, on a
+  // price the table showed at -14.3%. With the cache's fixed FBA fee included,
+  // the sign flips back to negative — which is what a break-even floor must see.
+  const cache = { referral_rate: 0.15, fba_fee_fixed: 3.5, fee_source: "spapi" };
+  const merged = mergeFeeSources(null, cache, "US");
+  const roi = roiAtPrice(10.51, merged, 14.15, 1, "US");
+  assert(roi !== null);
+  assert(roi! < 0, `expected a loss with real fees, got ${roi}%`);
+});
+
+Deno.test("merge priority: non-US replaces, legacy amounts are never overridden", () => {
+  const cache = { referral_rate: 0.12, fba_fee_fixed: 90, fee_source: "spapi" };
+
+  // Non-US: the cache wins outright, because inventory fee JSON is USD.
+  const mx = mergeFeeSources({ referral_rate: 0.15, fba_fee_fixed: 3.22, marketplace: "US" }, cache, "MX");
+  assertEquals(mx.fba_fee_fixed, 90);
+  assertEquals(mx.marketplace, "MX");
+
+  // Legacy dollar amounts are measured, not derived — leave them alone.
+  const legacy = mergeFeeSources(LEGACY_FEES, cache, "US");
+  assertEquals(legacy, LEGACY_FEES);
+
+  // US rate-based with a zero fixed fee: fill the gap from the cache.
+  const filled = mergeFeeSources({ referral_rate: 0.15, fba_fee_fixed: 0 }, cache, "US");
+  assertEquals(filled.fba_fee_fixed, 90);
+
+  // No usable cache entry: pass through untouched.
+  assertEquals(mergeFeeSources(LEGACY_FEES, { fba_fee_fixed: 0 }, "US"), LEGACY_FEES);
+  assertEquals(mergeFeeSources(null, null, "US"), null);
 });
 
 Deno.test("higher target ROI always means a higher floor (monotonic)", () => {

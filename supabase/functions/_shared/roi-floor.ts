@@ -39,6 +39,66 @@
 // returns null, and the worker skips the row as `fees_unresolvable`. Refusing to
 // act on a row is cheap; setting a loss-making floor is not.
 
+/** Row shape from asin_fee_cache, the authoritative per-ASIN fee source. */
+export interface FeeCacheRow {
+  referral_rate?: number | null;
+  fba_fee_fixed?: number | null;
+  fee_source?: string | null;
+}
+
+/**
+ * Merge inventory.fees_json with asin_fee_cache, mirroring the priority the
+ * table uses (AssignmentsTable.tsx ~line 629):
+ *
+ *   legacy dollar amounts  >  asin_fee_cache  >  rate-based defaults
+ *
+ * WHY THIS IS REQUIRED, not an optimisation. Dry run #2 skipped ALL 18 remaining
+ * candidates as `fees_unresolvable`, because fees_json alone carries no usable
+ * fee structure on this account. And dry run #1 showed what happens if you paper
+ * over that with a flat 15%: B074678KNX reported +1.7% ROI when its real fees are
+ * ~36%. Backing the numbers out, the gap is `fba_fee_fixed` — roughly $3.50 on
+ * that ASIN — which lives ONLY here. Without this merge the worker is either
+ * inert or wrong; there is no third option.
+ *
+ * For non-US the cache REPLACES fees_json outright: inventory rows typically hold
+ * US fee JSON in USD, and using it against a peso price is the same class of
+ * currency mix-up as comparing my_price to an MX lowest.
+ */
+export function mergeFeeSources(
+  feesJson: any,
+  feeCache: FeeCacheRow | null | undefined,
+  marketplace: string,
+): any {
+  if (!feeCache || !(Number(feeCache.fba_fee_fixed) > 0)) return feesJson;
+
+  const fromCache = {
+    referral_rate: feeCache.referral_rate ?? 0.15,
+    fba_fee_fixed: Number(feeCache.fba_fee_fixed),
+    fee_source: feeCache.fee_source || "asin_fee_cache",
+    marketplace,
+  };
+
+  // Non-US: always prefer the marketplace-specific cache.
+  if (marketplace !== "US") return fromCache;
+  // US with nothing usable on the row: take the cache wholesale.
+  if (!feesJson) return fromCache;
+
+  // US, rate-based row: fill in only what is missing or zero.
+  if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
+    let eff = feesJson;
+    if (!eff.fba_fee_fixed || Number(eff.fba_fee_fixed) <= 0) {
+      eff = { ...eff, fba_fee_fixed: fromCache.fba_fee_fixed, marketplace };
+    }
+    if (feeCache.referral_rate && Number(feeCache.referral_rate) > 0) {
+      eff = { ...eff, referral_rate: Number(feeCache.referral_rate), marketplace };
+    }
+    return eff;
+  }
+
+  // Legacy dollar amounts are measured, not derived — never override them.
+  return feesJson;
+}
+
 export const getOtherFixedFees = (feesJson: any): number =>
   Number(
     feesJson?.otherFees ??
