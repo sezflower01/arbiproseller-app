@@ -30,10 +30,15 @@
 //                 while already at drop_count=5, precisely because the check
 //                 lived only in the UI's aggregate counter and nowhere a
 //                 per-ASIN caller could see it.
-//  2. 30% CAP     Clamped against manual_min_price (the ORIGINAL floor), not
-//                 the current one. Clamping against the current value lets
-//                 successive runs walk past 30% cumulatively (0.7^n) — exactly
-//                 the ratchet the cap exists to prevent.
+//  2. 30% CAP     TWO guards, both required. Cumulative: never more than 30%
+//                 below manual_min_price (the ORIGINAL floor) — clamping against
+//                 the current value would let successive runs walk past 30%
+//                 cumulatively (0.7^n), the ratchet the cap exists to prevent.
+//                 Per-run: never more than 30% below the CURRENT floor in one
+//                 step — needed because when the seller has RAISED the floor
+//                 above manual_min_price the cumulative guard sits far below and
+//                 stops bounding the single cut. Dry run #1 caught B0FC2HXZYZ
+//                 about to take 23 -> 15.98, a 30.52% step, on exactly that shape.
 //  3. ONE PER RUN Each assignment is visited once per invocation, and
 //                 withCronLock() prevents overlapping invocations. In the manual
 //                 run B0F226Y3W8 asked for a second cut within the same hour
@@ -129,6 +134,7 @@ interface Decision {
   roi_at_new_min?: number | null;
   roi_floor?: number;
   drop_pct?: number | null;
+  drop_count?: number;
   cumulative_drop_pct?: number | null;
   fx_rate?: number;
 }
@@ -261,7 +267,13 @@ Deno.serve(async (req) => {
 
       // RULE 1 — exhausted by drop count.
       const drops = Number(a.auto_floor_drop_count ?? 0);
-      if (drops >= MAX_DROPS) { push(`exhausted_drop_count_${drops}`); continue; }
+      d.drop_count = drops;
+      // Reason keys are BUCKETS, never interpolated values: the skip_reasons
+      // tally is the only feedback an unattended job gives, and embedding the
+      // number made every cumulative skip its own key
+      // (exhausted_cumulative_36.06pct, _38.46pct, ...) — unreadable. The value
+      // lives on the decision row, where it can be queried.
+      if (drops >= MAX_DROPS) { push("exhausted_drop_count"); continue; }
 
       // RULE 1 — exhausted by cumulative %. Baseline is the ORIGINAL floor.
       const manualMin = a.manual_min_price != null ? Number(a.manual_min_price) : null;
@@ -269,7 +281,7 @@ Deno.serve(async (req) => {
         const cumulativePct = ((manualMin - Number(currentMin)) / manualMin) * 100;
         d.cumulative_drop_pct = round2(cumulativePct);
         if (cumulativePct >= MAX_CUMULATIVE_DROP_PCT) {
-          push(`exhausted_cumulative_${d.cumulative_drop_pct}pct`);
+          push("exhausted_cumulative");
           continue;
         }
       }
@@ -308,13 +320,25 @@ Deno.serve(async (req) => {
       // Target: undercut the lowest by one cent.
       const target = round2(Number(lowest) - UNDERCUT_STEP);
 
-      // RULE 2 — 30% cap, clamped against the ORIGINAL floor where known.
+      // RULE 2 — the 30% cap is TWO guards, and both are needed:
+      //
+      //   cumulative: never more than 30% below the ORIGINAL floor
+      //   per-run:    never more than 30% below the CURRENT floor in one step
+      //
+      // Clamping only on the cumulative floor is not enough. When
+      // manual_min_price sits BELOW the current min (the seller raised the floor
+      // after it was first set, so cumulative_drop_pct is negative) the
+      // cumulative floor is far under the current price and stops bounding the
+      // single step. The first dry run caught exactly that: B0FC2HXZYZ was set
+      // to drop 23 -> 15.98, a 30.52% single cut, on a row whose cumulative
+      // reading was -27.78%.
+      const perRunFloor = Number(currentMin) * (1 - MAX_CUMULATIVE_DROP_PCT / 100);
       const cumulativeFloor = manualMin != null && manualMin > 0
         ? manualMin * (1 - MAX_CUMULATIVE_DROP_PCT / 100)
-        : Number(currentMin) * (1 - MAX_CUMULATIVE_DROP_PCT / 100);
+        : perRunFloor;
 
-      // Never below the ROI floor, never below the cumulative cap.
-      const candidateRaw = Math.max(target, floorPrice, cumulativeFloor);
+      // Never below the ROI floor, never below either cap.
+      const candidateRaw = Math.max(target, floorPrice, cumulativeFloor, perRunFloor);
       // Round UP to the cent — this number IS a floor, so rounding down breaches it.
       const newMin = Math.ceil(candidateRaw * 100) / 100;
 
@@ -331,7 +355,7 @@ Deno.serve(async (req) => {
       if (verifyRoi == null) { push("roi_verify_unavailable"); continue; }
       if (verifyRoi < roiFloor - ROI_VERIFY_TOLERANCE) {
         d.roi_at_new_min = verifyRoi;
-        push(`roi_verify_failed_${verifyRoi}`);
+        push("roi_verify_failed");
         continue;
       }
 

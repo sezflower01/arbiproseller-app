@@ -24,11 +24,20 @@
 // rate used is returned with each decision so a historical number can always be
 // explained.
 //
-// NOTE ON THE 15% FALLBACK: `roi-math.ts` deliberately refuses to guess fees.
-// This module keeps the browser's 15% fallback instead, because the goal here is
-// to MATCH the seller-visible number rather than to be independently rigorous --
-// and because a missing-fees row is filtered out upstream by the worker before
-// any write. Callers must still treat a null return as "do not act".
+// ── NO GUESSED FEES (changed after the first dry run, 2026-08-18) ───────────
+// The browser falls back to a flat 15% when fees_json is unusable, and enriches
+// from asin_fee_cache separately. This module originally copied that fallback to
+// match the seller-visible number. The first dry run proved that unsafe:
+// B074678KNX came back at +1.7% ROI on a price LOWER than one the table had
+// shown at -14.3%. A lower price cannot improve ROI -- the 15% assumption was
+// simply understating real fees (~36% on that ASIN), and the worker was about to
+// set a floor below true break-even while reporting it as profitable.
+//
+// So this module now follows `roi-math.ts`'s rule instead: fees are REQUIRED.
+// A usable referral RATE must be derivable -- either `referral_rate` directly,
+// or a legacy amount paired with the price it was captured at. Anything else
+// returns null, and the worker skips the row as `fees_unresolvable`. Refusing to
+// act on a row is cheap; setting a loss-making floor is not.
 
 export const getOtherFixedFees = (feesJson: any): number =>
   Number(
@@ -81,10 +90,14 @@ function resolveFees(
       }
       // Referral scales with price; everything else is fixed. Derive the rate
       // from the price the fees were captured at.
+      // The referral RATE is what the inversion turns on. Without the price the
+      // amount was captured at, the rate cannot be derived -- and guessing it is
+      // the exact failure this module refuses to make.
       const feesAtPrice = feesJson.price ? Number(feesJson.price) : 0;
-      referralRate = feesAtPrice > 0 ? origReferralFee / feesAtPrice : 0.15;
+      if (!(feesAtPrice > 0)) return null;
+      referralRate = origReferralFee / feesAtPrice;
       fixedFees = fbaFee + variableClosingFee + otherFees;
-      assumed = feesAtPrice <= 0;
+      assumed = false;
     }
     // New format: rate-based, straight from asin_fee_cache.
     else if (feesJson.referral_rate !== undefined || feesJson.fba_fee_fixed !== undefined) {
@@ -108,7 +121,11 @@ function resolveFees(
     }
   }
 
-  // Cost still needs converting when no fee branch did it (missing or unusable fees_json).
+  // No recognisable fee structure at all -> refuse. `assumed` is still true only
+  // if neither branch above ran, which is exactly the guessed-fees case.
+  if (assumed) return null;
+
+  // Cost still needs converting when the fee branch did not do it.
   if (intl && localCost === cost) localCost = cost * fxRate;
 
   // A referral rate at or above 100% makes the inverse undefined (and the

@@ -84,6 +84,29 @@ Deno.test("refuses rather than guesses when inputs are unusable", () => {
   assertEquals(priceForRoi(10, { referral_rate: 1.0 }, 70, 1, "US"), null);
 });
 
+Deno.test("refuses to guess fees rather than assuming a flat 15%", () => {
+  // Regression for dry run #1: B074678KNX came back at +1.7% ROI on a price the
+  // table had shown at -14.3%, because a missing fee structure fell back to 15%
+  // while real fees were ~36%. A floor set from that is loss-making but reads as
+  // profitable — so an underivable referral rate must return null, not a number.
+  assertEquals(roiAtPrice(10, null, 20, 1, "US"), null, "no fees_json must refuse");
+  assertEquals(priceForRoi(10, null, 70, 1, "US"), null, "no fees_json must refuse");
+  assertEquals(roiAtPrice(10, {}, 20, 1, "US"), null, "empty fees_json must refuse");
+  assertEquals(
+    roiAtPrice(10, { someUnrelatedKey: 1 }, 20, 1, "US"),
+    null,
+    "unrecognised fee shape must refuse",
+  );
+  // Legacy amounts without the capture price cannot yield a referral RATE.
+  assertEquals(
+    priceForRoi(10, { referralFee: 3.0, fbaFee: 4.0 }, 70, 1, "US"),
+    null,
+    "legacy fees without a capture price must refuse",
+  );
+  // ...but the same shape WITH a capture price is usable.
+  assert(priceForRoi(10, { referralFee: 3.0, fbaFee: 4.0, price: 20 }, 70, 1, "US") !== null);
+});
+
 Deno.test("higher target ROI always means a higher floor (monotonic)", () => {
   let prev = -Infinity;
   for (const target of [0, 10, 30, 70, 100, 200]) {
