@@ -39,20 +39,6 @@ export const KEEPA_COST = {
   /** /product -- 1 token per ASIN. */
   productPerAsin: 1,
   /**
-   * Plain /seller (no storefront=1) -- 1 token, MEASURED 2026-08-15 on
-   * A1B0EBOAJDDILW: tokensConsumed 1, and no storefront ASIN list returned.
-   * Do NOT confuse with sellerStorefront above: the flat 10 is the price of
-   * storefront=1 specifically. analyzer-product-snapshot's /seller batch
-   * carried a comment claiming "a flat 10 tokens per call" until 2026-08-18;
-   * it was conflating the two endpoints.
-   *
-   * Per-seller because the endpoint accepts a comma-separated batch. Billing
-   * for N sellers in one call was never measured, so this errs on the side of
-   * linear -- over-reserving self-corrects on the next reportKeepaTokensLeft,
-   * under-reserving is what produces 429s.
-   */
-  sellerLookupPerSeller: 1,
-  /**
    * /product with offers=N. Offers are billed on top of the per-ASIN cost;
    * the exact multiplier is not published, so this errs high. Over-reserving
    * is corrected within one call by reportKeepaTokensLeft(); under-reserving
@@ -77,49 +63,6 @@ export const KEEPA_COST = {
  * bucket that live repricing depends on. The repricer itself passes 0.
  */
 export const KEEPA_REPRICER_RESERVE = 60;
-
-/**
- * Priority tiers, expressed as reserve floors.
- *
- * claim_keepa_tokens allows a claim when `balance - cost >= minReserve`, so a
- * caller passing a LOWER floor outranks one passing a higher floor: the
- * high-floor caller is refused while tokens remain, and those tokens are still
- * there when the low-floor caller asks. The parameter has existed since
- * migration 20260815210000; until 2026-08-18 no caller passed it, so every
- * caller sat at the same default 60 and "priority" was theoretical.
- *
- * Why this matters right now: gating mobile-scan-price-history on 2026-08-17
- * fixed it taking tokens without asking, but at the default floor it became
- * refusable for the first time -- at equal priority with a background sweep
- * that can happily wait five minutes. That was a regression in the analyzer's
- * effective priority, masked only by the overnight window keeping the sweep
- * out of the way. These tiers repair it.
- *
- *   interactive (0)  -- a person is waiting on this response. Allowed to spend
- *                      the bucket down. Safe in practice because interactive
- *                      traffic is human-paced: the panel costs 5 tokens per
- *                      product view against a 5/min refill, so draining ~300
- *                      tokens would take ~60 views inside a minute. It also
- *                      means the analyzer may dip below KEEPA_REPRICER_RESERVE
- *                      -- accepted deliberately, since repricer-sp-api-pricing
- *                      does not claim tokens at all (its inline gate is
- *                      call-rate only) and made 0 Keepa calls in the 30 days
- *                      to 2026-08-17.
- *   background (120) -- cron sweeps and fan-out jobs. Twice the old floor, so
- *                      they stop early and leave a real cushion rather than
- *                      grinding the balance down to the repricer's line.
- *
- * NOTE: these tiers apply to Layer 2 (tokens) ONLY. Layer 1 (the 4 calls/min
- * claim) is a single last_called_at timestamp with no notion of who is asking,
- * so an interactive caller can still lose a call-rate race to a background one.
- * Deliberately not addressed here -- fixing it means redesigning a primitive
- * the live repricer shares, and there is no measurement yet showing Layer 1
- * contention is what degrades the panel.
- */
-export const KEEPA_RESERVE = {
-  interactive: 0,
-  background: 120,
-} as const;
 
 export interface KeepaSlotOptions {
   /** Estimated token cost of the call about to be made. Default: 1 seller call. */
