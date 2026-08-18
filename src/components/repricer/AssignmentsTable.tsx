@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import AutoLowerMinToggle from "./AutoLowerMinToggle";
 import {
   Table,
   TableBody,
@@ -6354,6 +6355,16 @@ export default function AssignmentsTable({ rules, marketplace = "US", onMarketpl
             <Package className="h-5 w-5" />
             Repricer{isAdmin ? ` (${chipCounts.ALL} Managed ASINs)` : ''}
           </CardTitle>
+
+          {/* Auto-lower-min coverage. Opt-in per seller (the column defaults to
+              false) and shows the automated/workable ratio, because coverage
+              decays silently as new listings are added — nothing sets the flag
+              on them. */}
+          <AutoLowerMinToggle
+            userId={user?.id}
+            marketplace={marketplace}
+            onChanged={() => void fetchData()}
+          />
 
           {visibleMarketplaces.length >= 1 && (
             <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/50 backdrop-blur-sm p-1.5 shadow-sm">
