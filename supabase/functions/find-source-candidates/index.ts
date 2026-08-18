@@ -16,7 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
 import { classifyGeminiFailure, recordGeminiCall, type GeminiFailure } from '../_shared/gemini-usage.ts';
 import { recordSearchApiCall } from '../_shared/search-usage.ts';
-import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST, KEEPA_RESERVE } from '../_shared/keepa-rate-gate.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 
 const KEEPA_DOMAIN: Record<string, number> = {
@@ -51,8 +51,14 @@ async function backfillProductDetails(
     }
   }
 
-  // Single-ASIN /product lookup = 1 token.
-  const slot = await acquireKeepaGlobalSlot(supabase, { estimatedTokens: KEEPA_COST.productPerAsin });
+  // Single-ASIN /product lookup = 1 token. BACKGROUND tier: this runs under
+  // the auto-source cron and is a best-effort backfill -- returning null just
+  // leaves the listing without a Keepa-sourced title, which the SP-API path
+  // above usually covered anyway. Never worth refusing a panel view for.
+  const slot = await acquireKeepaGlobalSlot(supabase, {
+    estimatedTokens: KEEPA_COST.productPerAsin,
+    minReserve: KEEPA_RESERVE.background,
+  });
   if (!slot.ok) return null;
   const domainId = KEEPA_DOMAIN[marketplace] ?? 1;
   try {

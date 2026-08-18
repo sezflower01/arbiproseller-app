@@ -1,5 +1,9 @@
 // Mobile Scan – 90-day price stability via Keepa
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import {
+  acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -213,6 +217,27 @@ Deno.serve(async (req) => {
       history: '0',
     }).toString();
 
+    // Gated 2026-08-18. This was one of three Keepa callers reachable from the
+    // extension that spent tokens without asking. /product with stats and
+    // history=0 is 1 token per ASIN. INTERACTIVE tier: a person is waiting on
+    // this panel, so it should be served while a background sweep is turned
+    // away, not queued behind one.
+    //
+    // Refusal returns the same emptyPayload shape every other failure uses, so
+    // the UI degrades to "no stability data" with a stated reason rather than
+    // silently showing a flat chart.
+    const slot = await acquireKeepaGlobalSlot(admin, {
+      estimatedTokens: KEEPA_COST.productPerAsin,
+      minReserve: KEEPA_RESERVE.interactive,
+    });
+    if (!slot.ok) {
+      return jsonResponse(emptyPayload(
+        asin,
+        marketplace,
+        `Keepa budget busy — retry in ~${Math.max(1, Math.round(slot.waitSeconds))}s`,
+      ));
+    }
+
     // Hard timeout so the UI never hangs forever on a slow Keepa response.
     const ctrl = new AbortController();
     const timeoutId = setTimeout(() => ctrl.abort(), 20000);
@@ -230,9 +255,17 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const message = await keepaErrorMessage(res);
       console.error('[mobile-scan-price-stability] Keepa error', message);
+      if (res.status === 429) await recordKeepa429(admin, undefined, 'mobile-scan-price-stability');
       return jsonResponse(emptyPayload(asin, marketplace, message));
     }
     const json = await res.json();
+    // Keepa signals failure in the BODY of a 200 response, so record the
+    // balance before inspecting json.error -- a failed call still spent from
+    // the bucket, and the gate's estimate only self-corrects if we report it.
+    await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
+    if (json?.error) {
+      return jsonResponse(emptyPayload(asin, marketplace, String(json.error?.message ?? json.error)));
+    }
     const product = json?.products?.[0];
     if (!product) {
       return jsonResponse(emptyPayload(asin, marketplace, 'No Keepa data'));

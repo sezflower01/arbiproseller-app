@@ -8,7 +8,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 // reports; NO gate is acquired here on purpose. Adding one would change when
 // this function runs, and the point of this pass is to measure the existing
 // behaviour rather than alter it before the cause is proven.
-import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
+import {
+  reportKeepaTokensLeft, recordKeepa429, acquireKeepaGlobalSlot,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 import { summarizeCountSeries, computeBuyBoxOwnership } from '../_shared/plRiskSeries.ts';
 import { computePrivateLabelRisk, plRiskCategoricalLabel } from '../_shared/plRisk.ts';
 
@@ -280,7 +283,40 @@ Deno.serve(async (req) => {
     }
 
     // Fetch Keepa product (with stats, offers, BB history)
+    //
+    // Gated 2026-08-18. This was the most expensive of the three ungated
+    // analyzer entry points -- stats+history+offers=20+buybox is the 5-token
+    // shape measured across four ASINs on 2026-08-17 -- and it spent without
+    // asking, so the balance moved for reasons the shared gate could not see.
+    //
+    // INTERACTIVE tier: a person is waiting on this page. On refusal we fall
+    // through to exactly the same stale-cache path the 429 branch below
+    // already uses, so a busy budget degrades to older data with a stated
+    // reason instead of an error.
     const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${asin}&stats=180&history=1&offers=20&buybox=1&rating=1&stock=1`;
+    const productSlot = await acquireKeepaGlobalSlot(supabase, {
+      estimatedTokens: KEEPA_COST.productPriceHistory,
+      minReserve: KEEPA_RESERVE.interactive,
+    });
+    if (!productSlot.ok) {
+      console.warn(`[analyzer-product-snapshot] Keepa slot refused (${productSlot.blockedBy}) for ${asin}`);
+      const { data: stale } = await supabase
+        .from('product_analyzer_snapshot_cache')
+        .select('snapshot, fetched_at')
+        .eq('user_id', user.id).eq('asin', asin).eq('marketplace', marketplace)
+        .maybeSingle();
+      if (stale?.snapshot) {
+        return new Response(JSON.stringify({
+          ...stale.snapshot,
+          stale: true,
+          stale_reason: `Keepa budget busy — retry in ~${Math.max(1, Math.round(productSlot.waitSeconds))}s`,
+          fetched_at: stale.fetched_at,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        error: `Keepa budget busy — retry in ~${Math.max(1, Math.round(productSlot.waitSeconds))}s`,
+      }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     console.log('[analyzer-product-snapshot] fetching Keepa', { asin, marketplace, domainId, force });
     const resp = await fetch(url);
     if (!resp.ok) {
@@ -418,7 +454,10 @@ Deno.serve(async (req) => {
       .map((o: any, i: number) => ({ ...o, rank: i + 1 }));
 
     // Resolve seller names (cache + Keepa /seller fallback)
-    const sellerIds = Array.from(new Set(rawOffers.map((o: any) => o.sellerId).filter((s: string | null): s is string => !!s && !AMAZON_SELLER_IDS.has(s))));
+    // Set<string> is explicit because Array.from(new Set(...)) inferred
+    // unknown[] here, which made three call sites below fail typecheck long
+    // before this file was gated. Behaviour is unchanged.
+    const sellerIds = Array.from(new Set<string>(rawOffers.map((o: any) => o.sellerId).filter((s: string | null): s is string => !!s && !AMAZON_SELLER_IDS.has(s))));
     const nameMap: Record<string, string> = {};
     if (sellerIds.length) {
       const { data: cached } = await supabase
@@ -441,15 +480,29 @@ Deno.serve(async (req) => {
           for (let i = 0; i < missing.length; i += 100) {
             const slice = missing.slice(i, i + 100);
             const sUrl = `https://api.keepa.com/seller?key=${KEEPA_KEY}&domain=${domainId}&seller=${slice.join(',')}`;
+            // Second Keepa spend on the same page load, so it claims too.
+            // Cost is per seller in the batch: plain /seller measured 1 token
+            // on 2026-08-15. An earlier comment here said "a flat 10 tokens
+            // per call" -- that is the price of /seller?storefront=1, a
+            // different endpoint this call does not use.
+            //
+            // Refusal just skips the batch: seller NAMES are cosmetic on this
+            // page, so the snapshot still renders with seller ids.
+            const sellerSlot = await acquireKeepaGlobalSlot(supabase, {
+              estimatedTokens: slice.length * KEEPA_COST.sellerLookupPerSeller,
+              minReserve: KEEPA_RESERVE.interactive,
+            });
+            if (!sellerSlot.ok) {
+              console.warn(`[analyzer-product-snapshot] seller-name slot refused (${sellerSlot.blockedBy}), showing ids`);
+              break;
+            }
             const ctrl = new AbortController();
             const t = setTimeout(() => ctrl.abort(), 12000);
             const sRes = await fetch(sUrl, { signal: ctrl.signal });
             clearTimeout(t);
             if (!sRes.ok) {
-              // The seller lookup is a SECOND Keepa spend on the same page
-              // load (a flat 10 tokens per call, measured), so its refusals
-              // matter as much as the product call's. Previously it just
-              // `continue`d and the failure vanished.
+              // Its refusals matter as much as the product call's. Previously
+              // it just `continue`d and the failure vanished.
               if (sRes.status === 429) {
                 await recordKeepa429(supabase, undefined, 'analyzer-product-snapshot /seller');
               }

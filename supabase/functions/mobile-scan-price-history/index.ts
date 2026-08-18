@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { waitForApiToken } from "../_shared/rate-limiter.ts";
 import {
   acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
-  KEEPA_COST, type KeepaSlotOptions,
+  KEEPA_COST, KEEPA_RESERVE, type KeepaSlotOptions,
 } from "../_shared/keepa-rate-gate.ts";
 
 import {
@@ -29,8 +29,11 @@ import {
  * retry once rather than skipping. A background cron should skip and try again
  * later; a person waiting on a chart should queue, not be dropped.
  *
- * The reserve is respected by default, so a burst of panel views can no longer
- * eat into what repricer-sp-api-pricing depends on.
+ * Runs at the INTERACTIVE tier (reserve 0), set 2026-08-18. Gating this
+ * function the day before stopped it taking tokens without asking, but left it
+ * at the same default floor as the seller-monitoring sweep -- so a background
+ * job that can wait five minutes could refuse a person waiting on a chart.
+ * A lower floor means the panel is served while the sweep is turned away.
  */
 async function acquireKeepaSlotWithRetry(supabase: any, options: KeepaSlotOptions = {}) {
   const first = await acquireKeepaGlobalSlot(supabase, options);
@@ -669,6 +672,7 @@ Deno.serve(async (req) => {
     // for.
     const slot = await acquireKeepaSlotWithRetry(admin, {
       estimatedTokens: KEEPA_COST.productPriceHistory,
+      minReserve: KEEPA_RESERVE.interactive,
     });
     if (!slot.ok) {
       return await degradeFallback(

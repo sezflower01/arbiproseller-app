@@ -3,6 +3,10 @@
 // Cached in public.asin_dimensions_cache (per asin+marketplace).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
+import {
+  acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
+  KEEPA_COST, KEEPA_RESERVE,
+} from "../_shared/keepa-rate-gate.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,13 +116,39 @@ function pickSpDims(catalog: any) {
 // ── Keepa fallback ─────────────────────────────────────────────────
 // Keepa product API exposes packageHeight/Length/Width (mm) and packageWeight (g),
 // plus itemHeight/Length/Width and itemWeight at the product root.
-async function keepaDims(asin: string, domainId: number) {
+//
+// Gated 2026-08-18. This was one of three Keepa callers reachable from the
+// extension that spent tokens without asking, so the account's balance could
+// drop for reasons the shared gate could not see or explain. Single-ASIN
+// /product = 1 token. INTERACTIVE tier: a person is waiting on a dimensions
+// lookup, and one token is not worth queueing behind a background sweep.
+//
+// On refusal it returns null, which is already the "no dimensions" path the
+// caller handles -- the result is a missing field, never a broken response.
+async function keepaDims(supabase: any, asin: string, domainId: number) {
   const key = Deno.env.get('KEEPA_API_KEY');
   if (!key) return null;
+
+  const slot = await acquireKeepaGlobalSlot(supabase, {
+    estimatedTokens: KEEPA_COST.productPerAsin,
+    minReserve: KEEPA_RESERVE.interactive,
+  });
+  if (!slot.ok) {
+    console.warn(`[asin-dimensions] Keepa slot refused (${slot.blockedBy}), skipping dimensions fallback`);
+    return null;
+  }
+
   const url = `https://api.keepa.com/product?key=${key}&domain=${domainId}&asin=${asin}&stats=0`;
   const r = await fetch(url);
-  if (!r.ok) return null;
+  if (!r.ok) {
+    if (r.status === 429) await recordKeepa429(supabase, undefined, 'asin-dimensions');
+    return null;
+  }
   const j = await r.json();
+  // Keepa signals failure in the BODY of a 200, so tokensLeft is reported
+  // before the error check -- a failed call still moved the balance.
+  await reportKeepaTokensLeft(supabase, j?.tokensLeft, j?.refillRate);
+  if (j?.error) return null;
   const p = j?.products?.[0];
   if (!p) return null;
   // Keepa uses -1 / 0 for "unknown". Convert mm→cm and g→g (kept in g but flagged).
@@ -215,7 +245,7 @@ Deno.serve(async (req) => {
     // 3) Keepa fallback
     if (!dims) {
       try {
-        dims = await keepaDims(asin, mkt.keepa);
+        dims = await keepaDims(admin, asin, mkt.keepa);
         if (dims) source = 'keepa';
       } catch (e) {
         console.warn('[asin-dimensions] Keepa failed:', (e as Error).message);

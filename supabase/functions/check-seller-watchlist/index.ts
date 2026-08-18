@@ -37,7 +37,7 @@
 // 0-5) get a bounded detail batch, so cost scales with new-listing volume
 // rather than catalog size.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST, KEEPA_RESERVE } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch, SPAPI_HOSTS } from '../_shared/spapi-catalog-image.ts';
 import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
@@ -173,16 +173,24 @@ async function backfillBlankImages(admin: any, deadlineAt: number): Promise<Reco
  * it and there is time left in the run. Returns the final (possibly failed)
  * claim; callers end the run rather than skipping onward, so that a refused
  * seller stays at the head of the queue for next time.
+ *
+ * Runs at the BACKGROUND tier (reserve 120), set 2026-08-18 -- double the old
+ * default floor. This sweep is the cheapest thing in the system to delay: a
+ * refused seller keeps its place and the cron retries in five minutes, whereas
+ * a refused panel view is a person staring at incomplete data. Stopping 120
+ * tokens early costs this job roughly one seller per cycle and leaves the
+ * analyzer a cushion it can actually use.
  */
 async function acquireSlotOrGiveUp(admin: any, estimatedTokens: number, deadlineAt: number) {
-  const first = await acquireKeepaGlobalSlot(admin, { estimatedTokens });
+  const opts = { estimatedTokens, minReserve: KEEPA_RESERVE.background };
+  const first = await acquireKeepaGlobalSlot(admin, opts);
   if (first.ok) return first;
 
   const waitSeconds = Math.min(first.waitSeconds ?? MAX_SLOT_WAIT_SECONDS, MAX_SLOT_WAIT_SECONDS);
   if (Date.now() + waitSeconds * 1000 >= deadlineAt) return first;
 
   await sleep(waitSeconds * 1000);
-  return acquireKeepaGlobalSlot(admin, { estimatedTokens });
+  return acquireKeepaGlobalSlot(admin, opts);
 }
 
 Deno.serve(async (req) => {
