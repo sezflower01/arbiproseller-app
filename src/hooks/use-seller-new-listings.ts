@@ -58,9 +58,16 @@ function currentMonthKey(): string {
 
 const SELECT_COLS =
   "id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, " +
-  "source_status, qualified, disqualified_reason, candidates, sourced_candidate, rejected_candidate_urls, " +
-  "amazon_price_cents, new_price_cents, total_fees_cents, " +
-  "strict_reason, fba_offer_count, fbm_offer_count, seller_offer_is_fba";
+  "source_status, qualified, disqualified_reason, " +
+  // Price is the one signal kept from the automated era: it costs nothing,
+  // since check-seller-watchlist captures it from a Keepa call it already
+  // makes, and it answers "is this worth clicking" before opening a search.
+  //
+  // candidates / sourced_candidate / rejected_candidate_urls / strict_reason /
+  // the offer counts are deliberately NOT selected -- the columns still exist
+  // (dropping them is a separate, destructive migration) but nothing reads
+  // them now that search is manual.
+  "amazon_price_cents, new_price_cents";
 
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;
