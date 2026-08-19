@@ -43,7 +43,7 @@ import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch,
 import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
 import { waitForApiToken } from '../_shared/rate-limiter.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
-import { summarizeOffers } from '../_shared/strict-mode.ts';
+import { summarizeOffers } from '../_shared/keepa-offers.ts';
 import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
 import { withCronLock } from '../_shared/cron-lock.ts';
 

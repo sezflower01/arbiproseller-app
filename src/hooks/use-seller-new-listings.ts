@@ -32,6 +32,20 @@ export interface NewListing {
    */
   amazon_price_cents: number | null;
   new_price_cents: number | null;
+  /**
+   * Live FBA offers on the ASIN, from the same Keepa call as the price.
+   *
+   * Kept as a display signal after strict mode was removed, because it is a
+   * STRONGER "is this worth clicking" cue than price alone: price says what it
+   * sells for, this says whether the listing is competitive at all. It also
+   * retroactively justifies the offers=20 call shape (5-6 tokens vs 1) --
+   * without a consumer that upgrade was buying nothing.
+   *
+   * Counts FBA only, never FBM. Measured 2026-08-19: Keepa's free COUNT_NEW
+   * conflates the two, and two of three sampled ASINs had a non-zero
+   * COUNT_NEW with ZERO FBA offers.
+   */
+  fba_offer_count: number | null;
 }
 
 
@@ -46,7 +60,7 @@ const SELECT_COLS =
   // the offer counts are deliberately NOT selected -- the columns still exist
   // (dropping them is a separate, destructive migration) but nothing reads
   // them now that search is manual.
-  "amazon_price_cents, new_price_cents";
+  "amazon_price_cents, new_price_cents, fba_offer_count";
 
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;

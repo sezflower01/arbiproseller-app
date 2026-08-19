@@ -46,6 +46,23 @@ function formatAmazonPrice(l: NewListing): string | null {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/**
+ * FBA competition on the listing, from the same Keepa call as the price.
+ *
+ * A stronger "worth clicking" cue than price alone -- price says what it sells
+ * for, this says whether it is competitive at all. ZERO is meaningful and is
+ * shown, not hidden: no FBA sellers usually means private-label or exclusive,
+ * which is the clearest possible signal NOT to spend time on it.
+ *
+ * null means offers were never captured (Keepa refused, or the run ran out of
+ * time). That is unknown, not zero, so it renders nothing rather than "0".
+ */
+function formatFbaOffers(l: NewListing): string | null {
+  const n = l.fba_offer_count;
+  if (typeof n !== "number" || n < 0) return null;
+  return n === 1 ? "1 FBA seller" : `${n} FBA sellers`;
+}
+
 const MARKETPLACE_DOMAIN: Record<string, string> = {
   US: "amazon.com", CA: "amazon.ca", MX: "amazon.com.mx", BR: "amazon.com.br",
   UK: "amazon.co.uk", GB: "amazon.co.uk", DE: "amazon.de", FR: "amazon.fr",
@@ -418,10 +435,31 @@ export default function NewListingsPanel() {
                         from a Keepa call it already makes. It is the quick
                         "is this worth clicking" signal now that ROI is judged
                         manually after opening the search. */}
-                    {formatAmazonPrice(listing) && (
+                    {(formatAmazonPrice(listing) || formatFbaOffers(listing)) && (
                       <div className="text-xs">
-                        <span className="font-medium">{formatAmazonPrice(listing)}</span>
-                        <span className="text-muted-foreground"> on Amazon</span>
+                        {formatAmazonPrice(listing) && (
+                          <>
+                            <span className="font-medium">{formatAmazonPrice(listing)}</span>
+                            <span className="text-muted-foreground"> on Amazon</span>
+                          </>
+                        )}
+                        {formatFbaOffers(listing) && (
+                          <span
+                            className={
+                              listing.fba_offer_count === 0
+                                ? "text-amber-600 dark:text-amber-500"
+                                : "text-muted-foreground"
+                            }
+                            title={
+                              listing.fba_offer_count === 0
+                                ? "No FBA competition — usually private-label or exclusive"
+                                : "Live FBA offers on this ASIN"
+                            }
+                          >
+                            {formatAmazonPrice(listing) ? " · " : ""}
+                            {formatFbaOffers(listing)}
+                          </span>
+                        )}
                       </div>
                     )}
                     {/* Which seller listed it. With hundreds of watched

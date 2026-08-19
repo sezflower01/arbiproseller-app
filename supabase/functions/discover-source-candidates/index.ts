@@ -1,5 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkModuleAccess } from "../_shared/module-access-guard.ts";
+// Supplier Discovery is the ONLY remaining SerpAPI consumer after the automated
+// Find Source pipeline was removed on 2026-08-19, and it recorded nothing. That
+// left no way to size a paid plan -- the same blind spot that let a total Google
+// CSE outage burn the entire 250/month SerpAPI quota unnoticed.
+import { recordSearchApiCall } from "../_shared/search-usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -228,7 +233,7 @@ interface RawCandidate {
   snippet: string;
 }
 
-async function googleSearch(query: string, num = 10): Promise<RawCandidate[]> {
+async function googleSearch(supabase: unknown, query: string, num = 10): Promise<RawCandidate[]> {
   const apiKey = Deno.env.get("GOOGLE_API_KEY");
   const cx = Deno.env.get("GOOGLE_CX_ID");
   if (!apiKey || !cx) return [];
@@ -239,10 +244,12 @@ async function googleSearch(query: string, num = 10): Promise<RawCandidate[]> {
     const r = await fetch(url);
     if (!r.ok) {
       console.warn("Google CSE non-OK:", r.status);
+      await recordSearchApiCall(supabase, "google_cse", false, false, r.status);
       return [];
     }
     const j = await r.json();
     const items = Array.isArray(j.items) ? j.items : [];
+    await recordSearchApiCall(supabase, "google_cse", true, items.length === 0, r.status);
     return items.map((it: any) => ({
       url: it.link || "",
       title: it.title || "",
@@ -254,7 +261,7 @@ async function googleSearch(query: string, num = 10): Promise<RawCandidate[]> {
   }
 }
 
-async function serpApiSearch(query: string, num = 10): Promise<RawCandidate[]> {
+async function serpApiSearch(supabase: unknown, query: string, num = 10): Promise<RawCandidate[]> {
   const apiKey = Deno.env.get("SERPAPI_API_KEY");
   if (!apiKey) return [];
 
@@ -263,10 +270,12 @@ async function serpApiSearch(query: string, num = 10): Promise<RawCandidate[]> {
     const r = await fetch(url);
     if (!r.ok) {
       console.warn("SerpAPI non-OK:", r.status);
+      await recordSearchApiCall(supabase, "serpapi", false, false, r.status);
       return [];
     }
     const j = await r.json();
     const items = Array.isArray(j.organic_results) ? j.organic_results : [];
+    await recordSearchApiCall(supabase, "serpapi", true, items.length === 0, r.status);
     return items.map((it: any) => ({
       url: it.link || "",
       title: it.title || "",
@@ -278,10 +287,10 @@ async function serpApiSearch(query: string, num = 10): Promise<RawCandidate[]> {
   }
 }
 
-async function searchAll(query: string, num = 10): Promise<RawCandidate[]> {
-  let results = await googleSearch(query, num);
+async function searchAll(supabase: unknown, query: string, num = 10): Promise<RawCandidate[]> {
+  let results = await googleSearch(supabase, query, num);
   if (results.length === 0) {
-    results = await serpApiSearch(query, num);
+    results = await serpApiSearch(supabase, query, num);
   }
   return results;
 }
@@ -827,7 +836,7 @@ Deno.serve(async (req) => {
 
     const allResults: RawCandidate[] = [];
     for (const q of queries) {
-      const r = await searchAll(q, 10);
+      const r = await searchAll(supabase, q, 10);
       allResults.push(...r);
     }
 

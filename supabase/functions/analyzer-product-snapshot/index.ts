@@ -18,6 +18,7 @@ import {
   reportKeepaTokensLeft, recordKeepa429, acquireKeepaTokensOnly,
   KEEPA_COST, KEEPA_RESERVE,
 } from '../_shared/keepa-rate-gate.ts';
+import { isFbaOffer } from '../_shared/keepa-offers.ts';
 import { summarizeCountSeries, computeBuyBoxOwnership } from '../_shared/plRiskSeries.ts';
 import { computePrivateLabelRisk, plRiskCategoricalLabel } from '../_shared/plRisk.ts';
 
@@ -441,7 +442,9 @@ Deno.serve(async (req) => {
           if (price > 0) lastPrice = (price + Math.max(0, ship)) / 100;
         }
         const sellerId: string | null = o.sellerId || null;
-        const strictFBA = !!o.isFBA && !!o.isPrime;
+        // Single shared definition -- see _shared/keepa-offers.ts for why this
+        // used to be duplicated and why the strict reading is canonical.
+        const strictFBA = isFbaOffer(o);
         return {
           rank: i + 1,
           type: strictFBA ? 'FBA' : 'FBM',
