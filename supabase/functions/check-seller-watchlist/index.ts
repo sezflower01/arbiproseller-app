@@ -542,7 +542,7 @@ Deno.serve(async (req) => {
       // An empty result from the table would otherwise read as "exclude
       // nothing", silently switching the filter off for a user whose seed rows
       // failed to write.
-      const userExclusions: { groups?: Set<string>; brands?: Set<string> } = {};
+      const userExclusions: { groups?: Set<string>; brands?: Set<string>; titles?: string[] } = {};
       // Per-user alert address. NULL means the account email, which is what
       // seller_watchlist.notify_email already holds -- so the fallback below is
       // the existing behaviour, unchanged.
@@ -574,8 +574,13 @@ Deno.serve(async (req) => {
         if (terms?.length) {
           const groups = terms.filter((t: any) => t.kind === 'category').map((t: any) => String(t.value));
           const brands = terms.filter((t: any) => t.kind === 'brand').map((t: any) => String(t.value));
+          const titles = terms.filter((t: any) => t.kind === 'title_keyword').map((t: any) => String(t.value));
           if (groups.length) userExclusions.groups = new Set(groups);
           if (brands.length) userExclusions.brands = new Set(brands);
+          // Titles are the exception to the guard above: there is no built-in
+          // default list to fall back to, so an empty array and an omitted one
+          // mean the same thing. Assigned unconditionally for that reason.
+          userExclusions.titles = titles;
         }
 
         const wanted = Array.from(unionNewAsins);
@@ -620,8 +625,10 @@ Deno.serve(async (req) => {
               brand: details?.brand ?? null,
               eligibility: eligibilityByAsin.get(asin) ?? null,
               allowNeedsApproval,
+              title: details?.title ?? null,
               excludedGroups: userExclusions.groups,
               excludedBrands: userExclusions.brands,
+              excludedTitleTerms: userExclusions.titles,
             });
             return {
               watch_id: w.id,

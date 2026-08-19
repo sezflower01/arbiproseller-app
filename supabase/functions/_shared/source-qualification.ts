@@ -8,6 +8,8 @@
 // Extracted rather than inlined so the thresholds are testable without
 // standing up an edge function -- see source-qualification_test.ts.
 
+import { findExcludedTitleTerm } from './title-exclusions.ts';
+
 /** Lowercase verdicts as check-product-eligibility stores them. */
 export type EligibilityVerdict = 'approved' | 'approval_required' | 'restricted';
 
@@ -27,6 +29,8 @@ export interface QualificationInput {
   allowNeedsApproval?: boolean;
   /** SP-API summaries[].brand, falling back to manufacturer. */
   brand?: string | null;
+  /** SP-API summaries[].itemName. Absent/null NEVER disqualifies. */
+  title?: string | null;
   /**
    * Per-user overrides from source_excluded_terms, already lowercased.
    * Omitted means "use the built-in defaults", which is what keeps the Deno
@@ -34,6 +38,13 @@ export interface QualificationInput {
    */
   excludedGroups?: ReadonlySet<string>;
   excludedBrands?: ReadonlySet<string>;
+  /**
+   * Title keywords/phrases from source_excluded_terms kind='title_keyword'.
+   * No built-in default -- unlike groups and brands there is no prior
+   * hardcoded list, so omitting this means "no title rules", not "the
+   * defaults". An empty list must therefore exclude nothing.
+   */
+  excludedTitleTerms?: Iterable<string>;
 }
 
 export interface QualificationResult {
@@ -143,6 +154,18 @@ export function qualifyListing(input: QualificationInput): QualificationResult {
   const brands = input.excludedBrands ?? EXCLUDED_BRANDS;
   if (brand && brands.has(brand)) {
     return { qualified: false, reason: `excluded_brand:${brand}` };
+  }
+
+  // WORD BOUNDARY, not exact and not naive substring -- see title-exclusions.ts
+  // for the measurement behind that. Sits next to the brand rule because both
+  // express the same thing: what the seller has decided against, as opposed to
+  // what Amazon forbids (handled by `eligibility` at the top).
+  //
+  // Placed BEFORE the no_upc check so the stored reason names the user's own
+  // rule rather than a downstream technicality, when a listing trips both.
+  const excludedTitle = findExcludedTitleTerm(input.title, input.excludedTitleTerms);
+  if (excludedTitle) {
+    return { qualified: false, reason: `excluded_title:${excludedTitle}` };
   }
 
   // Strongest single signal (48% of detections). Principled rather than

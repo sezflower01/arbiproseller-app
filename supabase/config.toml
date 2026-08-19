@@ -466,3 +466,8 @@ verify_jwt = true
 # in-function by requireInternalCall() (internal secret or service-role bearer).
 [functions.repricer-auto-lower-min]
 verify_jwt = false
+
+[functions.apply-title-exclusions]
+# Browser-invoked only, with the user JWT. Never called by cron -- see the
+# function header for why an automatic sweep would be wrong.
+verify_jwt = true

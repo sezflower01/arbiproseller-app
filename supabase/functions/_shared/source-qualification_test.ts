@@ -167,3 +167,46 @@ Deno.test('per-user lists override the built-in defaults', () => {
   assertEquals(qualifyListing({ productGroup: 'Book', upc: '1', excludedGroups: groups }).qualified, true);
   assertEquals(qualifyListing({ productGroup: 'Toy', upc: '1', excludedGroups: groups }).reason, 'excluded_group:toy');
 });
+
+// ── Title keyword exclusions ──
+
+const OK = { productGroup: 'Toy', upc: '1' };
+
+Deno.test('a title keyword disqualifies and the reason names the term', () => {
+  const r = qualifyListing({ ...OK, title: 'Pokémon TCG Elite Trainer Box', excludedTitleTerms: ['pokemon'] });
+  assertEquals(r.qualified, false);
+  assertEquals(r.reason, 'excluded_title:pokemon');
+});
+
+Deno.test('word boundary applies here too, not just in the helper', () => {
+  // The false positive that would silently over-exclude.
+  assertEquals(
+    qualifyListing({ ...OK, title: 'Standing Desk Converter', excludedTitleTerms: ['stand'] }).qualified,
+    true,
+  );
+});
+
+Deno.test('no title rules configured excludes nothing', () => {
+  // Unlike brands and groups there is NO built-in default list, so an omitted
+  // or empty set must be a no-op rather than falling back to something.
+  assertEquals(qualifyListing({ ...OK, title: 'Pokémon TCG' }).qualified, true);
+  assertEquals(qualifyListing({ ...OK, title: 'Pokémon TCG', excludedTitleTerms: [] }).qualified, true);
+});
+
+Deno.test('a MISSING title never disqualifies', () => {
+  assertEquals(qualifyListing({ ...OK, title: null, excludedTitleTerms: ['pokemon'] }).qualified, true);
+  assertEquals(qualifyListing({ ...OK, excludedTitleTerms: ['pokemon'] }).qualified, true);
+});
+
+Deno.test('restricted still outranks a title rule', () => {
+  const r = qualifyListing({
+    ...OK, eligibility: 'restricted', title: 'Pokémon TCG', excludedTitleTerms: ['pokemon'],
+  });
+  assertEquals(r.reason, 'restricted');
+});
+
+Deno.test('the title rule is reported ahead of no_upc when both trip', () => {
+  // The user's own rule is the actionable fact; no_upc is a technicality.
+  const r = qualifyListing({ productGroup: 'Toy', title: 'Pokémon TCG', excludedTitleTerms: ['pokemon'] });
+  assertEquals(r.reason, 'excluded_title:pokemon');
+});

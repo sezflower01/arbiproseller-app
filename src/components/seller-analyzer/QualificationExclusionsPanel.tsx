@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, X } from "lucide-react";
 import { CATEGORY_MAP, MAPPED_VALUES } from "@/lib/amazon-display-groups";
+import { supabase } from "@/integrations/supabase/client";
 import {
   useQualificationExclusions,
-  normalizeTerm,
+  normalizeForKind,
   type ExclusionKind,
   type PreviewEntry,
   type ExcludedTerm,
@@ -122,7 +123,11 @@ function ExclusionList({
   // Values present in the listings that are NOT yet excluded — the honest
   // shortlist, since a rule for something you have none of does nothing.
   const available = suggestions.filter((s) => !excluded.has(s.value)).slice(0, 12);
-  const draftImpact = draft.trim() ? impactOf(kind, normalizeTerm(draft)) : null;
+  const draftImpact = draft.trim() ? impactOf(kind, normalizeForKind(kind, draft)) : null;
+  // Categories and brands can be counted before saving; a title keyword cannot
+  // (see impactOf). Showing "would affect nothing" for one of those would be a
+  // plain lie, so the preview line is skipped rather than faked.
+  const hasImpactPreview = kind !== "title_keyword";
 
   const guard = (p: Promise<unknown>) =>
     p.catch((e) => toast({ title: "Could not save", description: (e as Error).message, variant: "destructive" }));
@@ -200,12 +205,119 @@ function ExclusionList({
       </form>
 
       {/* Impact BEFORE saving, which is the whole point of the preview. */}
-      {draft.trim() && (
+      {hasImpactPreview && draft.trim() && (
         <p className="text-xs text-muted-foreground">
           {draftImpact === null
             ? `No current listings match "${draft.trim()}" — this rule would affect nothing today.`
             : `Would exclude ${draftImpact.toLocaleString()} current listing${draftImpact === 1 ? "" : "s"}.`}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Re-run the title rules over listings that were detected BEFORE they existed.
+ *
+ * Two steps on purpose. The first click only counts, using the same matcher the
+ * write would use, so the number shown is the number that changes -- not an
+ * estimate from a different rule. The second click writes. Title matching is
+ * the one rule here where a term can behave unlike the user expected ("stand"
+ * catching more than intended), and this is where that surfaces before it is
+ * applied to years of history rather than after.
+ */
+function ApplyToExisting({ termCount }: { termCount: number }) {
+  const { toast } = useToast();
+  const [running, setRunning] = useState(false);
+  const [preview, setPreview] = useState<{ matched: number; byTerm: Record<string, number> } | null>(null);
+  const [done, setDone] = useState<number | null>(null);
+
+  const call = async (dryRun: boolean) => {
+    setRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("apply-title-exclusions", {
+        body: { dryRun },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      if (dryRun) {
+        setPreview({ matched: data?.matched ?? 0, byTerm: data?.byTerm ?? {} });
+        setDone(null);
+      } else {
+        setDone(data?.updated ?? 0);
+        setPreview(null);
+        toast({
+          title: "Applied",
+          description: `${(data?.updated ?? 0).toLocaleString()} listing(s) excluded.`,
+        });
+      }
+    } catch (e) {
+      toast({ title: "Could not apply", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed p-3">
+      <p className="text-xs text-muted-foreground">
+        New words only affect listings found after you add them. Apply them to listings you already
+        have. This excludes matches; it does not bring back anything a word you removed had
+        excluded earlier.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={running || termCount === 0}
+          onClick={() => call(true)}
+        >
+          {running && !preview ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+          Apply to existing listings
+        </Button>
+        {termCount === 0 && (
+          <span className="text-xs text-muted-foreground">Add a word first.</span>
+        )}
+        {done !== null && (
+          <span className="text-xs text-muted-foreground">
+            {done.toLocaleString()} listing{done === 1 ? "" : "s"} excluded.
+          </span>
+        )}
+      </div>
+
+      {preview && (
+        <div className="space-y-2">
+          {preview.matched === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No existing listings match these words. Nothing to change.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs">
+                {preview.matched.toLocaleString()} existing listing
+                {preview.matched === 1 ? "" : "s"} would be excluded:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(preview.byTerm).map(([term, n]) => (
+                  <Badge key={term} variant="outline" className="font-normal">
+                    {term} - {n}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" disabled={running} onClick={() => call(false)}>
+                  {running ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+                  Exclude {preview.matched.toLocaleString()}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={running} onClick={() => setPreview(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -233,8 +345,8 @@ export default function QualificationExclusionsPanel() {
         <div>
           <h2 className="text-sm font-semibold">Never auto-search these</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Listings matching these are detected and shown, but never spend a source search.
-            Matching is exact — "Generic" is excluded, "Generic Electric" is not.
+            Listings matching these are still detected and shown, but are marked as not worth
+            sourcing. Each list matches differently — see the note under each one.
           </p>
         </div>
 
@@ -267,12 +379,29 @@ export default function QualificationExclusionsPanel() {
             <div className="border-t" />
             <ExclusionList
               kind="brand"
-              title="Brands"
-              blurb="Placeholder brands worth skipping. A listing with no brand at all is never excluded by these — a missing brand usually means Amazon had no data, not that the product is unbranded."
+              title="Excluded Brands"
+              blurb="Matched exactly against the whole brand — “Generic” is excluded, “Generic Electric” is not. A listing with no brand at all is never excluded by these: a missing brand usually means Amazon had no data, not that the product is unbranded."
               placeholder="e.g. Generic"
               suggestions={brandCounts}
               {...shared}
             />
+            <div className="border-t" />
+            {/* A SEPARATE list because the matching RULE is different. Merging
+                the two would force one behaviour on both, and nothing on a chip
+                would tell you which rule had applied to it. */}
+            <div className="space-y-3">
+              <ExclusionList
+                kind="title_keyword"
+                title="Excluded Title Words"
+                blurb="Matched as whole words anywhere in the title — “stand” excludes “…with Stand” but not “Standing Desk”. Accents are ignored, so “pokemon” catches “Pokémon”. Plurals are separate: add both “card” and “cards” if you want both. A listing with no title yet is never excluded."
+                placeholder="e.g. refurbished, pre-order"
+                suggestions={[]}
+                {...shared}
+              />
+              <ApplyToExisting
+                termCount={terms.filter((t) => t.kind === "title_keyword").length}
+              />
+            </div>
           </>
         )}
       </CardContent>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-export type ExclusionKind = "category" | "brand";
+export type ExclusionKind = "category" | "brand" | "title_keyword";
 
 export interface ExcludedTerm {
   id: string;
@@ -20,6 +20,30 @@ export interface PreviewEntry {
 /** Matching must agree exactly with source-qualification.ts: trim + lowercase. */
 export function normalizeTerm(raw: string): string {
   return raw.trim().toLowerCase();
+}
+
+/**
+ * Title keywords normalise differently, mirroring
+ * supabase/functions/_shared/title-exclusions.ts (the source of truth, which
+ * the edge functions import directly). Duplicated here rather than imported
+ * because that module is Deno edge code and does not belong in the browser
+ * bundle — but ONLY the normalisation is copied, never the matching rule.
+ *
+ * Diacritics are stripped so "Pokémon" and "pokemon" are one entry rather than
+ * two that both appear to work.
+ */
+export function normalizeTitleTerm(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The stored `value` for a term of this kind. */
+export function normalizeForKind(kind: ExclusionKind, raw: string): string {
+  return kind === "title_keyword" ? normalizeTitleTerm(raw) : normalizeTerm(raw);
 }
 
 /**
@@ -63,7 +87,7 @@ export function useQualificationExclusions() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const add = useCallback(async (kind: ExclusionKind, raw: string) => {
-    const value = normalizeTerm(raw);
+    const value = normalizeForKind(kind, raw);
     if (!value) throw new Error("Enter a value first.");
     if (terms.some((t) => t.kind === kind && t.value === value)) {
       throw new Error(`"${raw.trim()}" is already excluded.`);
@@ -135,8 +159,18 @@ export function useQualificationExclusions() {
     }
   }, [terms, refresh]);
 
-  /** How many current listings a rule would hit. null = none seen in your data. */
+  /**
+   * How many current listings a rule would hit. null = none seen in your data.
+   *
+   * Title keywords deliberately return null: the preview RPC counts distinct
+   * category and brand VALUES, which a word-boundary match inside a sentence
+   * cannot be expressed as. Guessing with a SQL LIKE would show a number that
+   * disagrees with the rule that actually runs, which is worse than showing
+   * none — the "Apply to existing listings" preview uses the real matcher
+   * instead.
+   */
   const impactOf = useCallback((kind: ExclusionKind, value: string): number | null => {
+    if (kind === "title_keyword") return null;
     const list = kind === "category" ? categoryCounts : brandCounts;
     const hit = list.find((e) => e.value === value);
     return hit ? hit.n : null;
