@@ -293,3 +293,70 @@ export const KEEPA_RESERVE = {
   interactive: 0,
   background: 120,
 } as const;
+
+/**
+ * Claim TOKENS ONLY -- Layer 2 without Layer 1's call-rate slot.
+ *
+ * WHY THIS EXISTS. Both available states were bad, and the repo has the scars
+ * from each:
+ *
+ *   UNGATED (2026-08-19 13:02): the interactive analyzer callers spent without
+ *   claiming, so local accounting read tokens_left 38.1 while Keepa's own
+ *   response carried tokensLeft -9. A 47-token gap of unaccounted spending, an
+ *   account genuinely overdrawn at the vendor, and keepa_429_count reading 0 on
+ *   a day a real 429 was observed -- the failure left no trace at all.
+ *
+ *   FULLY GATED (2026-08-18 07:30): acquireKeepaGlobalSlot() claims a Layer 1
+ *   slot first, and Layer 1 is 4 calls/min GLOBAL with no notion of who is
+ *   asking. Adding three analyzer callers meant a single product view could
+ *   claim 3-4 of the 4 slots in a minute, so views queued 15s at a time and the
+ *   extension timed out. Reverted in 9cc781d.
+ *
+ * This lane resolves the contradiction rather than trading between the two: it
+ * meters spending (fixing the overdraw) while claiming NO call-rate slot, so it
+ * cannot reproduce the Layer 1 starvation by construction.
+ *
+ * WHEN IT IS SAFE TO SKIP LAYER 1. Layer 1 guards against one caller hammering
+ * the API. Interactive callers are human-paced -- a person opening product
+ * pages -- so the burst Layer 1 defends against is not the shape of their
+ * traffic, and the token budget already bounds total spend. Do NOT use this for
+ * cron sweeps or fan-out jobs: those genuinely can hammer, and the call-rate
+ * guard is the thing standing between them and a 429 storm. They keep using
+ * acquireKeepaGlobalSlot().
+ *
+ * Defaults are interactive on purpose: 1 token (a single /product) and reserve
+ * 0. Pass estimatedTokens explicitly for anything heavier -- an offers=20 call
+ * is 5-6, and under-reserving is what produces 429s.
+ */
+export async function acquireKeepaTokensOnly(
+  supabase: any,
+  options: KeepaSlotOptions = {},
+): Promise<KeepaSlotResult> {
+  const estimatedTokens = options.estimatedTokens ?? KEEPA_COST.productPerAsin;
+  const minReserve = options.minReserve ?? KEEPA_RESERVE.interactive;
+
+  const { data, error } = await supabase.rpc('claim_keepa_tokens', {
+    p_tokens: estimatedTokens,
+    p_min_reserve: minReserve,
+  });
+
+  if (error) {
+    // Fail OPEN, same as the two-layer path. An accounting outage must not take
+    // the analyzer down with it -- but unlike the two-layer path there is no
+    // call gate underneath, so this is genuinely unmetered. Logged loudly
+    // because that is a state worth noticing rather than inferring later.
+    console.warn('[Keepa] token-only claim unavailable, proceeding UNMETERED:', error.message);
+    return { ok: true, waitSeconds: 0 };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.allowed) {
+    return {
+      ok: false,
+      waitSeconds: row?.wait_seconds ?? Math.ceil(KEEPA_GUARD_INTERVAL_MS / 1000),
+      blockedBy: 'token-budget',
+      tokensLeft: row?.tokens_left,
+    };
+  }
+  return { ok: true, waitSeconds: 0, tokensLeft: row.tokens_left };
+}

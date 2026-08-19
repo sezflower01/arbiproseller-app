@@ -1,5 +1,9 @@
 // Mobile Scan – 90-day price stability via Keepa
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import {
+  acquireKeepaTokensOnly, reportKeepaTokensLeft, recordKeepa429,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -213,6 +217,28 @@ Deno.serve(async (req) => {
       history: '0',
     }).toString();
 
+    // TOKEN-ONLY claim, added 2026-08-19. This function had NO gate, NO
+    // tokensLeft reporting and NO 429 recording -- it was completely invisible
+    // to the budget. That is how the account reached Keepa's own tokensLeft of
+    // -9 while local accounting still read 38.
+    //
+    // acquireKeepaTokensOnly rather than acquireKeepaGlobalSlot deliberately:
+    // the two-layer version also claims one of 4 call-rate slots per minute,
+    // and gating this function that way on 2026-08-18 made a single product
+    // view eat most of the minute's slots and time the extension out. Metering
+    // spend does not require rationing calls.
+    const slot = await acquireKeepaTokensOnly(admin, {
+      estimatedTokens: KEEPA_COST.productPerAsin,
+      minReserve: KEEPA_RESERVE.interactive,
+    });
+    if (!slot.ok) {
+      return jsonResponse(emptyPayload(
+        asin,
+        marketplace,
+        `Keepa budget busy — retry in ~${Math.max(1, Math.round(slot.waitSeconds))}s`,
+      ));
+    }
+
     // Hard timeout so the UI never hangs forever on a slow Keepa response.
     const ctrl = new AbortController();
     const timeoutId = setTimeout(() => ctrl.abort(), 20000);
@@ -230,9 +256,20 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const message = await keepaErrorMessage(res);
       console.error('[mobile-scan-price-stability] Keepa error', message);
+      // A 429 here previously vanished without trace -- keepa_429_count read 0
+      // on a day a real 429 was observed, because only gated callers recorded.
+      if (res.status === 429) await recordKeepa429(admin, undefined, 'mobile-scan-price-stability');
       return jsonResponse(emptyPayload(asin, marketplace, message));
     }
     const json = await res.json();
+    // Keepa signals failure in the BODY of a 200, and the balance moves either
+    // way -- so reconcile BEFORE inspecting json.error, or a failed call leaves
+    // the local budget overstated exactly as it was overstated all of today.
+    await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
+    if (json?.error) {
+      return jsonResponse(emptyPayload(asin, marketplace,
+        String(json.error?.message ?? json.error)));
+    }
     const product = json?.products?.[0];
     if (!product) {
       return jsonResponse(emptyPayload(asin, marketplace, 'No Keepa data'));

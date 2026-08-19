@@ -4,11 +4,20 @@
 // connected their account. Results are cached per (asin, marketplace) for 30 min.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
-// Observation only. reportKeepaTokensLeft / recordKeepa429 write what Keepa
-// reports; NO gate is acquired here on purpose. Adding one would change when
-// this function runs, and the point of this pass is to measure the existing
-// behaviour rather than alter it before the cause is proven.
-import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
+// Gated 2026-08-19 with a TOKEN-ONLY claim. The cause is now proven, so the
+// earlier "observe, do not alter" stance no longer applies: this is the most
+// expensive Keepa caller in the product (stats=180 + history + offers=20 +
+// buybox, and buybox=1 alone measured at 3x) and it was spending with no claim
+// at all. Local accounting read tokens_left 38.1 while Keepa's own response
+// carried tokensLeft -9.
+//
+// Token-only rather than acquireKeepaGlobalSlot: the two-layer version also
+// claims one of 4 call-rate slots per minute, which on 2026-08-18 let a single
+// analyzer view consume most of the minute and time the extension out.
+import {
+  reportKeepaTokensLeft, recordKeepa429, acquireKeepaTokensOnly,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 import { summarizeCountSeries, computeBuyBoxOwnership } from '../_shared/plRiskSeries.ts';
 import { computePrivateLabelRisk, plRiskCategoricalLabel } from '../_shared/plRisk.ts';
 
@@ -281,6 +290,37 @@ Deno.serve(async (req) => {
 
     // Fetch Keepa product (with stats, offers, BB history)
     const url = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${asin}&stats=180&history=1&offers=20&buybox=1&rating=1&stock=1`;
+
+    // Reserve for the heaviest shape this codebase makes: offers=20 measured
+    // 5-6, and buybox=1 measured 3x on its own, so productWithOffersPerAsin (6)
+    // is the honest floor rather than productPriceHistory (5). Over-reserving
+    // self-corrects on the next reportKeepaTokensLeft; under-reserving is what
+    // produces the 429s this whole change exists to stop.
+    const snapSlot = await acquireKeepaTokensOnly(supabase, {
+      estimatedTokens: KEEPA_COST.productWithOffersPerAsin,
+      minReserve: KEEPA_RESERVE.interactive,
+    });
+    if (!snapSlot.ok) {
+      // Fall through to exactly the stale-cache path the 429 branch below uses,
+      // so a busy budget degrades to older data with a stated reason rather
+      // than an error.
+      console.warn(`[analyzer-product-snapshot] Keepa budget busy for ${asin} (${snapSlot.blockedBy})`);
+      const { data: stale } = await supabase
+        .from('product_analyzer_snapshot_cache')
+        .select('snapshot, fetched_at')
+        .eq('user_id', user.id).eq('asin', asin).eq('marketplace', marketplace)
+        .maybeSingle();
+      const msg = `Keepa budget busy — retry in ~${Math.max(1, Math.round(snapSlot.waitSeconds))}s`;
+      if (stale?.snapshot) {
+        return new Response(JSON.stringify({
+          ...stale.snapshot, stale: true, stale_reason: msg, fetched_at: stale.fetched_at,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log('[analyzer-product-snapshot] fetching Keepa', { asin, marketplace, domainId, force });
     const resp = await fetch(url);
     if (!resp.ok) {
@@ -418,7 +458,9 @@ Deno.serve(async (req) => {
       .map((o: any, i: number) => ({ ...o, rank: i + 1 }));
 
     // Resolve seller names (cache + Keepa /seller fallback)
-    const sellerIds = Array.from(new Set(rawOffers.map((o: any) => o.sellerId).filter((s: string | null): s is string => !!s && !AMAZON_SELLER_IDS.has(s))));
+    // Set<string> is explicit because Array.from(new Set(...)) infers unknown[]
+    // here, which fails three call sites below. Behaviour unchanged.
+    const sellerIds = Array.from(new Set<string>(rawOffers.map((o: any) => o.sellerId).filter((s: string | null): s is string => !!s && !AMAZON_SELLER_IDS.has(s))));
     const nameMap: Record<string, string> = {};
     if (sellerIds.length) {
       const { data: cached } = await supabase
@@ -441,6 +483,19 @@ Deno.serve(async (req) => {
           for (let i = 0; i < missing.length; i += 100) {
             const slice = missing.slice(i, i + 100);
             const sUrl = `https://api.keepa.com/seller?key=${KEEPA_KEY}&domain=${domainId}&seller=${slice.join(',')}`;
+            // Second Keepa spend on the same page load, so it claims too.
+            // Plain /seller measured 1 token per seller on 2026-08-15 -- note
+            // the flat 10 belongs to /seller?storefront=1, a different endpoint
+            // this call does not use. Refusal just skips the batch: seller
+            // NAMES are cosmetic here, so the snapshot still renders with ids.
+            const sellerSlot = await acquireKeepaTokensOnly(supabase, {
+              estimatedTokens: slice.length,
+              minReserve: KEEPA_RESERVE.interactive,
+            });
+            if (!sellerSlot.ok) {
+              console.warn('[analyzer-product-snapshot] seller-name budget busy, showing ids');
+              break;
+            }
             const ctrl = new AbortController();
             const t = setTimeout(() => ctrl.abort(), 12000);
             const sRes = await fetch(sUrl, { signal: ctrl.signal });
