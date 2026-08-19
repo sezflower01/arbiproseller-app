@@ -218,6 +218,11 @@ Deno.serve(async (req) => {
     let searched = 0;
     let capped = 0;
     let failed = 0;
+    // Counted separately from `failed` so a total search outage is one obvious
+    // number in cron_run_history rather than something to infer from a pile of
+    // per-row warnings. This is the signal that was missing when Google CSE
+    // returned 403 on every call for days.
+    let searchBackendDown = 0;
     const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number }> = {};
 
     for (const [userId, rows] of byUser) {
@@ -304,7 +309,18 @@ Deno.serve(async (req) => {
           });
           if (!res.ok) {
             failed++;
-            console.warn(`[auto-source] search failed for ${row.asin}: HTTP ${res.status}`);
+            // 503 is find-source-candidates reporting that EVERY search backend
+            // refused -- an outage, not a per-listing miss. It deliberately
+            // leaves source_status alone so the row retries, and `ran` staying
+            // put means release_auto_source_budget below refunds the claim.
+            // Logged at error level because one of these means every search in
+            // the system is failing, which is not a per-row problem.
+            if (res.status === 503) {
+              searchBackendDown++;
+              console.error(`[auto-source] ❌ SEARCH BACKENDS DOWN — ${row.asin} left unsourced for retry, budget refunded`);
+            } else {
+              console.warn(`[auto-source] search failed for ${row.asin}: HTTP ${res.status}`);
+            }
           } else {
             ran++;
             searched++;
@@ -334,11 +350,16 @@ Deno.serve(async (req) => {
       perUser,
       elapsedMs: Date.now() - startedAt,
     };
+    if (searchBackendDown) {
+      console.error(`[auto-source] ❌ ${searchBackendDown}/${pending.length} listings could not be searched — SEARCH BACKENDS ARE DOWN. All budget refunded, all rows left for retry.`);
+    }
     // granted vs ran per user is the pair that makes the daily count auditable:
-    // a gap between them is budget claimed and not spent.
+    // a gap between them is budget claimed and not spent. searchBackendDown is
+    // the third number that matters: nonzero means the searches did not fail to
+    // find things, they failed to happen.
     return {
       items_processed: searched,
-      detail: { pending: pending.length, expired, searched, capped, failed, perUser },
+      detail: { pending: pending.length, expired, searched, capped, failed, searchBackendDown, perUser },
     };
   });
 

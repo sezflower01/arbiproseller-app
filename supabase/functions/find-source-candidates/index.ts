@@ -236,14 +236,44 @@ function queryWithScope(query: string, siteRestriction: string, queryExclusions:
   return siteRestriction ? `${query} ${siteRestriction}` : `${query} ${queryExclusions}`;
 }
 
-async function googleSearch(supabase: any, query: string, apiKey: string, cx: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+/**
+ * Result of one search backend call.
+ *
+ * `failed` is the whole point of this type. Until 2026-08-19 both backends
+ * returned a bare RawCandidate[] and used [] for BOTH "the API refused us" and
+ * "the API answered, there were no results". Those are opposite facts and the
+ * caller could not tell them apart, so:
+ *
+ *   * Google CSE returned HTTP 403 on every call for days and it looked
+ *     exactly like a quiet fallback. It burned the entire 250/month SerpAPI
+ *     quota before anyone noticed.
+ *   * Worse, a listing searched during the outage was written as
+ *     source_status 'no_candidates' -- "we looked and found nothing" -- which
+ *     is a lie, and permanent: auto-source-new-listings only ever picks up
+ *     'unsourced' rows, so those listings were never retried.
+ *
+ * An outage must be loud and must not be recorded as an answer.
+ */
+interface SearchOutcome {
+  items: RawCandidate[];
+  /** A backend ERRORED. Distinct from answering with zero results. */
+  failed: boolean;
+  /** Short machine-ish reason, for logs and the stored status. */
+  detail: string | null;
+}
+
+async function googleSearch(supabase: any, query: string, apiKey: string, cx: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<SearchOutcome> {
   const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&gl=us&cr=countryUS&lr=lang_en&hl=en`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
-      console.warn('[find-source-candidates] Google CSE non-OK:', r.status);
+      // console.ERROR, not warn: this is an outage. A 403 here means every
+      // search in the system is degraded, and it needs to be findable in the
+      // logs without knowing to look for it.
+      const body = await r.text().catch(() => '');
+      console.error(`[find-source-candidates] ❌ GOOGLE CSE FAILED HTTP ${r.status} — search is DEGRADED, not empty. ${body.slice(0, 200)}`);
       await recordSearchApiCall(supabase, 'google_cse', false, false, r.status);
-      return [];
+      return { items: [], failed: true, detail: `cse_http_${r.status}` };
     }
     const j = await r.json();
     const items = Array.isArray(j.items) ? j.items : [];
@@ -251,18 +281,23 @@ async function googleSearch(supabase: any, query: string, apiKey: string, cx: st
     // title query, and the fallback pass adds another pair. Only a per-query
     // count can be compared against CSE's 100/day free tier.
     await recordSearchApiCall(supabase, 'google_cse', true, items.length === 0, r.status);
-    return items
-      .map((it: any) => ({
-        url: it.link || '',
-        title: it.title || '',
-        snippet: it.snippet || '',
-        imageUrl: it.pagemap?.cse_image?.[0]?.src || it.pagemap?.product?.[0]?.image || null,
-      }))
-      .filter((c: RawCandidate) => c.url);
+    return {
+      items: items
+        .map((it: any) => ({
+          url: it.link || '',
+          title: it.title || '',
+          snippet: it.snippet || '',
+          imageUrl: it.pagemap?.cse_image?.[0]?.src || it.pagemap?.product?.[0]?.image || null,
+        }))
+        .filter((c: RawCandidate) => c.url),
+      // Answered. Zero results here is a real answer, not a failure.
+      failed: false,
+      detail: null,
+    };
   } catch (e) {
-    console.warn('[find-source-candidates] Google CSE error:', (e as Error).message);
+    console.error(`[find-source-candidates] ❌ GOOGLE CSE ERROR — search is DEGRADED, not empty: ${(e as Error).message}`);
     await recordSearchApiCall(supabase, 'google_cse', false, false, undefined);
-    return [];
+    return { items: [], failed: true, detail: 'cse_network_error' };
   }
 }
 
@@ -270,33 +305,63 @@ async function googleSearch(supabase: any, query: string, apiKey: string, cx: st
 // quota exhausted, etc.) -- same fallback discover-source-candidates already
 // relies on. SerpAPI doesn't return pagemap image data, so imageUrl stays
 // null on this path; compareImages degrades gracefully (see _shared/image-compare.ts).
-async function serpApiSearch(supabase: any, query: string, apiKey: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<RawCandidate[]> {
+async function serpApiSearch(supabase: any, query: string, apiKey: string, siteRestriction: string, queryExclusions: string, num = MAX_CANDIDATES_SCORED): Promise<SearchOutcome> {
   const url = `https://serpapi.com/search.json?q=${encodeURIComponent(queryWithScope(query, siteRestriction, queryExclusions))}&num=${num}&api_key=${apiKey}&engine=google&gl=us&hl=en&google_domain=google.com&location=United+States`;
   try {
     const r = await fetch(url);
     if (!r.ok) {
-      console.warn('[find-source-candidates] SerpAPI non-OK:', r.status);
+      // 429 here means the monthly quota is gone. With CSE also down that is a
+      // TOTAL search outage, so it is an error-level event.
+      console.error(`[find-source-candidates] ❌ SERPAPI FAILED HTTP ${r.status} — the fallback is unavailable`);
       await recordSearchApiCall(supabase, 'serpapi', false, false, r.status);
-      return [];
+      return { items: [], failed: true, detail: `serpapi_http_${r.status}` };
     }
     const j = await r.json();
     const items = Array.isArray(j.organic_results) ? j.organic_results : [];
     await recordSearchApiCall(supabase, 'serpapi', true, items.length === 0, r.status);
-    return items
-      .map((it: any) => ({ url: it.link || '', title: it.title || '', snippet: it.snippet || '', imageUrl: null }))
-      .filter((c: RawCandidate) => c.url);
+    return {
+      items: items
+        .map((it: any) => ({ url: it.link || '', title: it.title || '', snippet: it.snippet || '', imageUrl: null }))
+        .filter((c: RawCandidate) => c.url),
+      failed: false,
+      detail: null,
+    };
   } catch (e) {
-    console.warn('[find-source-candidates] SerpAPI error:', (e as Error).message);
+    console.error(`[find-source-candidates] ❌ SERPAPI ERROR — the fallback is unavailable: ${(e as Error).message}`);
     await recordSearchApiCall(supabase, 'serpapi', false, false, undefined);
-    return [];
+    return { items: [], failed: true, detail: 'serpapi_network_error' };
   }
 }
 
-async function searchAll(supabase: any, query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = '', queryExclusions = ''): Promise<RawCandidate[]> {
-  const results = await googleSearch(supabase, query, googleKey, cx, siteRestriction, queryExclusions);
-  if (results.length > 0) return results;
-  if (!serpApiKey) return [];
-  return serpApiSearch(supabase, query, serpApiKey, siteRestriction, queryExclusions);
+/**
+ * CSE first, SerpAPI only as a fallback -- unchanged. What IS new is that a
+ * fallback triggered by an OUTAGE is announced, and that "both backends
+ * refused" is reported to the caller instead of being flattened into [].
+ */
+async function searchAll(supabase: any, query: string, googleKey: string, cx: string, serpApiKey: string | undefined, siteRestriction = '', queryExclusions = ''): Promise<SearchOutcome> {
+  const cse = await googleSearch(supabase, query, googleKey, cx, siteRestriction, queryExclusions);
+  if (cse.items.length > 0) return cse;
+
+  // The distinction that did not exist before: falling back because CSE FAILED
+  // is an incident; falling back because CSE genuinely found nothing is
+  // routine. They used to look identical in the logs and in the data.
+  if (cse.failed) {
+    console.error(`[find-source-candidates] ⚠️ FALLING BACK TO SERPAPI BECAUSE CSE IS DOWN (${cse.detail}) — this is an outage, not a zero-result. Every search is affected.`);
+  }
+
+  if (!serpApiKey) {
+    return { items: [], failed: cse.failed, detail: cse.detail };
+  }
+
+  const serp = await serpApiSearch(supabase, query, serpApiKey, siteRestriction, queryExclusions);
+  return {
+    items: serp.items,
+    // Only BOTH backends refusing is a total failure. If SerpAPI answered --
+    // even with zero results -- a real search ran and "no candidates" is a
+    // truthful answer.
+    failed: cse.failed && serp.failed,
+    detail: cse.failed && serp.failed ? `${cse.detail}+${serp.detail}` : null,
+  };
 }
 
 // NON_RETAIL_DOMAINS moved to STRUCTURAL_EXCLUSIONS and is now enforced in the
@@ -653,13 +718,28 @@ Deno.serve(async (req) => {
     const exclusionSet = new Set(scope.exclusions);
     const queryExclusions = buildQueryExclusions(scope.exclusions);
 
+    // Set when EVERY search backend refused. Tracked across both passes so the
+    // final status can tell "we searched and found nothing" from "we could not
+    // search at all" -- writing the former when the latter is true is what made
+    // an outage permanent, since only 'unsourced' rows are ever retried.
+    let allBackendsFailed = false;
+
     const runPass = async (siteRestriction: string): Promise<RawCandidate[]> => {
-      const searches = listing.upc
+      const outcomes = listing.upc
         ? await Promise.all([
             searchAll(admin, listing.upc, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
             searchAll(admin, titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions),
           ])
         : [await searchAll(admin, titleQuery, GOOGLE_API_KEY, GOOGLE_CX_ID, serpKey, siteRestriction, queryExclusions)];
+
+      // EVERY query in this pass had to fail. One working query proves the
+      // backends are reachable, so a zero-result is then a real answer.
+      if (outcomes.length > 0 && outcomes.every((o) => o.failed)) {
+        allBackendsFailed = true;
+        console.error(`[find-source-candidates] ❌ ALL SEARCH BACKENDS FAILED for ${listing.asin} (${outcomes.map((o) => o.detail).join(', ')}) — refusing to record this as "no candidates"`);
+      }
+
+      const searches = outcomes.map((o) => o.items);
       const seenUrls = new Set<string>();
       let droppedForeign = 0;
       let droppedExcluded = 0;
@@ -718,6 +798,25 @@ Deno.serve(async (req) => {
     const scored = ranked.slice(0, MAX_CANDIDATES_VERIFIED);
 
     if (scored.length === 0) {
+      // A search that could not RUN must not be recorded as a search that found
+      // nothing. 'no_candidates' is terminal -- auto-source-new-listings only
+      // ever picks up 'unsourced' -- so writing it during an outage silently
+      // retires the listing forever. Leave the row where it was and let the
+      // next run retry once the backends are back.
+      //
+      // Google CSE returned 403 on every call for days in Aug 2026 while
+      // SerpAPI was exhausted; every listing searched in that window would
+      // otherwise have been permanently marked as having no source.
+      if (allBackendsFailed) {
+        console.error(`[find-source-candidates] search backends unavailable for ${listing.asin} — leaving source_status untouched so it retries`);
+        return jsonResponse({
+          ok: false,
+          status: 'search_unavailable',
+          candidates: [],
+          searchPass,
+          usage: { searchCount: newCount, monthKey: mKey },
+        }, 503);
+      }
       await admin.from('seller_watch_new_listings').update({ source_status: 'no_candidates', candidates: [] }).eq('id', listingId);
       return jsonResponse({ ok: true, status: 'no_candidates', candidates: [], searchPass, usage: { searchCount: newCount, monthKey: mKey } });
     }
