@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
     // spend the budget and then throw the result away.
     const { data: strictCfgs } = await admin
       .from('auto_source_config')
-      .select('user_id, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba, strict_min_price_cents')
+      .select('user_id, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba, strict_min_price_cents, search_needs_approval')
       .in('user_id', [...byUser.keys()]);
     const strictByUser = new Map<string, any>();
     for (const c of strictCfgs || []) strictByUser.set(c.user_id, c);
@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
     // be explainable rather than surprising.
     let dedupSaved = 0;
     let dedupFannedOut = 0;
-    const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number }> = {};
+    const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number; skippedGated?: number }> = {};
 
     for (const [userId, rows] of byUser) {
       if (Date.now() >= deadlineAt) break;
@@ -309,10 +309,39 @@ Deno.serve(async (req) => {
         if (!byMarket.has(m)) byMarket.set(m, []);
         byMarket.get(m)!.push(r.asin);
       }
+      // The same read also answers the needs-approval question, which it
+      // previously discarded. That was a real leak, added 2026-08-19:
+      //
+      //   * Eligibility is usually UNKNOWN at detection, and unknown
+      //     deliberately qualifies -- so a gated ASIN is stamped
+      //     qualified=true and only later resolves to 'approval_required'.
+      //   * qualifyListing() only ever saw that verdict at DETECTION time.
+      //   * So a gated listing whose verdict resolved afterwards was searched
+      //     even with "Search Needs Approval listings" turned OFF.
+      //
+      // Toggling the setting also never affected already-detected rows, since
+      // `qualified` is stamped once. Restricted was saved from both problems by
+      // this re-check; needs-approval was not, because only 'restricted' was
+      // collected. Reading the CURRENT config here makes the toggle mean what
+      // it says: OFF stops the search call, it does not merely deprioritise.
+      const allowNeedsApproval = strictByUser.get(userId)?.search_needs_approval !== false;
       const nowRestricted = new Set<string>();
+      const nowGatedExcluded = new Set<string>();
       for (const [m, asins] of byMarket) {
         const verdicts = await readEligibility(admin, userId, m, asins);
-        for (const [asin, v] of verdicts) if (v === 'restricted') nowRestricted.add(asin);
+        for (const [asin, v] of verdicts) {
+          if (v === 'restricted') nowRestricted.add(asin);
+          else if (v === 'approval_required' && !allowNeedsApproval) nowGatedExcluded.add(asin);
+        }
+      }
+      if (nowGatedExcluded.size) {
+        await admin
+          .from('seller_watch_new_listings')
+          .update({ qualified: false, disqualified_reason: 'needs_approval_excluded' })
+          .eq('user_id', userId)
+          .in('asin', Array.from(nowGatedExcluded))
+          .eq('source_status', 'unsourced');
+        console.log(`[auto-source] skipped ${nowGatedExcluded.size} needs-approval ASIN(s) — toggle is off`);
       }
       if (nowRestricted.size) {
         // Record WHY, so a row that vanishes from the queue is explainable
@@ -328,9 +357,14 @@ Deno.serve(async (req) => {
 
       let ran = 0;
       let skippedRestricted = 0;
+      let skippedGated = 0;
       for (const row of claimed) {
         if (Date.now() + SEARCH_RESERVE_MS > deadlineAt) break;
+        // Neither ever reaches the search call. `ran` stays put for both, so
+        // release_auto_source_budget below refunds the claim -- a skip costs
+        // no search and no budget.
         if (nowRestricted.has(row.asin)) { skippedRestricted++; continue; }
+        if (nowGatedExcluded.has(row.asin)) { skippedGated++; continue; }
         try {
           // Both headers, deliberately. find-source-candidates keeps
           // verify_jwt = true because it is called from the browser with a
@@ -412,6 +446,7 @@ Deno.serve(async (req) => {
       }
       perUser[userId].ran = ran;
       if (skippedRestricted) perUser[userId].skippedRestricted = skippedRestricted;
+      if (skippedGated) perUser[userId].skippedGated = skippedGated;
 
       // Give back what was claimed but never spent -- a claim that did not
       // become a search would otherwise silently shrink today's allowance.
