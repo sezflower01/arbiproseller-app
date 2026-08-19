@@ -2,19 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { EligibilityStatus } from "@/components/common/EligibilityBadge";
 
-export interface SourceCandidate {
-  url: string;
-  domain: string;
-  title: string;
-  imageUrl: string | null;
-  confidence: number;
-  label: string;
-  reason: string;
-  price: number | null;
-  currency: string | null;
-  availability: string | null;
-}
-
 export interface NewListing {
   id: string;
   watch_id: string;
@@ -31,28 +18,20 @@ export interface NewListing {
   qualified: boolean | null;
   disqualified_reason: string | null;
   /**
-   * Set when strict mode withheld a search. The row is still a real, qualified
-   * detection -- source_status stays 'unsourced' because no search ran -- it
-   * just did not buy one of the day's 80 searches.
+   * Amazon sell price in cents, captured during detection by a Keepa call
+   * check-seller-watchlist already makes. Shown beside the search button as
+   * the "is this worth clicking" signal. Null = capture did not happen.
+   *
+   * The candidate columns (candidates, sourced_candidate,
+   * rejected_candidate_urls), strict_reason, the offer counts and
+   * total_fees_cents were dropped from this type on 2026-08-19 with the
+   * automated search pipeline. The COLUMNS still exist -- removing them is a
+   * separate destructive migration -- but declaring fields that SELECT_COLS no
+   * longer fetches made the query's inferred row type disagree with this
+   * interface, which is what produced the overload errors.
    */
-  strict_reason: string | null;
-  fba_offer_count: number | null;
-  fbm_offer_count: number | null;
-  seller_offer_is_fba: boolean | null;
-  candidates: SourceCandidate[] | null;
-  sourced_candidate: SourceCandidate | null;
-  /** URLs the user ruled out; excluded from future searches. */
-  rejected_candidate_urls: string[] | null;
-  /** Amazon-side price captured overnight, in cents. Null = not captured. */
   amazon_price_cents: number | null;
   new_price_cents: number | null;
-  /** SP-API fee estimate priced against the captured price, in cents. */
-  total_fees_cents: number | null;
-}
-
-function currentMonthKey(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 
@@ -102,12 +81,9 @@ export function useSellerNewListings() {
   const [pending, setPending] = useState<NewListing[]>([]);
   /** Total finished rows, which exceeds `done.length` whenever PAGE_SIZE bites. */
   const [doneTotal, setDoneTotal] = useState(0);
-  /** Finished rows that found nothing — the low-value bulk of a backlog. */
-  const [noCandidatesTotal, setNoCandidatesTotal] = useState(0);
   /** Total queued rows, which exceeds `pending.length` whenever PAGE_SIZE bites. */
   const [pendingTotal, setPendingTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [monthlySearchCount, setMonthlySearchCount] = useState<number>(0);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
   /** `${seller_id}|${marketplace}` -> seller_name, for listings to show their origin. */
   const [sellerNames, setSellerNames] = useState<Record<string, string>>({});
@@ -118,10 +94,8 @@ export function useSellerNewListings() {
       const [
         { data: doneRows, error },
         { data: pendingRows },
-        { data: usageRow },
         { data: watchRows },
         { count: doneCount },
-        { count: noCandidatesCount },
         { count: pendingCount },
       ] = await Promise.all([
         // DONE and SEARCHING are fetched separately with their own limits.
@@ -140,11 +114,6 @@ export function useSellerNewListings() {
           .in("source_status", ["unsourced", "sourcing"])
           .order("detected_at", { ascending: false })
           .limit(PAGE_SIZE),
-        supabase
-          .from("find_source_usage")
-          .select("search_count")
-          .eq("month_key", currentMonthKey())
-          .maybeSingle(),
         // Listing rows carry seller_id but not the seller's NAME -- that lives
         // on the watch. Fetched here so a listing can say who it came from,
         // which is the first thing you need in order to judge it.
@@ -159,12 +128,6 @@ export function useSellerNewListings() {
           .from("seller_watch_new_listings")
           .select("id", { count: "exact", head: true })
           .in("source_status", ["candidates_found", "sourced", "no_candidates"]),
-        // Counted separately so "Delete all with no candidates" can name a real
-        // number before the user commits to it.
-        supabase
-          .from("seller_watch_new_listings")
-          .select("id", { count: "exact", head: true })
-          .eq("source_status", "no_candidates"),
         supabase
           .from("seller_watch_new_listings")
           .select("id", { count: "exact", head: true })
@@ -174,9 +137,7 @@ export function useSellerNewListings() {
       setDone((doneRows as unknown as NewListing[]) || []);
       setPending((pendingRows as unknown as NewListing[]) || []);
       setDoneTotal(doneCount ?? 0);
-      setNoCandidatesTotal(noCandidatesCount ?? 0);
       setPendingTotal(pendingCount ?? 0);
-      setMonthlySearchCount((usageRow as any)?.search_count || 0);
 
       const names: Record<string, string> = {};
       type WatchNameRow = { seller_id: string; marketplace: string; seller_name: string | null };
@@ -273,64 +234,7 @@ export function useSellerNewListings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done, pending]);
 
-  /**
-   * Mark a candidate as NOT the source.
-   *
-   * Persisted rather than hidden client-side, because the whole point is that
-   * it survives "Search again" -- otherwise the same ruled-out candidate comes
-   * back every run and gets re-rejected. find-source-candidates filters these
-   * URLs out before scoring, so a rejection also stops costing verification
-   * budget.
-   *
-   * The judgement being captured is one the scorer cannot see: "right product,
-   * wrong seller" -- e.g. the item is correct but reaches you via Instacart
-   * rather than the brand's own store. Text and image similarity both look
-   * excellent in that case, which is exactly why the candidate keeps ranking.
-   */
-  const rejectCandidate = useCallback(async (listingId: string, candidate: SourceCandidate) => {
-    const listing = done.find((l) => l.id === listingId);
-    if (!listing) return;
 
-    const remaining = (listing.candidates || []).filter((c) => c.url !== candidate.url);
-    const rejected = Array.from(
-      new Set([...(listing.rejected_candidate_urls || []), candidate.url]),
-    );
-
-    const { error } = await supabase
-      .from("seller_watch_new_listings")
-      .update({
-        candidates: remaining,
-        rejected_candidate_urls: rejected,
-        // Falling back to 'no_candidates' when the last one is ruled out keeps
-        // the row honest: it has been searched and nothing usable remains,
-        // which is a different state from never having searched.
-        source_status: remaining.length ? listing.source_status : "no_candidates",
-      })
-      .eq("id", listingId);
-    if (error) throw new Error(error.message);
-
-    setDone((prev) =>
-      prev.map((l) =>
-        l.id === listingId
-          ? {
-              ...l,
-              candidates: remaining,
-              rejected_candidate_urls: rejected,
-              source_status: remaining.length ? l.source_status : "no_candidates",
-            }
-          : l,
-      ),
-    );
-  }, [done, pending]);
-
-  const markAsSourced = useCallback(async (listingId: string, candidate: SourceCandidate) => {
-    const { error } = await supabase
-      .from("seller_watch_new_listings")
-      .update({ source_status: "sourced", sourced_at: new Date().toISOString(), sourced_candidate: candidate })
-      .eq("id", listingId);
-    if (error) throw new Error(error.message);
-    setDone((prev) => prev.map((l) => (l.id === listingId ? { ...l, source_status: "sourced", sourced_candidate: candidate } : l)));
-  }, []);
 
   /**
    * Permanently delete listing rows.
@@ -396,8 +300,8 @@ export function useSellerNewListings() {
   }, [refresh]);
 
   return {
-    done, pending, doneTotal, pendingTotal, noCandidatesTotal, loading, monthlySearchCount,
-    eligibility, sellerNames, markAsSourced, rejectCandidate, deleteListings,
+    done, pending, doneTotal, pendingTotal, loading,
+    eligibility, sellerNames, deleteListings,
     deleteByStatus, refresh,
   };
 }
