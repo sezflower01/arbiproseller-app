@@ -69,6 +69,30 @@ export const EXCLUDED_BRANDS = new Set([
 ]);
 
 /**
+ * ⚠️ DO NOT AUTO-SYNC THIS LIST WITH AMAZON'S RESTRICTION DATA.
+ *
+ * The per-user list in source_excluded_terms is deliberately MANUAL, and that
+ * is a product decision, not an unfinished feature. Confirmed with the user
+ * 2026-08-19 after they were asked directly about it.
+ *
+ * The reasoning: the seller does independent brand-risk research that Amazon's
+ * gating status does not capture -- IP complaint history, brand-protection
+ * programme membership, signals from third-party tools. A brand can be
+ * perfectly sellable as far as Amazon's own eligibility API is concerned and
+ * still be a bad idea to stock. Deriving this list from user_approved_products
+ * verdicts, or from anything else Amazon reports, would collapse exactly the
+ * judgement the list exists to express.
+ *
+ * The two systems are complementary and both already run: `eligibility` above
+ * handles what Amazon forbids; this list handles what the seller has decided
+ * against. Neither should be made to drive the other.
+ *
+ * This is also why real brands appear in a user's list (MAC, ofra were live
+ * examples). Seeing a legitimate brand here is NOT evidence of a mistake --
+ * do not "helpfully" prune it.
+ */
+
+/**
  * Broad-rank ceiling. Measured distribution: p25 28,335 / median 80,142 /
  * p75 511,275 / max 1,886,054. 500,000 trims roughly the worst quartile while
  * leaving the median comfortably through.
