@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     // re-answering settled questions.
     const { data: pending, error } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, marketplace, detected_at, sales_rank, fba_offer_count, seller_offer_is_fba')
+      .select('id, user_id, asin, marketplace, detected_at, sales_rank, fba_offer_count, seller_offer_is_fba, new_price_cents, amazon_price_cents')
       .eq('source_status', 'unsourced')
       // Rows already withheld by strict mode keep source_status 'unsourced' --
       // honestly, since no search ran -- but must not be re-evaluated on every
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
     // spend the budget and then throw the result away.
     const { data: strictCfgs } = await admin
       .from('auto_source_config')
-      .select('user_id, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba')
+      .select('user_id, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba, strict_min_price_cents')
       .in('user_id', [...byUser.keys()]);
     const strictByUser = new Map<string, any>();
     for (const c of strictCfgs || []) strictByUser.set(c.user_id, c);
@@ -176,6 +176,7 @@ Deno.serve(async (req) => {
         minMonthlySales: cfg.strict_min_monthly_sales ?? STRICT_DEFAULTS.minMonthlySales,
         requireRank: cfg.strict_require_rank ?? STRICT_DEFAULTS.requireRank,
         requireSellerFba: cfg.strict_require_seller_fba ?? STRICT_DEFAULTS.requireSellerFba,
+        minPriceCents: cfg.strict_min_price_cents ?? STRICT_DEFAULTS.minPriceCents,
       };
 
       const keep: typeof rows = [];
@@ -185,6 +186,10 @@ Deno.serve(async (req) => {
           salesRank: (r as any).sales_rank,
           fbaOfferCount: (r as any).fba_offer_count,
           sellerOfferIsFba: (r as any).seller_offer_is_fba,
+          // Lowest New first, Amazon's own price as backup -- the same
+          // precedence the ROI calculation uses, so the filter and the ROI
+          // shown in the UI cannot disagree about what the item sells for.
+          priceCents: (r as any).new_price_cents ?? (r as any).amazon_price_cents,
         }, thresholds);
         if (v.pass) keep.push(r);
         else rejects.push({ id: r.id, reason: v.reason! });
@@ -223,6 +228,12 @@ Deno.serve(async (req) => {
     // per-row warnings. This is the signal that was missing when Google CSE
     // returned 403 on every call for days.
     let searchBackendDown = 0;
+    // Dedup accounting, reported in cron_run_history. dedupSaved is searches
+    // NOT bought; dedupFannedOut is listings that got an answer without one.
+    // Both are logged because "the queue drained faster than the budget" should
+    // be explainable rather than surprising.
+    let dedupSaved = 0;
+    let dedupFannedOut = 0;
     const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number }> = {};
 
     for (const [userId, rows] of byUser) {
@@ -233,8 +244,38 @@ Deno.serve(async (req) => {
       // granting 6 and then running 1 before the deadline would silently spend
       // five searches that never happened -- exhausting an 80/day cap in about
       // fourteen runs while performing fourteen searches.
+      // ── ASIN DEDUPLICATION ──
+      //
+      // seller_watch_new_listings is unique on (watch_id, asin), so N watched
+      // sellers listing the SAME product produce N rows. Before 2026-08-19 the
+      // picker iterated rows, and find-source-candidates has no cache, so each
+      // of those rows issued its own CSE/SerpAPI queries -- same UPC, same
+      // title, same results. N-1 of every N were pure waste: not lower-value
+      // searches, ZERO information gain.
+      //
+      // Grouped by asin+marketplace because candidates are marketplace
+      // specific -- the same ASIN in US and MX is genuinely two searches.
+      //
+      // This is the only volume filter here that loses nothing. Every listing
+      // still gets its candidates; they are copied from the one search instead
+      // of being bought again.
+      const groups = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const k = `${r.asin}|${r.marketplace || 'US'}`;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k)!.push(r);
+      }
+      const groupList = [...groups.values()];
+      const dupSaved = rows.length - groupList.length;
+      if (dupSaved > 0) {
+        console.log(`[auto-source] dedup: ${rows.length} listings -> ${groupList.length} searches (${dupSaved} redundant avoided)`);
+        dedupSaved += dupSaved;
+      }
+
+      // Budget is claimed per SEARCH, not per listing -- claiming per row would
+      // spend the daily cap on work that is never performed.
       const timeCapacity = Math.max(0, Math.floor((deadlineAt - Date.now()) / SEARCH_RESERVE_MS));
-      const wanted = Math.min(rows.length, MAX_PER_RUN - searched, timeCapacity);
+      const wanted = Math.min(groupList.length, MAX_PER_RUN - searched, timeCapacity);
       if (wanted <= 0) break;
 
       const { data: grantedRaw, error: claimErr } = await admin.rpc('claim_auto_source_budget', {
@@ -249,6 +290,10 @@ Deno.serve(async (req) => {
       perUser[userId] = { granted, ran: 0 };
       if (granted <= 0) { capped += rows.length; continue; }
 
+      // `granted` counts SEARCHES. claimedGroups are the groups we may search;
+      // every row inside them still gets an answer via the fan-out below.
+      const claimedGroups = groupList.slice(0, granted);
+
       // SAFETY RE-CHECK. Qualification is stamped at detection, when a
       // verdict often does not exist yet -- unknown deliberately qualifies, so
       // a row can be marked searchable and only later be revealed as
@@ -256,7 +301,8 @@ Deno.serve(async (req) => {
       // resolves). Re-reading the cache immediately before spending is a cheap
       // table read that stops the one case the detection-time check cannot
       // catch. No API call: cached verdicts only.
-      const claimed = rows.slice(0, granted);
+      // One representative per group -- the row we actually search.
+      const claimed = claimedGroups.map((g) => g[0]);
       const byMarket = new Map<string, string[]>();
       for (const r of claimed) {
         const m = r.marketplace || 'US';
@@ -324,6 +370,40 @@ Deno.serve(async (req) => {
           } else {
             ran++;
             searched++;
+
+            // ── FAN-OUT ──
+            // The search wrote its result to `row`. Every sibling watching the
+            // same ASIN in the same marketplace gets the identical answer, so
+            // copy it rather than buying it again. find-source-candidates
+            // returns the candidates in its response body, so no re-read.
+            const siblings = (groups.get(`${row.asin}|${row.marketplace || 'US'}`) ?? [])
+              .filter((s) => s.id !== row.id);
+            if (siblings.length) {
+              try {
+                const body = await res.json().catch(() => null) as
+                  | { status?: string; candidates?: unknown }
+                  | null;
+                // Only mirror a real verdict. If the shape is unexpected the
+                // siblings stay 'unsourced' and are retried -- never guess a
+                // status, since 'no_candidates' is terminal.
+                if (body?.status === 'candidates_found' || body?.status === 'no_candidates') {
+                  const { error: fanErr } = await admin
+                    .from('seller_watch_new_listings')
+                    .update({ source_status: body.status, candidates: body.candidates ?? [] })
+                    .in('id', siblings.map((s) => s.id))
+                    // Guard against clobbering a row that changed underneath us
+                    // between the pick and now.
+                    .eq('source_status', 'unsourced');
+                  if (fanErr) {
+                    console.warn(`[auto-source] fan-out failed for ${row.asin}: ${fanErr.message}`);
+                  } else {
+                    dedupFannedOut += siblings.length;
+                  }
+                }
+              } catch (e) {
+                console.warn(`[auto-source] fan-out error for ${row.asin}:`, (e as Error).message);
+              }
+            }
           }
         } catch (e) {
           failed++;
@@ -359,7 +439,7 @@ Deno.serve(async (req) => {
     // find things, they failed to happen.
     return {
       items_processed: searched,
-      detail: { pending: pending.length, expired, searched, capped, failed, searchBackendDown, perUser },
+      detail: { pending: pending.length, expired, searched, capped, failed, searchBackendDown, dedupSaved, dedupFannedOut, perUser },
     };
   });
 

@@ -195,3 +195,44 @@ Deno.test('empty or missing offer data yields zeroes and an unknown seller', () 
   assertEquals(s.sellerOfferFound, false);
   assertEquals(s.sellerOfferIsFba, null);
 });
+
+// ── Rule 5: price floor ──
+
+Deno.test('rejects a listing priced below the floor', () => {
+  const r = evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, sellerOfferIsFba: true, priceCents: 899 });
+  assertEquals(r.pass, false);
+  assertEquals(r.reason, 'price_899_below_1200');
+});
+
+Deno.test('accepts exactly at the price floor', () => {
+  assertEquals(
+    evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, priceCents: 1200 }).pass,
+    true,
+  );
+});
+
+Deno.test('an uncaptured price passes -- unknown is not "too cheap"', () => {
+  assertEquals(evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, priceCents: null }).pass, true);
+  assertEquals(evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10 }).pass, true);
+});
+
+Deno.test('a zero or negative price is treated as unknown, not as below the floor', () => {
+  // Keepa uses -1/-2 sentinels; storing one as a price would reject wrongly.
+  assertEquals(evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, priceCents: 0 }).pass, true);
+  assertEquals(evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, priceCents: -1 }).pass, true);
+});
+
+Deno.test('price is reported ahead of the derived sales floor when both would fail', () => {
+  // 450k rank implies ~43/month (below 50) AND the price is below the floor.
+  // The price is the harder fact, so it should be the reason given.
+  const r = evaluateStrictMode({ salesRank: 450_000, fbaOfferCount: 10, priceCents: 500 });
+  assertEquals(r.reason?.startsWith('price_'), true);
+});
+
+Deno.test('the price floor is configurable', () => {
+  const cheap = { ...STRICT_DEFAULTS, minPriceCents: 300 };
+  assertEquals(
+    evaluateStrictMode({ salesRank: 1000, fbaOfferCount: 10, priceCents: 500 }, cheap).pass,
+    true,
+  );
+});

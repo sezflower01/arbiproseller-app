@@ -40,6 +40,11 @@ export interface StrictModeThresholds {
   requireRank: boolean;
   /** Reject when the watched seller's own new offer is FBM. */
   requireSellerFba: boolean;
+  /**
+   * Minimum Amazon sell price, in CENTS. Below this the arithmetic cannot
+   * work regardless of where the product is sourced.
+   */
+  minPriceCents: number;
 }
 
 /**
@@ -61,6 +66,11 @@ export const STRICT_DEFAULTS: StrictModeThresholds = {
   minMonthlySales: 50,
   requireRank: true,
   requireSellerFba: true,
+  // $12.00. Not a taste threshold -- an arithmetic one. Total FBA fees measured
+  // $6.63 on a real captured row, so a $10 item leaves under $3.40 to cover
+  // BOTH the source cost and any profit. Items below this were never sourceable
+  // at any cost, so searching for a supplier cannot pay off.
+  minPriceCents: 1200,
 };
 
 /**
@@ -147,6 +157,13 @@ export interface StrictModeInput {
    * listings, so unknown passes this rule and is recorded for auditing.
    */
   sellerOfferIsFba?: boolean | null;
+  /**
+   * Amazon sell price in CENTS -- seller_watch_new_listings.new_price_cents
+   * (lowest New), falling back to amazon_price_cents. Captured during
+   * detection by the Keepa call that already runs, so this rule costs no API
+   * call. null means price capture did not happen, which is UNKNOWN and passes.
+   */
+  priceCents?: number | null;
 }
 
 export interface StrictModeResult {
@@ -179,6 +196,17 @@ export function evaluateStrictMode(
   const fba = typeof input.fbaOfferCount === 'number' ? input.fbaOfferCount : null;
   if (fba != null && fba < thresholds.minFbaOffers) {
     return { pass: false, reason: `fba_offers_${fba}_below_${thresholds.minFbaOffers}` };
+  }
+
+  // Rule 5: price floor. Checked before the sales floor because "too cheap to
+  // ever work" is a harder fact than an estimate derived from a rank curve --
+  // when both would reject, the price is the more useful reason to report.
+  const price = typeof input.priceCents === 'number' && input.priceCents > 0 ? input.priceCents : null;
+  if (price != null && price < thresholds.minPriceCents) {
+    return {
+      pass: false,
+      reason: `price_${price}_below_${thresholds.minPriceCents}`,
+    };
   }
 
   // Rule 4: estimated monthly sales floor, derived from the rank above.
