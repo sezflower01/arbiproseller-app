@@ -29,7 +29,24 @@
 // (see migration 20260815210000). Estimates only need to be roughly right:
 // reportKeepaTokensLeft() overwrites them with the tokensLeft value Keepa
 // returns on every response, so drift self-corrects on the next call.
-const KEEPA_GUARD_LIMIT = 4; // plan: 5 tokens/min; guard at 4 to avoid 429 spikes
+// Layer 1 call ceiling. Raised 4 -> 20 on 2026-08-19 when a Keepa API Access
+// subscription was added: the rate is now 25 tokens/min, NOT 20 -- the API
+// plan's 20 STACKS on the Keepa Pro base of 5. Confirmed on the plan page.
+//
+// The 80% convention is carried over from the original (guard 4 against a
+// 5/min plan). It is a rough anti-hammer ceiling, not a budget control --
+// Layer 2 owns the budget, and a call can cost anywhere from 1 to 10+ tokens,
+// so this number was never a token limit however it looked.
+//
+// ⚠️ repricer-sp-api-pricing keeps its OWN inline copy of this constant and
+// claims the SAME keepa_daily_usage.last_called_at row. The two must move
+// together or they will disagree about how old a claim has to be before it can
+// be taken. Both were updated in the same commit; grep KEEPA_GUARD_LIMIT.
+//
+// If the plan changes again, this is the constant to edit. It is deliberately
+// NOT derived from the observed refill_per_min: that would add a DB read to
+// the hot path of every claim, and the rate changes about once a year.
+const KEEPA_GUARD_LIMIT = 20; // plan: 25 tokens/min (5 Pro + 20 API); guard at 20
 const KEEPA_GUARD_INTERVAL_MS = Math.ceil(60_000 / KEEPA_GUARD_LIMIT);
 
 // Measured 2026-08-15. Used as pre-call reservations.

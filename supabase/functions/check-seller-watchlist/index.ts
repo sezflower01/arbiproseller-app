@@ -37,7 +37,7 @@
 // 0-5) get a bounded detail batch, so cost scales with new-listing volume
 // rather than catalog size.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { lookupAsinDetails } from '../_shared/asin-catalog-lookup.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch, SPAPI_HOSTS } from '../_shared/spapi-catalog-image.ts';
 import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
@@ -383,6 +383,16 @@ Deno.serve(async (req) => {
           }
         } else {
           console.warn(`[check-seller-watchlist] Keepa HTTP ${res.status} for ${sellerId}`);
+          // A 429 body carries the balance AT refusal, usually NEGATIVE.
+          // Recording it is what keeps keepa_token_budget from reading
+          // positive while the account is overdrawn -- the desync that let the
+          // gate approve calls against a number that was already fiction.
+          if (res.status === 429) {
+            const txt = await res.text().catch(() => '');
+            let tl: unknown = undefined;
+            try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* not JSON */ }
+            await recordKeepa429(admin, tl, 'check-seller-watchlist /seller');
+          }
         }
       } catch (e) {
         console.warn(`[check-seller-watchlist] Keepa fetch failed for ${sellerId}`, (e as Error).message);
@@ -482,6 +492,12 @@ Deno.serve(async (req) => {
               }
             } else {
               console.warn(`[check-seller-watchlist] Keepa /product HTTP ${res.status} for new-asin batch`);
+              if (res.status === 429) {
+                const txt = await res.text().catch(() => '');
+                let tl: unknown = undefined;
+                try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* not JSON */ }
+                await recordKeepa429(admin, tl, 'check-seller-watchlist /product-batch');
+              }
             }
           } catch (e) {
             console.warn(`[check-seller-watchlist] Keepa /product fetch failed for new-asin batch`, (e as Error).message);
@@ -715,6 +731,14 @@ Deno.serve(async (req) => {
                       row.offers_captured_at = nowIsoPrice;
                     }
                   }
+                } else if (pres.status === 429) {
+                  // The offers=20 price-capture batch is the most expensive
+                  // shape this worker makes, so its refusals move the balance
+                  // furthest and matter most to record.
+                  const ptxt = await pres.text().catch(() => '');
+                  let ptl: unknown = undefined;
+                  try { ptl = JSON.parse(ptxt)?.tokensLeft; } catch { /* not JSON */ }
+                  await recordKeepa429(admin, ptl, 'check-seller-watchlist /price-capture');
                 }
               } catch (e) {
                 console.warn('[check-seller-watchlist] price capture failed:', (e as Error).message);

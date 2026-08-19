@@ -2,7 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { waitForApiToken } from "../_shared/rate-limiter.ts";
 import {
-  acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
+  acquireKeepaTokensOnly, reportKeepaTokensLeft, recordKeepa429,
   KEEPA_COST, KEEPA_RESERVE, type KeepaSlotOptions,
 } from "../_shared/keepa-rate-gate.ts";
 
@@ -32,12 +32,27 @@ import {
  * The reserve is respected by default, so a burst of panel views can no longer
  * eat into what repricer-sp-api-pricing depends on.
  */
+// Moved to the TOKEN-ONLY lane 2026-08-19. This was the last interactive
+// caller still claiming a Layer 1 call slot; its three siblings
+// (mobile-scan-price-stability, asin-dimensions, analyzer-product-snapshot)
+// moved earlier and this one was simply missed.
+//
+// It matters for 24/7 seller monitoring specifically. Layer 1 is 4 slots per
+// minute, GLOBAL, with no notion of who is asking. Running the sweep all day
+// means it claims those slots in tight bursts every five minutes, and a person
+// waiting on a chart would queue behind it -- which is exactly the 2026-08-18
+// 07:30 failure, and the reason the overnight window exists at all. A bigger
+// Keepa plan does not help: Layer 1 counts calls, not tokens.
+//
+// Skipping Layer 1 is safe here for the same reason as the siblings: this is
+// human-paced traffic, so the burst Layer 1 defends against is not its shape,
+// and the token budget still bounds total spend.
 async function acquireKeepaSlotWithRetry(supabase: any, options: KeepaSlotOptions = {}) {
-  const first = await acquireKeepaGlobalSlot(supabase, options);
+  const first = await acquireKeepaTokensOnly(supabase, options);
   if (first.ok) return first;
   const waitMs = Math.min(first.waitSeconds, 15) * 1000;
   await new Promise((resolve) => setTimeout(resolve, waitMs));
-  return acquireKeepaGlobalSlot(supabase, options);
+  return acquireKeepaTokensOnly(supabase, options);
 }
 
 const corsHeaders = {

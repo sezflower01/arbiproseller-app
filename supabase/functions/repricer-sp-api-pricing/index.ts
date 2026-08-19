@@ -1,7 +1,19 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+// Observation only. This function keeps its own inline call-rate gate on
+// purpose (live/critical, see _shared/keepa-rate-gate.ts's header) -- it does
+// NOT claim tokens. Importing reportKeepaTokensLeft changes no behaviour; it
+// only stops the spend being invisible to every other caller.
+import { reportKeepaTokensLeft } from '../_shared/keepa-rate-gate.ts';
 
-// Keepa rate limiting: plan gives 5 tokens/min, guard at 4 to avoid 429 spikes
-const KEEPA_GUARD_LIMIT = 4;
+// Keepa rate limiting. Raised 4 -> 20 on 2026-08-19: the plan is now 25
+// tokens/min (a 20/min API Access subscription STACKING on the Keepa Pro base
+// of 5), not the 5/min this was originally calibrated for.
+//
+// ⚠️ This is an INLINE COPY of _shared/keepa-rate-gate.ts's KEEPA_GUARD_LIMIT,
+// and both claim the SAME keepa_daily_usage.last_called_at row. If they
+// disagree, they disagree about how old a claim must be before it can be
+// taken, and one silently wins. Keep them equal -- grep KEEPA_GUARD_LIMIT.
+const KEEPA_GUARD_LIMIT = 20;
 const KEEPA_GUARD_INTERVAL_MS = Math.ceil(60_000 / KEEPA_GUARD_LIMIT);
 const KEEPA_DAILY_SOFT_CAP = 500; // Soft daily cap to protect budget
 
@@ -258,6 +270,13 @@ async function fetchKeepaFallback(
 
       if (response.status === 429) {
         await incrementKeepaCounter(supabase, 'keepa_429_count');
+        // The 429 body carries the balance AT refusal, and it is usually
+        // NEGATIVE. This function already COUNTED its 429s but never recorded
+        // the balance, so a deficit it caused stayed invisible to the shared
+        // budget and the gate kept approving other callers against fiction.
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(lastErrorText || '')?.tokensLeft; } catch { /* not JSON */ }
+        if (typeof tl === 'number') await reportKeepaTokensLeft(supabase, tl);
         const reason = 'keepa_retry_failed: 429 after retry';
         console.error(`[Keepa] 429 persisted after retry for ${asin}`);
         return { ok: false, reason };
@@ -282,6 +301,14 @@ async function fetchKeepaFallback(
     if (tokensLeft !== undefined) {
       console.log(`[Keepa] Tokens remaining: ${tokensLeft}, refill in ${Math.round((refillIn || 0) / 1000)}s`);
     }
+    // OBSERVATION ONLY, added 2026-08-19. This function keeps its own inline
+    // call-rate gate and does NOT claim tokens -- deliberately, it is live and
+    // critical. But it was logging tokensLeft while never writing it to the
+    // shared budget, so its spend was invisible to every other caller. An
+    // unmetered caller does not merely overspend: keepa_token_budget read
+    // 38.13 while Keepa's own balance was -9, and correctly-gated callers were
+    // then approved against a number that was already fiction.
+    await reportKeepaTokensLeft(supabase, respData?.tokensLeft, respData?.refillRate);
 
     // Increment usage counter
     await supabase

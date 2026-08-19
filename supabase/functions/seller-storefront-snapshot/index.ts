@@ -2,7 +2,7 @@
 // With per-user 24h Supabase cache to avoid re-burning Keepa tokens.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST, type KeepaSlotOptions } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429, KEEPA_COST, type KeepaSlotOptions } from '../_shared/keepa-rate-gate.ts';
 
 // This function used to call Keepa directly with zero awareness of other
 // callers (repricer-sp-api-pricing, check-seller-watchlist) sharing the same
@@ -148,7 +148,17 @@ Deno.serve(async (req) => {
           console.error('[seller-storefront-snapshot] Keepa /seller failed', sResp.status, txt.slice(0, 200));
           if (sResp.status === 429) {
             let refillSec = 60;
-            try { const j = JSON.parse(txt); if (j?.refillIn) refillSec = Math.ceil(j.refillIn / 1000); } catch {}
+            let tl: unknown = undefined;
+            try {
+              const j = JSON.parse(txt);
+              if (j?.refillIn) refillSec = Math.ceil(j.refillIn / 1000);
+              tl = j?.tokensLeft;
+            } catch {}
+            // The 429 body carries the balance AT refusal, and it is usually
+            // NEGATIVE. Recording it is what stops the budget row reading
+            // positive while the account is overdrawn -- the desync that let
+            // the gate keep approving calls against a number that was fiction.
+            await recordKeepa429(supabase, tl, 'seller-storefront-snapshot /seller');
             return new Response(JSON.stringify({ error: `Keepa rate limit reached. Try again in ~${refillSec}s (token deficit).` }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
           return new Response(JSON.stringify({ error: `Keepa seller HTTP ${sResp.status}` }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -235,7 +245,17 @@ Deno.serve(async (req) => {
           console.error('[seller-storefront-snapshot] Keepa /product failed', pResp.status, txt.slice(0, 200));
           if (pResp.status === 429) {
             let refillSec = 60;
-            try { const j = JSON.parse(txt); if (j?.refillIn) refillSec = Math.ceil(j.refillIn / 1000); } catch {}
+            let tl: unknown = undefined;
+            try {
+              const j = JSON.parse(txt);
+              if (j?.refillIn) refillSec = Math.ceil(j.refillIn / 1000);
+              tl = j?.tokensLeft;
+            } catch {}
+            // This is the batched product call -- the expensive one, sized
+            // slice.length * productWithOffersPerAsin. Its refusals are the
+            // most important to record, because it is the shape most capable
+            // of driving the balance deeply negative in a single request.
+            await recordKeepa429(supabase, tl, 'seller-storefront-snapshot /product');
             return new Response(JSON.stringify({ error: `Keepa rate limit reached on product fetch. Try again in ~${refillSec}s.`, store, asinList, page, pageSize, totalPages: Math.max(1, Math.ceil(asinList.length / pageSize)) }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
           // Non-429 failure -- previously fell through silently, returning

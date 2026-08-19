@@ -16,7 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareImages } from '../_shared/image-compare.ts';
 import { classifyGeminiFailure, recordGeminiCall, type GeminiFailure } from '../_shared/gemini-usage.ts';
 import { recordSearchApiCall } from '../_shared/search-usage.ts';
-import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
+import { acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429, KEEPA_COST } from '../_shared/keepa-rate-gate.ts';
 import { getCatalogAccessToken, fetchCatalogItemDetails } from '../_shared/spapi-catalog-image.ts';
 
 const KEEPA_DOMAIN: Record<string, number> = {
@@ -58,7 +58,18 @@ async function backfillProductDetails(
   try {
     const url = `https://api.keepa.com/product?key=${keepaKey}&domain=${domainId}&asin=${asin}`;
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Was a silent `return null`. A 429's body carries the balance AT
+      // refusal, usually negative -- dropping it is how the shared budget
+      // ends up reading positive while the account is overdrawn.
+      if (res.status === 429) {
+        const txt = await res.text().catch(() => '');
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* not JSON */ }
+        await recordKeepa429(supabase, tl, 'find-source-candidates /product');
+      }
+      return null;
+    }
     const json = await res.json().catch(() => ({}));
     await reportKeepaTokensLeft(supabase, json?.tokensLeft, json?.refillRate);
     if (json?.error) return null;
