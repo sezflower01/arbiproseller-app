@@ -1,5 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
-import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
+import {
+  reportKeepaTokensLeft, recordKeepa429, acquireKeepaTokensOnly,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -315,20 +318,45 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ⚠️ COST WARNING, corrected 2026-08-19. The previous comment here read
-    // "uses ~1 token per 100 ASINs" and that is badly wrong. MEASURED:
-    // /product is 1 token PER ASIN, and offers=N is billed on top -- the
-    // offers=20 shape measured 5-6 tokens per ASIN. So a page of 50 ASINs is
-    // not ~1 token, it is on the order of 250-300, against a bucket of ~300
-    // and a refill of 5/min. One call can empty the account.
+    // offers=20 REMOVED 2026-08-19, and this call now claims.
     //
-    // Deliberately left UNGATED for now because that is a behaviour change
-    // needing its own decision (this is a user-initiated search; refusing it
-    // mid-page would need a UI story). But it now REPORTS, so the spend is at
-    // least visible instead of silently poisoning everyone else's accounting.
-    // Gating this, or dropping offers=20 where the finder does not use offer
-    // data, is the obvious next candidate.
-    const detailUrl = `https://api.keepa.com/product?key=${apiKey}&domain=${domainId}&asin=${asinList.join(',')}&stats=180&history=0&offers=20&rating=0&buybox=0`;
+    // It overdrew the account to Keepa's own tokensLeft of -111 at 13:48:30
+    // UTC. 111 / ~5.5 tokens-per-ASIN is ~20 ASINs -- one page of this exact
+    // call. The previous comment here claimed it "uses ~1 token per 100
+    // ASINs", which is wrong by more than two orders of magnitude: /product is
+    // 1 token PER ASIN and offers=N is billed on top at 5-6 per ASIN.
+    //
+    // The offers were never used. Verified by reading every field this
+    // function maps: p.asin, brand, categoryTree, csv, imagesCSV, manufacturer,
+    // monthlySold, rootCategory, title, and stats.current[0,1,3,7,10,11,18].
+    // Not one touches p.offers or liveOffersOrder. Index 11 (COUNT_NEW) comes
+    // from stats and is populated by stats alone -- measured separately the
+    // same day. So offers=20 was paying 5-6x per ASIN for a payload that was
+    // fetched, parsed and thrown away.
+    //
+    // Dropping it takes a 20-ASIN page from ~110 tokens to ~20, with zero
+    // change in output. The claim then makes the remaining spend visible and
+    // refusable rather than an overdraft.
+    const detailUrl = `https://api.keepa.com/product?key=${apiKey}&domain=${domainId}&asin=${asinList.join(',')}&stats=180&history=0&rating=0&buybox=0`;
+
+    // Token-only: this is one batched call, not a loop, so Layer 1's
+    // anti-hammer guard is not the relevant protection -- the token estimate
+    // is. estimatedTokens is computed from the ACTUAL page size, because a
+    // fixed guess is what let a 20-ASIN page pass as if it were one call.
+    const detailSlot = await acquireKeepaTokensOnly(supabase, {
+      estimatedTokens: asinList.length * KEEPA_COST.productPerAsin,
+      minReserve: KEEPA_RESERVE.interactive,
+    });
+    if (!detailSlot.ok) {
+      // Reuse the existing rate-limit shape so the UI already knows how to
+      // render this -- it is the same "come back in N seconds" story.
+      console.warn(`[KeepaFinder] budget busy, need ${asinList.length} tokens (${detailSlot.blockedBy})`);
+      return buildKeepaRateLimitResponse(JSON.stringify({
+        refillIn: Math.max(1, Math.round(detailSlot.waitSeconds)) * 1000,
+        tokensLeft: detailSlot.tokensLeft ?? null,
+      }));
+    }
+
     const detailRes = await fetchWithRetry(detailUrl);
 
     let products: any[] = [];
