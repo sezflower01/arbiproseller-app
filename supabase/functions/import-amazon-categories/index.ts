@@ -1,4 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+// Observation only: this admin import is not gated, but it must not spend
+// silently. An unmetered caller corrupts the shared budget for gated ones --
+// keepa_token_budget read 38.13 while Keepa itself was at tokensLeft -9.
+import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -142,10 +146,13 @@ Deno.serve(async (req) => {
 
         if (res.status === 429) {
           let retryAfterMs: number | null = null;
+          let tl: unknown = undefined;
           try {
             const parsed = JSON.parse(errText);
             retryAfterMs = Number(parsed?.refillIn ?? 0) || null;
+            tl = parsed?.tokensLeft;
           } catch { }
+          await recordKeepa429(supabase, tl, 'import-amazon-categories /search');
 
           return new Response(JSON.stringify({
             error: 'Keepa rate limited',
@@ -162,6 +169,7 @@ Deno.serve(async (req) => {
       }
 
       const keepaData = await res.json();
+      await reportKeepaTokensLeft(supabase, keepaData?.tokensLeft, keepaData?.refillRate);
       // Keepa returns { categories: { [catId]: { name, parent, ... } } }
       const categories = keepaData.categories || {};
       const catEntries = Object.entries(categories);
@@ -244,7 +252,13 @@ Deno.serve(async (req) => {
         const errText = await res.text();
         if (res.status === 429) {
           let retryAfterMs: number | null = null;
-          try { retryAfterMs = Number(JSON.parse(errText)?.refillIn ?? 0) || null; } catch { }
+          let tl: unknown = undefined;
+          try {
+            const parsed = JSON.parse(errText);
+            retryAfterMs = Number(parsed?.refillIn ?? 0) || null;
+            tl = parsed?.tokensLeft;
+          } catch { }
+          await recordKeepa429(supabase, tl, 'import-amazon-categories /category');
           return new Response(JSON.stringify({ error: 'Keepa rate limited', code: 'KEEPA_RATE_LIMIT', retryAfterMs }), {
             status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -255,6 +269,7 @@ Deno.serve(async (req) => {
       }
 
       const keepaData = await res.json();
+      await reportKeepaTokensLeft(supabase, keepaData?.tokensLeft, keepaData?.refillRate);
       const categories = keepaData.categories || {};
       const catEntries = Object.entries(categories);
 

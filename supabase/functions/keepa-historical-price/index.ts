@@ -7,6 +7,7 @@
 // (shared across users) to minimize Keepa token usage.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -158,12 +159,26 @@ Deno.serve(async (req) => {
     }
     clearTimeout(tId);
 
+    // OBSERVATION ONLY, added 2026-08-19. This function is not gated -- it is
+    // low-volume and user-initiated -- but it must never spend silently.
+    // An unmetered caller does not merely overspend: it corrupts the shared
+    // budget for every gated caller. keepa_token_budget read 38.13 while
+    // Keepa's own response carried tokensLeft -9, so properly-gated calls were
+    // approved against a fictional number and got a raw 429 anyway.
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
+      if (res.status === 429) {
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* body not JSON */ }
+        await recordKeepa429(supabase, tl, 'keepa-historical-price');
+      }
       return jsonResponse({ error: `Keepa ${res.status}: ${txt.slice(0, 200)}` }, 502);
     }
 
     const json = await res.json();
+    // Before the payload is inspected: a 200 carrying an in-body error still
+    // moved the balance, and skipping the report is exactly how drift starts.
+    await reportKeepaTokensLeft(supabase, json?.tokensLeft, json?.refillRate);
     const product = json?.products?.[0];
     if (!product) {
       // Cache the negative result so we don't re-query

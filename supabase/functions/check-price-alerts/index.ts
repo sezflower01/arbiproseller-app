@@ -5,6 +5,10 @@
 // however many users are tracking the same listing) and fires the
 // price-alert-fired email once, then deactivates that alert.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import {
+  acquireKeepaGlobalSlot, reportKeepaTokensLeft, recordKeepa429,
+  KEEPA_COST, KEEPA_RESERVE,
+} from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,18 +81,71 @@ Deno.serve(async (req) => {
     let fired = 0;
     const nowIso = new Date().toISOString();
 
+    // GATED 2026-08-19, and with the FULL two-layer gate on purpose.
+    //
+    // This loop is the caller Layer 1's call-rate guard exists for: it fires
+    // one Keepa /product per distinct ASIN, sequentially, with no bound on how
+    // many alerts exist. On 2026-08-19 it ran 13:00:04-13:03:31 UTC spending
+    // unmetered the whole time. The interactive analyzer callers use the
+    // token-only lane because human-paced traffic cannot hammer; a cron loop
+    // absolutely can, so it keeps the rate guard.
+    //
+    // BACKGROUND tier: a price alert that checks an hour late is a
+    // non-event, whereas a person waiting on the analyzer is not. This job
+    // should be the first to yield.
+    //
+    // WHY THIS MATTERED MORE THAN IT LOOKED. Spending without claiming does
+    // not just overspend -- it corrupts the shared budget for everyone else.
+    // keepa_token_budget read 38.13 while Keepa's own response carried
+    // tokensLeft -9, so correctly-gated callers were approved against a number
+    // that was already fiction and got a raw 429 anyway. That desync is what
+    // made the analyzer fix look unreliable at 13:20 UTC.
+    let slotDenied = 0;
     for (const { asin, marketplace, alerts: group } of groups.values()) {
       const domainId = DOMAIN_MAP[marketplace] ?? 1;
       let price: number | null = null;
+
+      const slot = await acquireKeepaGlobalSlot(admin, {
+        estimatedTokens: KEEPA_COST.productPerAsin,
+        minReserve: KEEPA_RESERVE.background,
+      });
+      if (!slot.ok) {
+        // Skip rather than wait. The alert keeps last_checked_at from its
+        // previous run and is retried next hour -- burning the worker's
+        // wall-clock sleeping would only push the same contention later.
+        slotDenied++;
+        console.warn(`[check-price-alerts] Keepa slot denied (${slot.blockedBy}) for ${asin}, skipping this run`);
+        continue;
+      }
+
       try {
         const url = new URL('https://api.keepa.com/product');
         url.search = new URLSearchParams({ key: KEEPA_KEY, domain: String(domainId), asin }).toString();
         const res = await fetch(url.toString());
         if (res.ok) {
           const json = await res.json();
-          price = currentAmazonPrice(json?.products?.[0]?.csv);
+          // Reconcile BEFORE reading the payload, and regardless of whether
+          // the body turns out to carry an error: a 200 with an in-body error
+          // still moved the balance, and not reporting it is precisely how the
+          // local number drifted 47 tokens high.
+          await reportKeepaTokensLeft(admin, json?.tokensLeft, json?.refillRate);
+          if (json?.error) {
+            console.warn(`[check-price-alerts] Keepa in-body error for ${asin}:`,
+              typeof json.error === 'string' ? json.error : JSON.stringify(json.error));
+          } else {
+            price = currentAmazonPrice(json?.products?.[0]?.csv);
+          }
         } else {
           console.warn(`[check-price-alerts] Keepa HTTP ${res.status} for ${asin}`);
+          if (res.status === 429) {
+            // Keepa puts tokensLeft in the 429 body -- capturing it records the
+            // balance AT the moment of refusal, which is the number that turns
+            // "something is starving the analyzer" into a measurement.
+            const txt = await res.text().catch(() => '');
+            let tl: unknown = undefined;
+            try { tl = JSON.parse(txt)?.tokensLeft; } catch { /* not JSON */ }
+            await recordKeepa429(admin, tl, 'check-price-alerts');
+          }
         }
       } catch (e) {
         console.warn(`[check-price-alerts] Keepa fetch failed for ${asin}`, (e as Error).message);
@@ -127,7 +184,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({ ok: true, checked, fired, distinctListings: groups.size });
+    // slotDenied is reported so "alerts went quiet" is diagnosable as budget
+    // pressure rather than looking like there was nothing to check.
+    if (slotDenied) {
+      console.warn(`[check-price-alerts] skipped ${slotDenied}/${groups.size} listings — Keepa budget busy`);
+    }
+    return jsonResponse({ ok: true, checked, fired, distinctListings: groups.size, slotDenied });
   } catch (e) {
     console.error('[check-price-alerts] error', (e as Error).message);
     return jsonResponse({ error: (e as Error).message }, 500);

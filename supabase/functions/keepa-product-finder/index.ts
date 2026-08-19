@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { reportKeepaTokensLeft, recordKeepa429 } from '../_shared/keepa-rate-gate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -282,6 +283,9 @@ Deno.serve(async (req) => {
       console.error(`[KeepaFinder] API error ${keepaRes.status}: ${errText}`);
 
       if (keepaRes.status === 429) {
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(errText)?.tokensLeft; } catch { /* body not JSON */ }
+        await recordKeepa429(supabase, tl, 'keepa-product-finder /query');
         return buildKeepaRateLimitResponse(errText);
       }
 
@@ -295,6 +299,13 @@ Deno.serve(async (req) => {
     const totalResults: number = keepaData.totalResults || 0;
     const tokensLeft: number = keepaData.tokensLeft ?? null;
 
+    // tokensLeft was already being READ here and then thrown away -- logged but
+    // never written to the shared budget. That is how an unmetered caller
+    // corrupts accounting for gated ones: keepa_token_budget read 38.13 while
+    // Keepa's own response carried tokensLeft -9, so correctly-gated callers
+    // were approved against a fictional balance and got a raw 429 anyway.
+    await reportKeepaTokensLeft(supabase, keepaData?.tokensLeft, keepaData?.refillRate);
+
     console.log(`[KeepaFinder] Found ${totalResults} total, ${asinList.length} ASINs on page ${page}, tokensLeft=${tokensLeft}`);
 
     // If no ASINs, return empty
@@ -304,13 +315,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch product details for the ASINs (uses ~1 token per 100 ASINs)
+    // ⚠️ COST WARNING, corrected 2026-08-19. The previous comment here read
+    // "uses ~1 token per 100 ASINs" and that is badly wrong. MEASURED:
+    // /product is 1 token PER ASIN, and offers=N is billed on top -- the
+    // offers=20 shape measured 5-6 tokens per ASIN. So a page of 50 ASINs is
+    // not ~1 token, it is on the order of 250-300, against a bucket of ~300
+    // and a refill of 5/min. One call can empty the account.
+    //
+    // Deliberately left UNGATED for now because that is a behaviour change
+    // needing its own decision (this is a user-initiated search; refusing it
+    // mid-page would need a UI story). But it now REPORTS, so the spend is at
+    // least visible instead of silently poisoning everyone else's accounting.
+    // Gating this, or dropping offers=20 where the finder does not use offer
+    // data, is the obvious next candidate.
     const detailUrl = `https://api.keepa.com/product?key=${apiKey}&domain=${domainId}&asin=${asinList.join(',')}&stats=180&history=0&offers=20&rating=0&buybox=0`;
     const detailRes = await fetchWithRetry(detailUrl);
 
     let products: any[] = [];
     if (detailRes.ok) {
       const detailData = await detailRes.json();
+      await reportKeepaTokensLeft(supabase, detailData?.tokensLeft, detailData?.refillRate);
       const rawProducts = detailData.products || [];
 
       products = rawProducts.map((p: any) => {
@@ -362,6 +386,9 @@ Deno.serve(async (req) => {
 
       if (detailRes.status === 429) {
         console.error(`[KeepaFinder] Detail API error 429: ${detailErrText}`);
+        let tl: unknown = undefined;
+        try { tl = JSON.parse(detailErrText)?.tokensLeft; } catch { /* body not JSON */ }
+        await recordKeepa429(supabase, tl, 'keepa-product-finder /product');
         return buildKeepaRateLimitResponse(detailErrText);
       }
 
