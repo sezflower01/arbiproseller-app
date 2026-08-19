@@ -10,6 +10,16 @@ export interface AutoSourceConfig {
   allow_open_web_fallback: boolean;
   /** Where new-listing alerts go. null = the account login email. */
   notify_email: string | null;
+  /**
+   * Commercial pre-search filter. Off by default: enabling it changes which
+   * detections consume the daily search budget, so it is a deliberate choice
+   * rather than something a deploy does to a live account.
+   */
+  strict_mode: boolean;
+  strict_min_fba_offers: number;
+  strict_min_monthly_sales: number;
+  strict_require_rank: boolean;
+  strict_require_seller_fba: boolean;
 }
 
 /** Mirrors the column defaults, used before a row exists for this user. */
@@ -19,6 +29,13 @@ const DEFAULTS: AutoSourceConfig = {
   search_needs_approval: true,
   allow_open_web_fallback: true,
   notify_email: null,
+  strict_mode: false,
+  strict_min_fba_offers: 4,
+  // 50, not 10: the existing 500,000 rank ceiling already implies ~38/month,
+  // so a 10/month floor would reject nothing at all.
+  strict_min_monthly_sales: 50,
+  strict_require_rank: true,
+  strict_require_seller_fba: true,
 };
 
 /**
@@ -42,7 +59,7 @@ export function useAutoSourceConfig() {
       const [{ data: cfg }, { data: usage }] = await Promise.all([
         supabase
           .from("auto_source_config")
-          .select("enabled, daily_cap, search_needs_approval, allow_open_web_fallback, notify_email")
+          .select("enabled, daily_cap, search_needs_approval, allow_open_web_fallback, notify_email, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba")
           .maybeSingle(),
         supabase.from("auto_source_daily_usage").select("search_count").eq("day", today).maybeSingle(),
       ]);

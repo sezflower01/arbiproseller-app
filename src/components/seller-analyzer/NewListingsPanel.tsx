@@ -79,6 +79,25 @@ function formatDisqualifiedReason(raw: string | null): string {
   }
 }
 
+/**
+ * Why strict mode withheld a search.
+ *
+ * Kept separate from formatDisqualifiedReason because these mean something
+ * different: the listing IS sourceable, it just did not clear the commercial
+ * bar for spending one of the day's 80 searches. Phrased so the fix is obvious
+ * -- every one of these is a threshold the user set and can lower.
+ */
+function formatStrictReason(raw: string | null): string | null {
+  if (!raw) return null;
+  if (raw === "seller_offer_is_fbm") return "Held — seller's listing is FBM, not FBA";
+  if (raw === "no_sales_rank") return "Held — no sales rank";
+  const fba = raw.match(/^fba_offers_(\d+)_below_(\d+)$/);
+  if (fba) return `Held — ${fba[1]} FBA seller${fba[1] === "1" ? "" : "s"}, need ${fba[2]}`;
+  const sales = raw.match(/^est_sales_(\d+)_below_(\d+)$/);
+  if (sales) return `Held — est. ${sales[1]}/month, need ${sales[2]}`;
+  return `Held — ${raw}`;
+}
+
 function CandidateRow({
   candidate,
   isSourced,
@@ -618,6 +637,17 @@ export default function NewListingsPanel() {
                     listing.source_status === "sourcing" ? (
                       <span className="text-xs text-muted-foreground shrink-0 inline-flex items-center gap-1">
                         <Loader2 className="h-3 w-3 animate-spin" /> Searching…
+                      </span>
+                    ) : listing.strict_reason ? (
+                      // Strict mode withheld the search. Saying "Queued" here
+                      // would be a lie -- this row will never be picked up
+                      // while the reason stands -- so it states the rule that
+                      // held it and, implicitly, the setting that would free it.
+                      <span
+                        className="text-xs text-amber-600 dark:text-amber-500 shrink-0"
+                        title="Strict mode is on. This listing did not use one of today's searches."
+                      >
+                        {formatStrictReason(listing.strict_reason)}
                       </span>
                     ) : (
                       // 'unsourced' means waiting for a slot, not in flight. A

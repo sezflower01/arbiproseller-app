@@ -290,6 +290,110 @@ export default function SellerAnalyzer() {
                   <strong>Restricted</strong> listings are never searched. This setting does not affect them.
                 </p>
 
+                {/* Strict mode. Deliberately here rather than in the exclusions
+                    card: those rules say what is never sourceable, these say
+                    what is not worth spending today's budget on. */}
+                <div className="border-t pt-3 space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm">Strict mode</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Spend the daily budget only on listings that look commercially real.
+                        Held listings still appear here with the reason — they just don't use a search.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={autoCfg.strict_mode}
+                      disabled={cfgSaving}
+                      onCheckedChange={(v) => {
+                        updateAutoCfg({ strict_mode: v }).catch((e) =>
+                          toast({ title: "Could not save setting", description: e.message, variant: "destructive" }),
+                        );
+                      }}
+                      aria-label="Strict mode"
+                    />
+                  </div>
+
+                  {autoCfg.strict_mode && (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="strict-fba" className="text-xs">
+                          Minimum FBA sellers
+                        </label>
+                        <Input
+                          id="strict-fba"
+                          type="number"
+                          min={0}
+                          max={100}
+                          className="h-7 w-20 text-xs"
+                          value={autoCfg.strict_min_fba_offers}
+                          disabled={cfgSaving}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            if (Number.isFinite(n) && n >= 0 && n <= 100) {
+                              updateAutoCfg({ strict_min_fba_offers: n }).catch(() => {});
+                            }
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="strict-sales" className="text-xs">
+                          Minimum est. sales / month
+                        </label>
+                        <Input
+                          id="strict-sales"
+                          type="number"
+                          min={0}
+                          className="h-7 w-20 text-xs"
+                          value={autoCfg.strict_min_monthly_sales}
+                          disabled={cfgSaving}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            if (Number.isFinite(n) && n >= 0) {
+                              updateAutoCfg({ strict_min_monthly_sales: n }).catch(() => {});
+                            }
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-start justify-between gap-3">
+                        <label htmlFor="strict-seller-fba" className="text-xs min-w-0">
+                          Seller's own listing must be FBA
+                        </label>
+                        <Switch
+                          id="strict-seller-fba"
+                          checked={autoCfg.strict_require_seller_fba}
+                          disabled={cfgSaving}
+                          onCheckedChange={(v) => { updateAutoCfg({ strict_require_seller_fba: v }).catch(() => {}); }}
+                        />
+                      </div>
+
+                      <div className="flex items-start justify-between gap-3">
+                        <label htmlFor="strict-rank" className="text-xs min-w-0">
+                          Require a sales rank
+                        </label>
+                        <Switch
+                          id="strict-rank"
+                          checked={autoCfg.strict_require_rank}
+                          disabled={cfgSaving}
+                          onCheckedChange={(v) => { updateAutoCfg({ strict_require_rank: v }).catch(() => {}); }}
+                        />
+                      </div>
+
+                      {/* The two numbers most likely to be set to something
+                          that quietly does nothing, so both are explained. */}
+                      <p className="text-[11px] text-muted-foreground border-t pt-2 leading-relaxed">
+                        Sales are estimated from the sales rank — about {autoCfg.strict_min_monthly_sales}/month
+                        corresponds to rank {Math.floor(Math.pow(Math.max(1, autoCfg.strict_min_monthly_sales) / 100000, 1 / -0.6)).toLocaleString()}.
+                        Below ~10/month the existing rank limit already filters everything, so a lower number changes nothing.
+                        {" "}<strong>Require a sales rank</strong> is the one that matters most: about 60% of detections
+                        arrive with no rank at all and skip every rank check today.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 <NotifyEmailField
                   value={autoCfg.notify_email}
                   saving={cfgSaving}

@@ -25,6 +25,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { readEligibility } from '../_shared/eligibility-lookup.ts';
 import { withCronLock } from '../_shared/cron-lock.ts';
+import { evaluateStrictMode, STRICT_DEFAULTS } from '../_shared/strict-mode.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -124,8 +125,12 @@ Deno.serve(async (req) => {
     // re-answering settled questions.
     const { data: pending, error } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, marketplace, detected_at')
+      .select('id, user_id, asin, marketplace, detected_at, sales_rank, fba_offer_count, seller_offer_is_fba')
       .eq('source_status', 'unsourced')
+      // Rows already withheld by strict mode keep source_status 'unsourced' --
+      // honestly, since no search ran -- but must not be re-evaluated on every
+      // pass. The partial index idx_swnl_source_status_strict covers this.
+      .is('strict_reason', null)
       // Only rows that passed qualification at detection time. The verdict is
       // stamped once by check-seller-watchlist rather than re-derived here, so
       // this stays a cheap indexed read -- and a disqualified row keeps its
@@ -146,6 +151,69 @@ Deno.serve(async (req) => {
       if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
       byUser.get(row.user_id)!.push(row);
     }
+
+    // ── STRICT MODE: withhold search budget from commercially weak listings ──
+    //
+    // Applied HERE, before claim_auto_source_budget, because the scarce thing
+    // is the 80/day search cap -- it read 80/80 consumed on 2026-08-17. A row
+    // rejected here is still a real, qualified detection with its price and
+    // fees; it simply does not buy a search. Filtering after the claim would
+    // spend the budget and then throw the result away.
+    const { data: strictCfgs } = await admin
+      .from('auto_source_config')
+      .select('user_id, strict_mode, strict_min_fba_offers, strict_min_monthly_sales, strict_require_rank, strict_require_seller_fba')
+      .in('user_id', [...byUser.keys()]);
+    const strictByUser = new Map<string, any>();
+    for (const c of strictCfgs || []) strictByUser.set(c.user_id, c);
+
+    const strictHeld: Record<string, number> = {};
+    for (const [userId, rows] of byUser) {
+      const cfg = strictByUser.get(userId);
+      if (!cfg?.strict_mode) continue; // OFF by default; absent row means off.
+
+      const thresholds = {
+        minFbaOffers: cfg.strict_min_fba_offers ?? STRICT_DEFAULTS.minFbaOffers,
+        minMonthlySales: cfg.strict_min_monthly_sales ?? STRICT_DEFAULTS.minMonthlySales,
+        requireRank: cfg.strict_require_rank ?? STRICT_DEFAULTS.requireRank,
+        requireSellerFba: cfg.strict_require_seller_fba ?? STRICT_DEFAULTS.requireSellerFba,
+      };
+
+      const keep: typeof rows = [];
+      const rejects: Array<{ id: string; reason: string }> = [];
+      for (const r of rows) {
+        const v = evaluateStrictMode({
+          salesRank: (r as any).sales_rank,
+          fbaOfferCount: (r as any).fba_offer_count,
+          sellerOfferIsFba: (r as any).seller_offer_is_fba,
+        }, thresholds);
+        if (v.pass) keep.push(r);
+        else rejects.push({ id: r.id, reason: v.reason! });
+      }
+
+      // Stamp the reason so a shrinking queue is diagnosable rather than
+      // mysterious, and so these rows are skipped by the select above next run.
+      // Grouped by reason to keep this to a handful of updates, not one per row.
+      if (rejects.length) {
+        const byReason = new Map<string, string[]>();
+        for (const rj of rejects) {
+          if (!byReason.has(rj.reason)) byReason.set(rj.reason, []);
+          byReason.get(rj.reason)!.push(rj.id);
+        }
+        for (const [reason, ids] of byReason) {
+          const { error: upErr } = await admin
+            .from('seller_watch_new_listings')
+            .update({ strict_reason: reason })
+            .in('id', ids);
+          if (upErr) console.warn('[auto-source] strict stamp failed:', upErr.message);
+        }
+        strictHeld[userId] = rejects.length;
+        console.log(`[auto-source] strict mode held ${rejects.length}/${rows.length} for ${userId}: ` +
+          [...byReason.entries()].map(([k, v]) => `${k}=${v.length}`).join(' '));
+      }
+
+      byUser.set(userId, keep);
+    }
+    for (const [u, rows] of [...byUser]) if (!rows.length) byUser.delete(u);
 
     let searched = 0;
     let capped = 0;

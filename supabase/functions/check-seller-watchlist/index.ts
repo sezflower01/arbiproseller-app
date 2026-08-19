@@ -43,6 +43,7 @@ import { getCatalogAccessToken, fetchCatalogItemDetails, fetchCatalogItemsBatch,
 import { MARKETPLACE_META } from '../_shared/marketplace-map.ts';
 import { waitForApiToken } from '../_shared/rate-limiter.ts';
 import { qualifyListing } from '../_shared/source-qualification.ts';
+import { summarizeOffers } from '../_shared/strict-mode.ts';
 import { readEligibility, resolveEligibility } from '../_shared/eligibility-lookup.ts';
 import { withCronLock } from '../_shared/cron-lock.ts';
 
@@ -623,6 +624,13 @@ Deno.serve(async (req) => {
               fba_fee_cents: null as number | null,
               total_fees_cents: null as number | null,
               fees_captured_at: null as string | null,
+              // Offer composition for strict mode. NULL stays meaningful: it is
+              // "never captured", which strict mode treats as unknown rather
+              // than as zero competition.
+              fba_offer_count: null as number | null,
+              fbm_offer_count: null as number | null,
+              seller_offer_is_fba: null as boolean | null,
+              offers_captured_at: null as string | null,
               detected_at: nowIso,
             };
           });
@@ -649,12 +657,26 @@ Deno.serve(async (req) => {
           // it is not the buy-box price and the column comment says so.
           const needPrice = rows.filter((r: any) => r.qualified).map((r: any) => r.asin);
           if (needPrice.length && Date.now() < deadlineAt) {
+            // offers=20 rather than stats=1 alone, changed 2026-08-19.
+            //
+            // stats.current[11] (COUNT_NEW) is free on a stats=1 call and was
+            // the original plan for "how many sellers". It cannot answer the
+            // question actually being asked: it counts FBA AND FBM together.
+            // Measured live -- B00JSWP62I reported COUNT_NEW 2 with ZERO FBA
+            // offers, B0D8H77XRY reported 1 with zero FBA. Per-offer isFBA only
+            // comes with offers=20, and locating the WATCHED seller's own offer
+            // (by exact sellerId, verified 2/2 on real watches) needs the offer
+            // array too.
+            //
+            // COST: 5-6 tokens per ASIN instead of 1, measured not assumed. At
+            // the ~11 qualified ASINs/day this call already covers that is ~60
+            // tokens/day against a 7,200/day refill. Accepted deliberately.
             const priceSlot = await acquireSlotOrGiveUp(
-              admin, needPrice.length * KEEPA_COST.productPerAsin, deadlineAt,
+              admin, needPrice.length * KEEPA_COST.productWithOffersPerAsin, deadlineAt,
             );
             if (priceSlot.ok) {
               try {
-                const purl = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${needPrice.join(',')}&stats=1`;
+                const purl = `https://api.keepa.com/product?key=${KEEPA_KEY}&domain=${domainId}&asin=${needPrice.join(',')}&stats=1&offers=20`;
                 const pres = await fetch(purl);
                 if (pres.ok) {
                   const pjson = await pres.json().catch(() => ({}));
@@ -681,6 +703,16 @@ Deno.serve(async (req) => {
                       if (row.amazon_price_cents != null || row.new_price_cents != null) {
                         row.price_captured_at = nowIsoPrice;
                       }
+
+                      // Offer composition, from the SAME response. Counting the
+                      // raw offers array would overstate competition badly --
+                      // B0GYVHLP4L returned 116 offers of which only 61 were
+                      // live -- so summarizeOffers() walks liveOffersOrder.
+                      const summary = summarizeOffers(p?.offers, p?.liveOffersOrder, row.seller_id);
+                      row.fba_offer_count = summary.fbaCount;
+                      row.fbm_offer_count = summary.fbmCount;
+                      row.seller_offer_is_fba = summary.sellerOfferIsFba;
+                      row.offers_captured_at = nowIsoPrice;
                     }
                   }
                 }

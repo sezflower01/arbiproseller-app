@@ -30,6 +30,15 @@ export interface NewListing {
   /** Passed auto-source qualification. false = deliberately never searched. */
   qualified: boolean | null;
   disqualified_reason: string | null;
+  /**
+   * Set when strict mode withheld a search. The row is still a real, qualified
+   * detection -- source_status stays 'unsourced' because no search ran -- it
+   * just did not buy one of the day's 80 searches.
+   */
+  strict_reason: string | null;
+  fba_offer_count: number | null;
+  fbm_offer_count: number | null;
+  seller_offer_is_fba: boolean | null;
   candidates: SourceCandidate[] | null;
   sourced_candidate: SourceCandidate | null;
   /** URLs the user ruled out; excluded from future searches. */
@@ -50,7 +59,8 @@ function currentMonthKey(): string {
 const SELECT_COLS =
   "id, watch_id, seller_id, marketplace, asin, title, brand, image_url, upc, detected_at, " +
   "source_status, qualified, disqualified_reason, candidates, sourced_candidate, rejected_candidate_urls, " +
-  "amazon_price_cents, new_price_cents, total_fees_cents";
+  "amazon_price_cents, new_price_cents, total_fees_cents, " +
+  "strict_reason, fba_offer_count, fbm_offer_count, seller_offer_is_fba";
 
 /** Sourcer sends 20 per call; check-product-eligibility is built for batches. */
 const ELIGIBILITY_BATCH = 20;
