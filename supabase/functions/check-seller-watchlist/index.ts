@@ -562,13 +562,20 @@ Deno.serve(async (req) => {
           .from('source_excluded_terms')
           .select('kind, value')
           .eq('user_id', uid);
+        // Each kind is assigned ONLY when it actually has entries.
+        //
+        // The outer `terms?.length` guard was not enough. qualifyListing reads
+        // `input.excludedBrands ?? EXCLUDED_BRANDS`, so an EMPTY set is still
+        // "provided" and silently overrides the built-in defaults. A user with
+        // category exclusions but no brand exclusions therefore had brand
+        // filtering switched off entirely -- generic/unbranded/unknown stopped
+        // being excluded, with nothing to indicate it. Exactly the failure the
+        // outer guard was written to prevent, one level down.
         if (terms?.length) {
-          userExclusions.groups = new Set(
-            terms.filter((t: any) => t.kind === 'category').map((t: any) => String(t.value)),
-          );
-          userExclusions.brands = new Set(
-            terms.filter((t: any) => t.kind === 'brand').map((t: any) => String(t.value)),
-          );
+          const groups = terms.filter((t: any) => t.kind === 'category').map((t: any) => String(t.value));
+          const brands = terms.filter((t: any) => t.kind === 'brand').map((t: any) => String(t.value));
+          if (groups.length) userExclusions.groups = new Set(groups);
+          if (brands.length) userExclusions.brands = new Set(brands);
         }
 
         const wanted = Array.from(unionNewAsins);

@@ -26,6 +26,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { readEligibility } from '../_shared/eligibility-lookup.ts';
 import { withCronLock } from '../_shared/cron-lock.ts';
 import { evaluateStrictMode, STRICT_DEFAULTS } from '../_shared/strict-mode.ts';
+import { EXCLUDED_BRANDS } from '../_shared/source-qualification.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -125,7 +126,7 @@ Deno.serve(async (req) => {
     // re-answering settled questions.
     const { data: pending, error } = await admin
       .from('seller_watch_new_listings')
-      .select('id, user_id, asin, marketplace, detected_at, sales_rank, fba_offer_count, seller_offer_is_fba, new_price_cents, amazon_price_cents')
+      .select('id, user_id, asin, marketplace, detected_at, sales_rank, fba_offer_count, seller_offer_is_fba, new_price_cents, amazon_price_cents, brand')
       .eq('source_status', 'unsourced')
       // Rows already withheld by strict mode keep source_status 'unsourced' --
       // honestly, since no search ran -- but must not be re-evaluated on every
@@ -165,6 +166,27 @@ Deno.serve(async (req) => {
       .in('user_id', [...byUser.keys()]);
     const strictByUser = new Map<string, any>();
     for (const c of strictCfgs || []) strictByUser.set(c.user_id, c);
+
+    // Brand exclusions, re-read HERE rather than trusted from detection time.
+    //
+    // `qualified` is stamped once, when the listing is detected. So a brand
+    // added to the exclusion list today had no effect on anything already
+    // queued -- those rows were stamped qualified=true under the old list and
+    // went on consuming searches. With the list actively being built out, that
+    // is real SerpAPI spend on brands the seller has already ruled out.
+    //
+    // Falls back to EXCLUDED_BRANDS when a user has no brand terms, matching
+    // qualifyListing exactly, so the two cannot disagree about what is excluded.
+    const { data: brandTerms } = await admin
+      .from('source_excluded_terms')
+      .select('user_id, value')
+      .eq('kind', 'brand')
+      .in('user_id', [...byUser.keys()]);
+    const brandsByUser = new Map<string, Set<string>>();
+    for (const t of brandTerms || []) {
+      if (!brandsByUser.has(t.user_id)) brandsByUser.set(t.user_id, new Set());
+      brandsByUser.get(t.user_id)!.add(String(t.value).trim().toLowerCase());
+    }
 
     const strictHeld: Record<string, number> = {};
     for (const [userId, rows] of byUser) {
@@ -234,7 +256,7 @@ Deno.serve(async (req) => {
     // be explainable rather than surprising.
     let dedupSaved = 0;
     let dedupFannedOut = 0;
-    const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number; skippedGated?: number }> = {};
+    const perUser: Record<string, { granted: number; ran: number; skippedRestricted?: number; skippedGated?: number; skippedBrand?: number }> = {};
 
     for (const [userId, rows] of byUser) {
       if (Date.now() >= deadlineAt) break;
@@ -325,6 +347,26 @@ Deno.serve(async (req) => {
       // collected. Reading the CURRENT config here makes the toggle mean what
       // it says: OFF stops the search call, it does not merely deprioritise.
       const allowNeedsApproval = strictByUser.get(userId)?.search_needs_approval !== false;
+
+      // Brand check against the CURRENT list, before any search is bought.
+      const userBrands = brandsByUser.get(userId) ?? EXCLUDED_BRANDS;
+      const nowBrandExcluded = new Set<string>();
+      for (const g of claimedGroups) {
+        const b = String(g[0].brand ?? '').trim().toLowerCase();
+        // A MISSING brand never excludes -- same rule as qualifyListing. Of 20
+        // rows stored with brand NULL, SP-API had a real brand for all 20, so
+        // absence is a lookup artefact rather than a property of the product.
+        if (b && userBrands.has(b)) nowBrandExcluded.add(g[0].asin);
+      }
+      if (nowBrandExcluded.size) {
+        await admin
+          .from('seller_watch_new_listings')
+          .update({ qualified: false, disqualified_reason: 'excluded_brand' })
+          .eq('user_id', userId)
+          .in('asin', Array.from(nowBrandExcluded))
+          .eq('source_status', 'unsourced');
+        console.log(`[auto-source] skipped ${nowBrandExcluded.size} newly brand-excluded ASIN(s) before searching`);
+      }
       const nowRestricted = new Set<string>();
       const nowGatedExcluded = new Set<string>();
       for (const [m, asins] of byMarket) {
@@ -358,6 +400,7 @@ Deno.serve(async (req) => {
       let ran = 0;
       let skippedRestricted = 0;
       let skippedGated = 0;
+      let skippedBrand = 0;
       for (const row of claimed) {
         if (Date.now() + SEARCH_RESERVE_MS > deadlineAt) break;
         // Neither ever reaches the search call. `ran` stays put for both, so
@@ -365,6 +408,7 @@ Deno.serve(async (req) => {
         // no search and no budget.
         if (nowRestricted.has(row.asin)) { skippedRestricted++; continue; }
         if (nowGatedExcluded.has(row.asin)) { skippedGated++; continue; }
+        if (nowBrandExcluded.has(row.asin)) { skippedBrand++; continue; }
         try {
           // Both headers, deliberately. find-source-candidates keeps
           // verify_jwt = true because it is called from the browser with a
@@ -447,6 +491,7 @@ Deno.serve(async (req) => {
       perUser[userId].ran = ran;
       if (skippedRestricted) perUser[userId].skippedRestricted = skippedRestricted;
       if (skippedGated) perUser[userId].skippedGated = skippedGated;
+      if (skippedBrand) perUser[userId].skippedBrand = skippedBrand;
 
       // Give back what was claimed but never spent -- a claim that did not
       // become a search would otherwise silently shrink today's allowance.
