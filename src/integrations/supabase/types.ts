@@ -1061,6 +1061,75 @@ export type Database = {
         }
         Relationships: []
       }
+      auto_source_config: {
+        Row: {
+          allow_open_web_fallback: boolean
+          daily_cap: number
+          enabled: boolean
+          notify_email: string | null
+          search_needs_approval: boolean
+          strict_min_fba_offers: number
+          strict_min_monthly_sales: number
+          strict_min_price_cents: number
+          strict_mode: boolean
+          strict_require_rank: boolean
+          strict_require_seller_fba: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allow_open_web_fallback?: boolean
+          daily_cap?: number
+          enabled?: boolean
+          notify_email?: string | null
+          search_needs_approval?: boolean
+          strict_min_fba_offers?: number
+          strict_min_monthly_sales?: number
+          strict_min_price_cents?: number
+          strict_mode?: boolean
+          strict_require_rank?: boolean
+          strict_require_seller_fba?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allow_open_web_fallback?: boolean
+          daily_cap?: number
+          enabled?: boolean
+          notify_email?: string | null
+          search_needs_approval?: boolean
+          strict_min_fba_offers?: number
+          strict_min_monthly_sales?: number
+          strict_min_price_cents?: number
+          strict_mode?: boolean
+          strict_require_rank?: boolean
+          strict_require_seller_fba?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      auto_source_daily_usage: {
+        Row: {
+          day: string
+          search_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          day: string
+          search_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          day?: string
+          search_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       auto_sync_locks: {
         Row: {
           expires_at: string
@@ -3280,6 +3349,27 @@ export type Database = {
         }
         Relationships: []
       }
+      find_source_usage: {
+        Row: {
+          month_key: string
+          search_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          month_key: string
+          search_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          month_key?: string
+          search_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       fnsku_map: {
         Row: {
           asin: string
@@ -3319,10 +3409,18 @@ export type Database = {
       fnsku_sync_history: {
         Row: {
           created_at: string
+          cursor_offset: number | null
+          cursor_total: number | null
+          enrichment_processed: number | null
+          enrichment_total: number | null
           error_message: string | null
           id: string
+          last_heartbeat_at: string | null
           marketplace_id: string
+          phase: string | null
+          poll_attempts: number | null
           processed_rows: number | null
+          report_id: string | null
           seller_id: string
           status: string
           sync_completed_at: string | null
@@ -3331,10 +3429,18 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          cursor_offset?: number | null
+          cursor_total?: number | null
+          enrichment_processed?: number | null
+          enrichment_total?: number | null
           error_message?: string | null
           id?: string
+          last_heartbeat_at?: string | null
           marketplace_id: string
+          phase?: string | null
+          poll_attempts?: number | null
           processed_rows?: number | null
+          report_id?: string | null
           seller_id: string
           status: string
           sync_completed_at?: string | null
@@ -3343,15 +3449,163 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          cursor_offset?: number | null
+          cursor_total?: number | null
+          enrichment_processed?: number | null
+          enrichment_total?: number | null
           error_message?: string | null
           id?: string
+          last_heartbeat_at?: string | null
           marketplace_id?: string
+          phase?: string | null
+          poll_attempts?: number | null
           processed_rows?: number | null
+          report_id?: string | null
           seller_id?: string
           status?: string
           sync_completed_at?: string | null
           sync_started_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      fnsku_sync_report_rows: {
+        Row: {
+          applied: boolean
+          asin: string
+          available: number | null
+          backfill_checked: boolean
+          condition: string | null
+          created_at: string
+          enriched: boolean
+          enrichment_image_url: string | null
+          enrichment_price: number | null
+          enrichment_title: string | null
+          fnsku: string | null
+          id: string
+          inbound: number | null
+          is_new: boolean | null
+          report_type: string
+          reserved: number | null
+          sku: string
+          sync_id: string
+          title: string | null
+          unfulfilled: number | null
+          units: number | null
+          user_id: string
+        }
+        Insert: {
+          applied?: boolean
+          asin: string
+          available?: number | null
+          backfill_checked?: boolean
+          condition?: string | null
+          created_at?: string
+          enriched?: boolean
+          enrichment_image_url?: string | null
+          enrichment_price?: number | null
+          enrichment_title?: string | null
+          fnsku?: string | null
+          id?: string
+          inbound?: number | null
+          is_new?: boolean | null
+          report_type: string
+          reserved?: number | null
+          sku: string
+          sync_id: string
+          title?: string | null
+          unfulfilled?: number | null
+          units?: number | null
+          user_id: string
+        }
+        Update: {
+          applied?: boolean
+          asin?: string
+          available?: number | null
+          backfill_checked?: boolean
+          condition?: string | null
+          created_at?: string
+          enriched?: boolean
+          enrichment_image_url?: string | null
+          enrichment_price?: number | null
+          enrichment_title?: string | null
+          fnsku?: string | null
+          id?: string
+          inbound?: number | null
+          is_new?: boolean | null
+          report_type?: string
+          reserved?: number | null
+          sku?: string
+          sync_id?: string
+          title?: string | null
+          unfulfilled?: number | null
+          units?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fnsku_sync_report_rows_sync_id_fkey"
+            columns: ["sync_id"]
+            isOneToOne: false
+            referencedRelation: "fnsku_sync_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      full_inventory_refresh_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_user_item_count: number | null
+          error_message: string | null
+          grand_checked: number
+          grand_err: number
+          grand_ok: number
+          id: string
+          item_cursor: number
+          last_heartbeat_at: string | null
+          run_tag: string
+          scope: string
+          started_at: string
+          status: string
+          user_cursor: number
+          user_ids: Json
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_user_item_count?: number | null
+          error_message?: string | null
+          grand_checked?: number
+          grand_err?: number
+          grand_ok?: number
+          id?: string
+          item_cursor?: number
+          last_heartbeat_at?: string | null
+          run_tag: string
+          scope: string
+          started_at?: string
+          status?: string
+          user_cursor?: number
+          user_ids: Json
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_user_item_count?: number | null
+          error_message?: string | null
+          grand_checked?: number
+          grand_err?: number
+          grand_ok?: number
+          id?: string
+          item_cursor?: number
+          last_heartbeat_at?: string | null
+          run_tag?: string
+          scope?: string
+          started_at?: string
+          status?: string
+          user_cursor?: number
+          user_ids?: Json
         }
         Relationships: []
       }
@@ -3382,6 +3636,42 @@ export type Database = {
           rate?: number
           source?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      gemini_daily_usage: {
+        Row: {
+          call_count: number
+          last_failure_at: string | null
+          last_failure_caller: string | null
+          last_failure_status: number | null
+          other_failure_count: number
+          quota_failure_count: number
+          success_count: number
+          updated_at: string
+          usage_date: string
+        }
+        Insert: {
+          call_count?: number
+          last_failure_at?: string | null
+          last_failure_caller?: string | null
+          last_failure_status?: number | null
+          other_failure_count?: number
+          quota_failure_count?: number
+          success_count?: number
+          updated_at?: string
+          usage_date?: string
+        }
+        Update: {
+          call_count?: number
+          last_failure_at?: string | null
+          last_failure_caller?: string | null
+          last_failure_status?: number | null
+          other_failure_count?: number
+          quota_failure_count?: number
+          success_count?: number
+          updated_at?: string
+          usage_date?: string
         }
         Relationships: []
       }
@@ -4917,6 +5207,42 @@ export type Database = {
         }
         Relationships: []
       }
+      keepa_token_budget: {
+        Row: {
+          bucket_max: number
+          denied_count: number
+          id: boolean
+          last_denied_at: string | null
+          last_observed_at: string | null
+          refill_observed_at: string | null
+          refill_per_min: number
+          tokens_left: number
+          updated_at: string
+        }
+        Insert: {
+          bucket_max?: number
+          denied_count?: number
+          id?: boolean
+          last_denied_at?: string | null
+          last_observed_at?: string | null
+          refill_observed_at?: string | null
+          refill_per_min?: number
+          tokens_left?: number
+          updated_at?: string
+        }
+        Update: {
+          bucket_max?: number
+          denied_count?: number
+          id?: boolean
+          last_denied_at?: string | null
+          last_observed_at?: string | null
+          refill_observed_at?: string | null
+          refill_per_min?: number
+          tokens_left?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       learned_fee_multipliers: {
         Row: {
           confidence: string
@@ -4953,6 +5279,63 @@ export type Database = {
           window_start?: string | null
         }
         Update: {
+          confidence?: string
+          created_at?: string
+          fee_component?: string
+          id?: string
+          last_computed_at?: string
+          marketplace?: string
+          multiplier?: number | null
+          raw_actual_total?: number | null
+          raw_estimated_total?: number | null
+          sample_count?: number
+          sample_orders?: Json
+          updated_at?: string
+          user_id?: string
+          window_end?: string | null
+          window_start?: string | null
+        }
+        Relationships: []
+      }
+      learned_fee_multipliers_asin: {
+        Row: {
+          asin: string
+          confidence: string
+          created_at: string
+          fee_component: string
+          id: string
+          last_computed_at: string
+          marketplace: string
+          multiplier: number | null
+          raw_actual_total: number | null
+          raw_estimated_total: number | null
+          sample_count: number
+          sample_orders: Json
+          updated_at: string
+          user_id: string
+          window_end: string | null
+          window_start: string | null
+        }
+        Insert: {
+          asin: string
+          confidence?: string
+          created_at?: string
+          fee_component: string
+          id?: string
+          last_computed_at?: string
+          marketplace: string
+          multiplier?: number | null
+          raw_actual_total?: number | null
+          raw_estimated_total?: number | null
+          sample_count?: number
+          sample_orders?: Json
+          updated_at?: string
+          user_id: string
+          window_end?: string | null
+          window_start?: string | null
+        }
+        Update: {
+          asin?: string
           confidence?: string
           created_at?: string
           fee_component?: string
@@ -5903,10 +6286,14 @@ export type Database = {
           created_at: string
           finished_at: string | null
           id: string
+          last_heartbeat_at: string | null
           months_refreshed: number
           notes: string | null
+          offset_idx: number
           started_at: string
           throttled: boolean
+          timed_out: boolean
+          user_ids: Json | null
           users_errored: number
           users_processed: number
         }
@@ -5914,10 +6301,14 @@ export type Database = {
           created_at?: string
           finished_at?: string | null
           id?: string
+          last_heartbeat_at?: string | null
           months_refreshed?: number
           notes?: string | null
+          offset_idx?: number
           started_at?: string
           throttled?: boolean
+          timed_out?: boolean
+          user_ids?: Json | null
           users_errored?: number
           users_processed?: number
         }
@@ -5925,10 +6316,14 @@ export type Database = {
           created_at?: string
           finished_at?: string | null
           id?: string
+          last_heartbeat_at?: string | null
           months_refreshed?: number
           notes?: string | null
+          offset_idx?: number
           started_at?: string
           throttled?: boolean
+          timed_out?: boolean
+          user_ids?: Json | null
           users_errored?: number
           users_processed?: number
         }
@@ -6718,6 +7113,8 @@ export type Database = {
           new_price: number | null
           offers_count: number | null
           price_delta: number | null
+          raise_blocked_cooldown: boolean
+          raise_rejected_floor_support: boolean
           reason: string
           rule_id: string | null
           sku: string | null
@@ -6757,6 +7154,8 @@ export type Database = {
           new_price?: number | null
           offers_count?: number | null
           price_delta?: number | null
+          raise_blocked_cooldown?: boolean
+          raise_rejected_floor_support?: boolean
           reason: string
           rule_id?: string | null
           sku?: string | null
@@ -6796,6 +7195,8 @@ export type Database = {
           new_price?: number | null
           offers_count?: number | null
           price_delta?: number | null
+          raise_blocked_cooldown?: boolean
+          raise_rejected_floor_support?: boolean
           reason?: string
           rule_id?: string | null
           sku?: string | null
@@ -6978,6 +7379,7 @@ export type Database = {
           intl_reserved: number | null
           inventory_confidence: string | null
           is_enabled: boolean
+          is_listing_inactive_not_buyable: boolean
           is_manual_priority: boolean
           is_pricing_suppression: boolean
           is_priority: boolean
@@ -7011,6 +7413,7 @@ export type Database = {
           last_price_change_at: string | null
           last_price_direction: string | null
           last_priority_check_at: string | null
+          last_raise_at: string | null
           last_recommendation_reason: string | null
           last_recommended_price: number | null
           last_repriced_at: string | null
@@ -7021,6 +7424,10 @@ export type Database = {
           last_stable_price: number | null
           last_throttle_at: string | null
           last_trigger_source: string | null
+          listing_inactive_cleared_at: string | null
+          listing_inactive_detected_at: string | null
+          listing_inactive_last_checked_at: string | null
+          listing_inactive_statuses: string[] | null
           listing_issue_unknown_categories: string[] | null
           listing_issue_unknown_flagged: boolean
           manual_min_price: number | null
@@ -7071,6 +7478,7 @@ export type Database = {
           roi_at_min_percent: number | null
           roi_range_updated_at: string | null
           rule_id: string | null
+          sellability_review_hold: boolean
           sku: string
           sku_validation_checked_at: string | null
           sku_validation_message: string | null
@@ -7158,6 +7566,7 @@ export type Database = {
           intl_reserved?: number | null
           inventory_confidence?: string | null
           is_enabled?: boolean
+          is_listing_inactive_not_buyable?: boolean
           is_manual_priority?: boolean
           is_pricing_suppression?: boolean
           is_priority?: boolean
@@ -7191,6 +7600,7 @@ export type Database = {
           last_price_change_at?: string | null
           last_price_direction?: string | null
           last_priority_check_at?: string | null
+          last_raise_at?: string | null
           last_recommendation_reason?: string | null
           last_recommended_price?: number | null
           last_repriced_at?: string | null
@@ -7201,6 +7611,10 @@ export type Database = {
           last_stable_price?: number | null
           last_throttle_at?: string | null
           last_trigger_source?: string | null
+          listing_inactive_cleared_at?: string | null
+          listing_inactive_detected_at?: string | null
+          listing_inactive_last_checked_at?: string | null
+          listing_inactive_statuses?: string[] | null
           listing_issue_unknown_categories?: string[] | null
           listing_issue_unknown_flagged?: boolean
           manual_min_price?: number | null
@@ -7251,6 +7665,7 @@ export type Database = {
           roi_at_min_percent?: number | null
           roi_range_updated_at?: string | null
           rule_id?: string | null
+          sellability_review_hold?: boolean
           sku: string
           sku_validation_checked_at?: string | null
           sku_validation_message?: string | null
@@ -7338,6 +7753,7 @@ export type Database = {
           intl_reserved?: number | null
           inventory_confidence?: string | null
           is_enabled?: boolean
+          is_listing_inactive_not_buyable?: boolean
           is_manual_priority?: boolean
           is_pricing_suppression?: boolean
           is_priority?: boolean
@@ -7371,6 +7787,7 @@ export type Database = {
           last_price_change_at?: string | null
           last_price_direction?: string | null
           last_priority_check_at?: string | null
+          last_raise_at?: string | null
           last_recommendation_reason?: string | null
           last_recommended_price?: number | null
           last_repriced_at?: string | null
@@ -7381,6 +7798,10 @@ export type Database = {
           last_stable_price?: number | null
           last_throttle_at?: string | null
           last_trigger_source?: string | null
+          listing_inactive_cleared_at?: string | null
+          listing_inactive_detected_at?: string | null
+          listing_inactive_last_checked_at?: string | null
+          listing_inactive_statuses?: string[] | null
           listing_issue_unknown_categories?: string[] | null
           listing_issue_unknown_flagged?: boolean
           manual_min_price?: number | null
@@ -7431,6 +7852,7 @@ export type Database = {
           roi_at_min_percent?: number | null
           roi_range_updated_at?: string | null
           rule_id?: string | null
+          sellability_review_hold?: boolean
           sku?: string
           sku_validation_checked_at?: string | null
           sku_validation_message?: string | null
@@ -8717,7 +9139,9 @@ export type Database = {
           competitor_quality_preset: string | null
           condition_scope: Database["public"]["Enums"]["repricer_condition_scope"]
           cooldown_minutes: number | null
+          cooldown_minutes_losing_bb: number | null
           cooldown_minutes_on_floor: number | null
+          cooldown_minutes_winning_bb: number | null
           created_at: string
           dump_age_days: number | null
           enable_auto_exit_reenter: boolean | null
@@ -8755,6 +9179,7 @@ export type Database = {
           max_step_amount: number | null
           max_step_percent: number | null
           min_change_threshold: number | null
+          min_floor_support_ratio: number | null
           min_price: number | null
           min_profit: number | null
           min_profit_dollars: number | null
@@ -8776,9 +9201,11 @@ export type Database = {
           oscillation_cooldown_minutes: number
           oscillation_max_reactions: number
           oscillation_mode: string
+          post_raise_cooldown_hours: number | null
           profit_guard_mode: string
           raise_trigger_percent: number | null
           reenter_buffer_percent: number | null
+          require_market_supported_raise: boolean
           rule_type: string | null
           ships_from_filter: string | null
           skip_lower_when_bb_owner: boolean
@@ -8825,7 +9252,9 @@ export type Database = {
           competitor_quality_preset?: string | null
           condition_scope?: Database["public"]["Enums"]["repricer_condition_scope"]
           cooldown_minutes?: number | null
+          cooldown_minutes_losing_bb?: number | null
           cooldown_minutes_on_floor?: number | null
+          cooldown_minutes_winning_bb?: number | null
           created_at?: string
           dump_age_days?: number | null
           enable_auto_exit_reenter?: boolean | null
@@ -8863,6 +9292,7 @@ export type Database = {
           max_step_amount?: number | null
           max_step_percent?: number | null
           min_change_threshold?: number | null
+          min_floor_support_ratio?: number | null
           min_price?: number | null
           min_profit?: number | null
           min_profit_dollars?: number | null
@@ -8884,9 +9314,11 @@ export type Database = {
           oscillation_cooldown_minutes?: number
           oscillation_max_reactions?: number
           oscillation_mode?: string
+          post_raise_cooldown_hours?: number | null
           profit_guard_mode?: string
           raise_trigger_percent?: number | null
           reenter_buffer_percent?: number | null
+          require_market_supported_raise?: boolean
           rule_type?: string | null
           ships_from_filter?: string | null
           skip_lower_when_bb_owner?: boolean
@@ -8933,7 +9365,9 @@ export type Database = {
           competitor_quality_preset?: string | null
           condition_scope?: Database["public"]["Enums"]["repricer_condition_scope"]
           cooldown_minutes?: number | null
+          cooldown_minutes_losing_bb?: number | null
           cooldown_minutes_on_floor?: number | null
+          cooldown_minutes_winning_bb?: number | null
           created_at?: string
           dump_age_days?: number | null
           enable_auto_exit_reenter?: boolean | null
@@ -8971,6 +9405,7 @@ export type Database = {
           max_step_amount?: number | null
           max_step_percent?: number | null
           min_change_threshold?: number | null
+          min_floor_support_ratio?: number | null
           min_price?: number | null
           min_profit?: number | null
           min_profit_dollars?: number | null
@@ -8992,9 +9427,11 @@ export type Database = {
           oscillation_cooldown_minutes?: number
           oscillation_max_reactions?: number
           oscillation_mode?: string
+          post_raise_cooldown_hours?: number | null
           profit_guard_mode?: string
           raise_trigger_percent?: number | null
           reenter_buffer_percent?: number | null
+          require_market_supported_raise?: boolean
           rule_type?: string | null
           ships_from_filter?: string | null
           skip_lower_when_bb_owner?: boolean
@@ -9111,6 +9548,9 @@ export type Database = {
           momentum_check_enabled: boolean
           momentum_threshold_pct: number
           primary_marketplace: string | null
+          primary_marketplace_detected_at: string | null
+          primary_marketplace_detection_method: string | null
+          primary_marketplace_manual_override: boolean
           priority_auto_resume_at: string | null
           priority_backoff_seconds: number
           priority_pause_reason: string | null
@@ -9180,6 +9620,9 @@ export type Database = {
           momentum_check_enabled?: boolean
           momentum_threshold_pct?: number
           primary_marketplace?: string | null
+          primary_marketplace_detected_at?: string | null
+          primary_marketplace_detection_method?: string | null
+          primary_marketplace_manual_override?: boolean
           priority_auto_resume_at?: string | null
           priority_backoff_seconds?: number
           priority_pause_reason?: string | null
@@ -9249,6 +9692,9 @@ export type Database = {
           momentum_check_enabled?: boolean
           momentum_threshold_pct?: number
           primary_marketplace?: string | null
+          primary_marketplace_detected_at?: string | null
+          primary_marketplace_detection_method?: string | null
+          primary_marketplace_manual_override?: boolean
           priority_auto_resume_at?: string | null
           priority_backoff_seconds?: number
           priority_pause_reason?: string | null
@@ -10503,6 +10949,39 @@ export type Database = {
         }
         Relationships: []
       }
+      search_api_daily_usage: {
+        Row: {
+          call_count: number
+          empty_count: number
+          error_count: number
+          last_error_at: string | null
+          last_error_status: number | null
+          provider: string
+          updated_at: string
+          usage_date: string
+        }
+        Insert: {
+          call_count?: number
+          empty_count?: number
+          error_count?: number
+          last_error_at?: string | null
+          last_error_status?: number | null
+          provider: string
+          updated_at?: string
+          usage_date?: string
+        }
+        Update: {
+          call_count?: number
+          empty_count?: number
+          error_count?: number
+          last_error_at?: string | null
+          last_error_status?: number | null
+          provider?: string
+          updated_at?: string
+          usage_date?: string
+        }
+        Relationships: []
+      }
       seller_authorizations: {
         Row: {
           access_token: string | null
@@ -10631,6 +11110,173 @@ export type Database = {
           page_size?: number
           seller_id?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      seller_watch_new_listings: {
+        Row: {
+          amazon_price_cents: number | null
+          asin: string
+          brand: string | null
+          candidates: Json | null
+          created_at: string
+          detected_at: string
+          disqualified_reason: string | null
+          fba_fee_cents: number | null
+          fba_offer_count: number | null
+          fbm_offer_count: number | null
+          fees_captured_at: string | null
+          id: string
+          image_url: string | null
+          last_searched_at: string | null
+          marketplace: string
+          new_price_cents: number | null
+          offers_captured_at: string | null
+          price_captured_at: string | null
+          product_group: string | null
+          qualified: boolean | null
+          referral_fee_cents: number | null
+          rejected_candidate_urls: Json
+          sales_rank: number | null
+          seller_id: string
+          seller_offer_is_fba: boolean | null
+          source_status: string
+          sourced_at: string | null
+          sourced_candidate: Json | null
+          strict_reason: string | null
+          title: string | null
+          total_fees_cents: number | null
+          upc: string | null
+          user_id: string
+          watch_id: string
+        }
+        Insert: {
+          amazon_price_cents?: number | null
+          asin: string
+          brand?: string | null
+          candidates?: Json | null
+          created_at?: string
+          detected_at?: string
+          disqualified_reason?: string | null
+          fba_fee_cents?: number | null
+          fba_offer_count?: number | null
+          fbm_offer_count?: number | null
+          fees_captured_at?: string | null
+          id?: string
+          image_url?: string | null
+          last_searched_at?: string | null
+          marketplace?: string
+          new_price_cents?: number | null
+          offers_captured_at?: string | null
+          price_captured_at?: string | null
+          product_group?: string | null
+          qualified?: boolean | null
+          referral_fee_cents?: number | null
+          rejected_candidate_urls?: Json
+          sales_rank?: number | null
+          seller_id: string
+          seller_offer_is_fba?: boolean | null
+          source_status?: string
+          sourced_at?: string | null
+          sourced_candidate?: Json | null
+          strict_reason?: string | null
+          title?: string | null
+          total_fees_cents?: number | null
+          upc?: string | null
+          user_id: string
+          watch_id: string
+        }
+        Update: {
+          amazon_price_cents?: number | null
+          asin?: string
+          brand?: string | null
+          candidates?: Json | null
+          created_at?: string
+          detected_at?: string
+          disqualified_reason?: string | null
+          fba_fee_cents?: number | null
+          fba_offer_count?: number | null
+          fbm_offer_count?: number | null
+          fees_captured_at?: string | null
+          id?: string
+          image_url?: string | null
+          last_searched_at?: string | null
+          marketplace?: string
+          new_price_cents?: number | null
+          offers_captured_at?: string | null
+          price_captured_at?: string | null
+          product_group?: string | null
+          qualified?: boolean | null
+          referral_fee_cents?: number | null
+          rejected_candidate_urls?: Json
+          sales_rank?: number | null
+          seller_id?: string
+          seller_offer_is_fba?: boolean | null
+          source_status?: string
+          sourced_at?: string | null
+          sourced_candidate?: Json | null
+          strict_reason?: string | null
+          title?: string | null
+          total_fees_cents?: number | null
+          upc?: string | null
+          user_id?: string
+          watch_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_watch_new_listings_watch_id_fkey"
+            columns: ["watch_id"]
+            isOneToOne: false
+            referencedRelation: "seller_watchlist"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seller_watchlist: {
+        Row: {
+          cancelled_at: string | null
+          confirmed_at: string | null
+          created_at: string
+          id: string
+          known_asin_list: Json | null
+          last_alert_at: string | null
+          last_checked_at: string | null
+          marketplace: string
+          notify_email: string
+          seller_id: string
+          seller_name: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          known_asin_list?: Json | null
+          last_alert_at?: string | null
+          last_checked_at?: string | null
+          marketplace?: string
+          notify_email: string
+          seller_id: string
+          seller_name?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          id?: string
+          known_asin_list?: Json | null
+          last_alert_at?: string | null
+          last_checked_at?: string | null
+          marketplace?: string
+          notify_email?: string
+          seller_id?: string
+          seller_name?: string | null
+          status?: string
           user_id?: string
         }
         Relationships: []
@@ -12068,6 +12714,99 @@ export type Database = {
           },
         ]
       }
+      source_excluded_domains: {
+        Row: {
+          created_at: string
+          domain: string
+          id: string
+          label: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          domain: string
+          id?: string
+          label?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          domain?: string
+          id?: string
+          label?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      source_excluded_terms: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          label: string | null
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          label?: string | null
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
+      source_retailers: {
+        Row: {
+          created_at: string
+          domain: string
+          enabled: boolean
+          id: string
+          label: string | null
+          price_attempts: number
+          price_success: number
+          search_hits: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          domain: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          price_attempts?: number
+          price_success?: number
+          search_hits?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          domain?: string
+          enabled?: boolean
+          id?: string
+          label?: string | null
+          price_attempts?: number
+          price_success?: number
+          search_hits?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       sp_api_rate_limit_state: {
         Row: {
           created_at: string | null
@@ -12534,7 +13273,9 @@ export type Database = {
           listing_limit: number
           monthly_price: number
           name: string
+          priority_star_cap: number
           sort_order: number
+          sp_api_calls_per_minute_cap: number
           stripe_annual_price_id: string | null
           stripe_price_id: string | null
           stripe_product_id: string | null
@@ -12545,7 +13286,9 @@ export type Database = {
           listing_limit: number
           monthly_price: number
           name: string
+          priority_star_cap?: number
           sort_order?: number
+          sp_api_calls_per_minute_cap?: number
           stripe_annual_price_id?: string | null
           stripe_price_id?: string | null
           stripe_product_id?: string | null
@@ -12556,7 +13299,9 @@ export type Database = {
           listing_limit?: number
           monthly_price?: number
           name?: string
+          priority_star_cap?: number
           sort_order?: number
+          sp_api_calls_per_minute_cap?: number
           stripe_annual_price_id?: string | null
           stripe_price_id?: string | null
           stripe_product_id?: string | null
@@ -13733,6 +14478,10 @@ export type Database = {
         Args: { p_pairs: Json; p_user_id: string }
         Returns: number
       }
+      bump_source_retailer_stats: {
+        Args: { p_stats: Json; p_user_id: string }
+        Returns: undefined
+      }
       capture_database_size_snapshot: { Args: never; Returns: undefined }
       capture_system_load: { Args: never; Returns: undefined }
       check_sync_parity: {
@@ -13745,6 +14494,10 @@ export type Database = {
           so_count: number
         }[]
       }
+      claim_auto_source_budget: {
+        Args: { p_user_id: string; p_wanted: number }
+        Returns: number
+      }
       claim_due_health_retries: {
         Args: { _limit?: number }
         Returns: {
@@ -13756,6 +14509,14 @@ export type Database = {
           module: string
           retry_attempts: number
           user_id: string
+        }[]
+      }
+      claim_keepa_tokens: {
+        Args: { p_min_reserve?: number; p_tokens: number }
+        Returns: {
+          allowed: boolean
+          tokens_left: number
+          wait_seconds: number
         }[]
       }
       classify_health_display_category: {
@@ -13807,6 +14568,35 @@ export type Database = {
       count_active_repricer_users_1h: { Args: never; Returns: number }
       count_shipments_missing_items: { Args: never; Returns: number }
       count_unresolved_shipment_dates: { Args: never; Returns: number }
+      debug_cron_jobs: {
+        Args: never
+        Returns: {
+          active: boolean
+          command: string
+          jobid: number
+          jobname: string
+          schedule: string
+        }[]
+      }
+      debug_cron_run_details: {
+        Args: { p_jobid: number; p_limit?: number }
+        Returns: {
+          end_time: string
+          jobid: number
+          return_message: string
+          runid: number
+          start_time: string
+          status: string
+        }[]
+      }
+      debug_last_sale_dates: {
+        Args: { p_asins: string[]; p_user_id: string }
+        Returns: {
+          asin: string
+          last_order_date: string
+          marketplace: string
+        }[]
+      }
       deduct_credits: {
         Args: { amount: number; user_id: string }
         Returns: undefined
@@ -13877,6 +14667,7 @@ export type Database = {
         Returns: Json
       }
       evaluate_health_alerts: { Args: never; Returns: Json }
+      expire_stale_new_listings: { Args: { p_days?: number }; Returns: number }
       flush_api_token_recent_consumption: { Args: never; Returns: number }
       get_active_strategy_state: {
         Args: { _asin: string; _marketplace_id?: string; _user_id: string }
@@ -14395,10 +15186,20 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      marketplace_to_currency: {
+        Args: { p_marketplace: string }
+        Returns: string
+      }
       nextval_generated_invoice_seq: { Args: never; Returns: number }
       nightly_data_cleanup: { Args: never; Returns: Json }
       normalize_availability_text: { Args: { raw: string }; Returns: string }
       normalize_store_scan_scope_url: { Args: { raw: string }; Returns: string }
+      observe_keepa_tokens:
+        | { Args: { p_tokens_left: number }; Returns: undefined }
+        | {
+            Args: { p_refill_rate?: number; p_tokens_left: number }
+            Returns: undefined
+          }
       propagate_ship_to_hash_to_refunds: {
         Args: { p_user_id: string }
         Returns: number
@@ -14407,6 +15208,11 @@ export type Database = {
         Args: { p_keep_days?: number }
         Returns: Json
       }
+      purge_excluded_only_listings: {
+        Args: { p_dry_run?: boolean }
+        Returns: number
+      }
+      qualification_exclusion_preview: { Args: never; Returns: Json }
       recompute_pl_month_summary: {
         Args: { p_month_key: string; p_source?: string; p_user_id: string }
         Returns: undefined
@@ -14444,12 +15250,25 @@ export type Database = {
         Args: { p_job: string; p_overlap_window_minutes?: number }
         Returns: number
       }
+      record_gemini_call: {
+        Args: { p_caller?: string; p_ok: boolean; p_status?: number }
+        Returns: undefined
+      }
       record_health_retry_outcome: {
         Args: { _issue_id: string; _note?: string; _success: boolean }
         Returns: undefined
       }
       record_module_usage: {
         Args: { _label?: string; _path: string }
+        Returns: undefined
+      }
+      record_search_api_call: {
+        Args: {
+          p_empty?: boolean
+          p_ok: boolean
+          p_provider: string
+          p_status?: number
+        }
         Returns: undefined
       }
       record_spapi_test_result: {
@@ -14468,6 +15287,10 @@ export type Database = {
       }
       release_all_repricer_locks: {
         Args: { p_lock_owner: string; p_user_id: string }
+        Returns: undefined
+      }
+      release_auto_source_budget: {
+        Args: { p_count: number; p_user_id: string }
         Returns: undefined
       }
       release_cron_lock:
@@ -14503,6 +15326,70 @@ export type Database = {
         }[]
       }
       report_pending_revenue_review_weekly: { Args: never; Returns: number }
+      repricer_asin_bb_days: {
+        Args: {
+          p_asins: string[]
+          p_seller_ids: Json
+          p_since: string
+          p_user_id: string
+        }
+        Returns: {
+          asin: string
+          marketplace: string
+          snapshot_day: string
+          total_snapshots: number
+          winning_snapshots: number
+        }[]
+      }
+      repricer_asin_profile_days: {
+        Args: {
+          p_rule_id: string
+          p_since: string
+          p_user_id: string
+          p_v2_cutover: string
+        }
+        Returns: {
+          asin: string
+          before_cutover: boolean
+          cooldown_blocks: number
+          decision_count: number
+          first_seen: string
+          floor_rejects: number
+          last_seen: string
+          marketplace: string
+          raise_attempts: number
+          rule_id: string
+        }[]
+      }
+      repricer_asin_raises: {
+        Args: {
+          p_asins: string[]
+          p_limit?: number
+          p_since: string
+          p_user_id: string
+        }
+        Returns: {
+          asin: string
+          created_at: string
+          marketplace: string
+          new_price: number
+          old_price: number
+          sku: string
+        }[]
+      }
+      repricer_asin_sales_days: {
+        Args: { p_asins: string[]; p_since: string; p_user_id: string }
+        Returns: {
+          asin: string
+          cost: number
+          fees: number
+          marketplace: string
+          order_count: number
+          order_day: string
+          revenue: number
+          units: number
+        }[]
+      }
       repricer_cooldown_multiplier: {
         Args: { _state: Database["public"]["Enums"]["repricer_strategy_state"] }
         Returns: number
@@ -14513,6 +15400,39 @@ export type Database = {
           _state: Database["public"]["Enums"]["repricer_strategy_state"]
         }
         Returns: number
+      }
+      repricer_rule_perf_raise_safety: {
+        Args: { p_since: string; p_user_id: string }
+        Returns: {
+          cooldown_blocks: number
+          decision_day: string
+          floor_rejects: number
+          raise_attempts: number
+          smart_profile: string
+        }[]
+      }
+      repricer_rule_perf_raises: {
+        Args: { p_limit?: number; p_since: string; p_user_id: string }
+        Returns: {
+          asin: string
+          created_at: string
+          marketplace: string
+          new_price: number
+          old_price: number
+          sku: string
+        }[]
+      }
+      repricer_rule_perf_sales: {
+        Args: { p_since: string; p_user_id: string }
+        Returns: {
+          cost: number
+          fees: number
+          order_count: number
+          order_day: string
+          revenue: number
+          smart_profile: string
+          units: number
+        }[]
       }
       repricer_translate_reason: { Args: { _reason: string }; Returns: string }
       resolve_business_health_issue: {
