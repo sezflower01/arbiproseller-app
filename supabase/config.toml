@@ -141,7 +141,15 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.inventory-refresh-worker]
-verify_jwt = true
+# MUST be false: pg_cron sends x-internal-secret and NO Authorization header, so
+# with verify_jwt = true the gateway rejects the call before the function runs --
+# no function log, no cron_run_history row, and pg_cron still records success
+# because the POST completed. Exactly the trap in CLAUDE.md.
+#
+# Cron-only (the src/ references are job-name strings in diagnostics, not
+# invocations), and the function has its own guard: service-role bearer, anon
+# key, or INTERNAL_SYNC_SECRET.
+verify_jwt = false
 
 [functions.sync-fbm-cleanup]
 verify_jwt = false
