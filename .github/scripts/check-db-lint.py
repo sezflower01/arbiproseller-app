@@ -57,8 +57,13 @@ def load_findings(raw: str):
     if not results_docs:
         # Every document parsed but none carried results. Treating that as "no
         # findings" would be a silent pass on output we do not understand.
+        # Include the content in the message, not just the count. Annotations are
+        # readable over the public API while log downloads need auth, so an error
+        # that says only "no results key" is unreadable to anyone without repo
+        # access -- which cost two round trips getting this gate working.
+        preview = "; ".join(json.dumps(d)[:300] for d in docs[:3])
         raise ValueError(
-            f"no document with a 'results' key in {len(docs)} JSON document(s)"
+            f"no document with a 'results' key in {len(docs)} JSON document(s): {preview}"
         )
     doc = results_docs[-1]
     out = []
