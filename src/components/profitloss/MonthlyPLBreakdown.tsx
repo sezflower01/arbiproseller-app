@@ -1432,13 +1432,13 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
                 </tr>
               )}
 
-              {/* ═══════════════ NET PROFIT — prominent, large, easy to scan ═══════════════ */}
+              {/* ═══════════════ NET PROFIT/LOSS — prominent, large, easy to scan ═══════════════ */}
               <tr className="border-t-4 border-primary">
                 <td colSpan={14} className="px-3 pt-3 pb-0 sticky left-0 bg-background z-10" />
               </tr>
               <tr className={`${grand.net >= 0 ? "bg-green-50 dark:bg-green-950/40" : "bg-red-50 dark:bg-red-950/40"} border-y-2 border-primary`}>
                 <td className={`px-3 py-4 font-extrabold text-base sticky left-0 z-10 ${grand.net >= 0 ? "bg-green-50 dark:bg-green-950/40 text-foreground" : "bg-red-50 dark:bg-red-950/40 text-foreground"}`}>
-                  NET PROFIT
+                  NET PROFIT/LOSS
                   <div className="text-[10px] font-normal text-muted-foreground mt-0.5">
                     Income − Amazon Expenses − COGS − Operating Expenses − Inventory Loss
                   </div>
@@ -1458,7 +1458,7 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
                 <>
                   {/* Tax Information — collapsed by default, clearly labeled informational */}
                   {renderSection(
-                    "▾ Tax Information (Informational Only — not included in Net Profit)",
+                    "▾ Tax Information (Informational Only — not included in Net Profit/Loss)",
                     OTHER_ROWS,
                     monthTotals.other,
                     grand.other,
@@ -1484,7 +1484,7 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
         {/* ═══════════════ Bottom summary bar — Net Profit (left) · Total Expenses (right) ═══════════════ */}
         <div className="flex items-center justify-between gap-4 px-4 py-4 border-t-2 border-primary bg-muted/40">
           <div className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Net Profit</span>
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Net Profit/Loss</span>
             <span className={`text-2xl font-extrabold tabular-nums ${grand.net < 0 ? "text-destructive" : "text-green-700 dark:text-green-400"}`}>
               {fmt(grand.net, grand.net < 0)}
             </span>

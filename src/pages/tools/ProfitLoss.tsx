@@ -1986,14 +1986,25 @@ export default function ProfitLoss() {
       // EXPENSE_ROWS already carry their own sign, so this is a sum, not a
       // subtraction -- identical to the screen's
       // income + expenses - COGS - opEx - inventory loss.
-      rows.push(get('NET PROFIT', d => {
+      // Computed once and pushed twice. The confirmation line at the very bottom
+      // has to be the SAME selector, not a re-derivation -- two formulas that are
+      // meant to agree is how the web and Excel P&L drifted $2,491.75 apart in
+      // the first place, and a confirmation line that can disagree with the total
+      // it confirms is worse than no confirmation line.
+      const netProfitSel = (d: MonthData) => {
         if (!d.plRow) return 0;
         return sumRows(d.plRow, incomeDefs)
           + sumRows(d.plRow, expenseDefs)
           - (d.cogs + d.cogsAdjustment)
           - (d.disposition + d.writeoff)
           - d.opExpenses;
-      }));
+      };
+      rows.push(get('NET PROFIT/LOSS', netProfitSel));
+
+      // Restated on its own at the foot of the sheet, so the figure can be read
+      // without scrolling back up through the sections.
+      rows.push([]);
+      rows.push(get('NET PROFIT/LOSS (confirmation)', netProfitSel));
 
       // Build a styled workbook using ExcelJS (borders, section headers, bold totals, freeze pane)
       const ExcelJS = (await import('exceljs')).default;
@@ -2012,7 +2023,7 @@ export default function ProfitLoss() {
       ]);
       const TOTAL_LABELS = new Set([
         'TOTAL INCOME', 'TOTAL EXPENSES', 'TOTAL OPERATING EXPENSES',
-        'NET TAX', 'NET PROFIT'
+        'NET TAX', 'NET PROFIT/LOSS', 'NET PROFIT/LOSS (confirmation)'
       ]);
 
       const thinBorder = { style: 'thin' as const, color: { argb: 'FFBFBFBF' } };
