@@ -17,6 +17,16 @@ name: Deploy Edge Functions
 # separate, deliberate action and stays manual.
 
 on:
+  # Manual trigger exists so the deploy path can be TESTED without manufacturing
+  # a commit. Added 2026-08-19: the workflow reported success for 205 runs while
+  # deploying nothing, and there was no way to exercise it on demand to find
+  # that out. Pass a single function name to keep a diagnostic run cheap.
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Function to deploy (blank = every function)'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
@@ -46,8 +56,45 @@ jobs:
           SUPABASE_PROJECT_ID: mstibdszibcheodvnprm
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
+          DISPATCH_TARGET: ${{ github.event.inputs.target }}
         run: |
           set -euo pipefail
+
+          # Deploy a newline-separated list, and put the CLI's OWN error text
+          # into the ::error:: annotation.
+          #
+          # This used to be a bare "Failed to deploy $fn" with the CLI output
+          # left in the log. GitHub exposes annotations over the public API but
+          # gates log downloads behind auth, so the one line that said WHY was
+          # the one line nobody without repo access could read -- which is
+          # exactly the situation on 2026-08-19, when all 254 deploys failed and
+          # the reason was unobtainable. The message is truncated because
+          # annotations are capped, and capped at 10 per run.
+          deploy_all() {
+            local list="$1" failed="" out=""
+            while IFS= read -r fn; do
+              [ -z "$fn" ] && continue
+              if [ ! -f "supabase/functions/$fn/index.ts" ]; then
+                echo "Skipping '$fn' — no index.ts (not a deployable function, or was deleted)."
+                continue
+              fi
+              echo "::group::Deploying $fn"
+              if out=$(supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_ID" 2>&1); then
+                echo "$out"
+              else
+                echo "$out"
+                echo "::error::Failed to deploy $fn :: $(echo "$out" | tr '\n' ' ' | tail -c 600)"
+                failed="$failed $fn"
+              fi
+              echo "::endgroup::"
+            done <<< "$list"
+
+            if [ -n "$failed" ]; then
+              echo "::error::One or more functions failed to deploy:$failed"
+              return 1
+            fi
+            return 0
+          }
 
           # FAILS, does not skip. This was `::warning::` + `exit 0` until
           # 2026-08-19, and the secret had never been set -- so every run since
@@ -79,6 +126,19 @@ jobs:
           if [ -z "$BEFORE_SHA" ]; then
             echo "No parent commit available (first commit on the repo?) — nothing to diff, skipping."
             exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "$DISPATCH_TARGET" ]; then
+              echo "Manual run for a single function: $DISPATCH_TARGET"
+              FUNCS_TO_DEPLOY="$DISPATCH_TARGET"
+            else
+              echo "Manual run for every function."
+              FUNCS_TO_DEPLOY=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d \
+                ! -name '_shared' ! -name '_tests' -printf '%f\n' | sort)
+            fi
+            deploy_all "$FUNCS_TO_DEPLOY"
+            exit $?
           fi
 
           CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" -- supabase/functions/)
@@ -116,22 +176,4 @@ jobs:
 
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
 
-          FAILED=""
-          while IFS= read -r fn; do
-            [ -z "$fn" ] && continue
-            if [ ! -f "supabase/functions/$fn/index.ts" ]; then
-              echo "Skipping '$fn' — no index.ts (not a deployable function, or was deleted)."
-              continue
-            fi
-            echo "::group::Deploying $fn"
-            if ! supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_ID"; then
-              echo "::error::Failed to deploy $fn"
-              FAILED="$FAILED $fn"
-            fi
-            echo "::endgroup::"
-          done <<< "$FUNCS_TO_DEPLOY"
-
-          if [ -n "$FAILED" ]; then
-            echo "::error::One or more functions failed to deploy:$FAILED"
-            exit 1
-          fi
+          deploy_all "$FUNCS_TO_DEPLOY"
