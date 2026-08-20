@@ -45,10 +45,28 @@ jobs:
         with:
           fetch-depth: 0 # need history to diff github.event.before...github.sha
 
+      # PINNED, not `latest`, and the pin is load-bearing.
+      #
+      # CLI 2.115 validates the WHOLE config.toml on every command, including
+      #   [auth.hook.send_email] secrets = "env(SEND_EMAIL_HOOK_SECRET)"
+      # That variable does not exist on the runner, so it resolves to empty,
+      # fails the "v1,whsec_<base64>" format check, and EVERY command aborts:
+      #   Invalid hook config: auth.hook.send_email.secrets must be formatted
+      #   as "v1,whsec_<base64_encoded_secret>" ...
+      # All 254 deploys failed this way on 2026-08-19, each in about a second,
+      # before uploading anything. Reproduced locally: 2.115 fails with the
+      # variable unset, 2.109.1 succeeds with it equally unset.
+      #
+      # The DURABLE fix is to give the runner the real secret -- add
+      # SEND_EMAIL_HOOK_SECRET to repo secrets and set it in the step env below
+      # -- after which this can go back to `latest`. Deliberately NOT worked
+      # around with a dummy value: the CLI is trusted with config here, and a
+      # placeholder in a field that governs auth email signing is the kind of
+      # thing that is only discovered when password resets stop working.
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.109.1
 
       - name: Determine changed functions and deploy
         env:
