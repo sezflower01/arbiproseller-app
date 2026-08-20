@@ -31,6 +31,8 @@ const AMAZON_FEE_KEYS = ["referral_fees", "variable_closing_fees", "fixed_closin
 
 interface MarketplaceRow {
   marketplace: string;
+  /** Newest event_date held for this marketplace. null = nothing cached yet. */
+  newest: string | null;
   sales: number; // net income: gross sales + credits/reimbursements - refunds/promos (see INCOME_KEYS/INCOME_DEDUCTION_KEYS above)
   cogs: number;
   amazonFees: number;
@@ -39,6 +41,14 @@ interface MarketplaceRow {
 
 function sumField(rows: any[], key: string): number {
   return rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+}
+
+/** Whole days between an event date (YYYY-MM-DD) and today, floored at 0. */
+function staleDays(isoDate: string): number {
+  const then = new Date(`${isoDate}T00:00:00`);
+  const now = new Date();
+  const days = Math.floor((now.getTime() - then.getTime()) / 86_400_000);
+  return Number.isFinite(days) && days > 0 ? days : 0;
 }
 
 const fmtMoney = (v: number) => `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -73,7 +83,23 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
           - INCOME_DEDUCTION_KEYS.reduce((s, k) => s + sumField(plRows, k), 0);
         const amazonFees = AMAZON_FEE_KEYS.reduce((s, k) => s + sumField(plRows, k), 0);
         const cogs = sumField(cogsRows, "cogs");
-        results.push({ marketplace: mp, sales: income, cogs, amazonFees, profit: income - cogs - amazonFees });
+        // Freshness, read straight from the cache these totals are built on.
+        //
+        // This exists because "the numbers have not moved in a week" is
+        // indistinguishable from "nothing has synced in a week" without it. On
+        // 2026-08-20 the answer was neither: CA/MX were current to the previous
+        // day and BR to five days earlier, and the totals only looked frozen
+        // because international volume is ~1 event/day. Showing the date turns
+        // that from an investigation into a glance.
+        const { data: newestRow } = await supabase
+          .from("financial_events_cache")
+          .select("event_date")
+          .eq("marketplace", mp)
+          .order("event_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const newest = (newestRow as { event_date?: string } | null)?.event_date ?? null;
+        results.push({ marketplace: mp, newest, sales: income, cogs, amazonFees, profit: income - cogs - amazonFees });
       }
       setRows(results);
     } catch (e: any) {
@@ -89,12 +115,13 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
   const total: MarketplaceRow = (rows || []).reduce(
     (acc, r) => ({
       marketplace: "International Total",
+      newest: null,
       sales: acc.sales + r.sales,
       cogs: acc.cogs + r.cogs,
       amazonFees: acc.amazonFees + r.amazonFees,
       profit: acc.profit + r.profit,
     }),
-    { marketplace: "International Total", sales: 0, cogs: 0, amazonFees: 0, profit: 0 },
+    { marketplace: "International Total", newest: null, sales: 0, cogs: 0, amazonFees: 0, profit: 0 },
   );
 
   return (
@@ -108,7 +135,7 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          Reload
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -131,6 +158,7 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
                   <TableHead className="text-right">COGS</TableHead>
                   <TableHead className="text-right">Amazon Fees</TableHead>
                   <TableHead className="text-right">Marketplace Profit</TableHead>
+                  <TableHead className="text-right">Data through</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -141,6 +169,12 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
                     <TableCell className="text-right">{fmtMoney(-r.cogs)}</TableCell>
                     <TableCell className="text-right">{fmtMoney(-r.amazonFees)}</TableCell>
                     <TableCell className={`text-right font-semibold ${r.profit < 0 ? "text-destructive" : ""}`}>{fmtMoney(r.profit)}</TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                      {r.newest ?? "—"}
+                      {r.newest && staleDays(r.newest) >= 3 && (
+                        <span className="ml-1.5 text-amber-600">{staleDays(r.newest)}d</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
                 <TableRow className="bg-primary/5 font-semibold">
@@ -149,11 +183,21 @@ export default function InternationalMarketplaceProfitPanel({ year, marketplaces
                   <TableCell className="text-right">{fmtMoney(-total.cogs)}</TableCell>
                   <TableCell className="text-right">{fmtMoney(-total.amazonFees)}</TableCell>
                   <TableCell className={`text-right ${total.profit < 0 ? "text-destructive" : ""}`}>{fmtMoney(total.profit)}</TableCell>
+                  <TableCell />
                 </TableRow>
               </TableBody>
             </Table>
           </div>
         )}
+        <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            <strong>Reload</strong> re-reads saved data; it does not fetch from Amazon. Use
+            <strong> Refresh</strong> at the top of the P&amp;L page to pull new financial events.
+            "Data through" is the newest event held for each marketplace — international volume is
+            low, so a total can legitimately sit unchanged for days.
+          </span>
+        </p>
         <p className="text-xs text-muted-foreground flex items-start gap-1.5">
           <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           "Sales" here is net of refunds, shipping/gift-wrap credit refunds, promotional rebates, and restocking fees — the same income definition the P&L uses elsewhere — plus reimbursements, shipping/gift-wrap credits, other income, liquidations, and Amazon-paid warehouse-lost/damage reimbursements. "Amazon Fees" is every Amazon-charged fee line (referral, FBA fulfillment/inbound/storage/removal/disposal, closing, shipping chargebacks, etc.). Marketplace Profit = Sales − COGS − Amazon Fees, exactly.
