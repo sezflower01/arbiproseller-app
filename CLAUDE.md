@@ -99,7 +99,39 @@ Wrap long fan-out jobs in `withCronLock(...)` from `_shared/cron-lock.ts` — it
 ## Deployment
 
 - **Frontend** — Vercel auto-deploys from GitHub `main`.
-- **Edge functions** — `.github/workflows/deploy-edge-functions.yml` auto-deploys on push to `main` touching `supabase/functions/**`. **Committing an edge function ships it to production.** For an out-of-band deploy: `npx supabase functions deploy <name> --project-ref mstibdszibcheodvnprm`.
+- **Edge functions** — ⚠️ **committing an edge function does NOT ship it. Deploy by hand:**
+
+  ```
+  npx supabase functions deploy <name> --project-ref mstibdszibcheodvnprm
+  ```
+
+  `.github/workflows/deploy-edge-functions.yml` is meant to auto-deploy on push to `main`, but the
+  repo secret `SUPABASE_ACCESS_TOKEN` has never been set, so the workflow hits this guard:
+
+  ```
+  if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+    echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping deploy."
+    exit 0    # <-- green tick, nothing deployed
+  fi
+  ```
+
+  It is a `::warning::` and an `exit 0`, so **every run reports success while deploying nothing**.
+  Measured 2026-08-19 across all 205 runs in the API window (2026-08-03 onward): the "Determine
+  changed functions and deploy" step took **0 seconds** on every run sampled, and the token-missing
+  annotation is present on the earliest, middle and latest. Run duration varies 14–108s, but that is
+  runner and CLI-install overhead — the deploy step itself never did anything. The long runs are the
+  trap: they look like real deploys.
+
+  Consequence: the fleet is stale by an unknown amount, and only what someone deployed by hand is
+  live. `npx supabase functions list --project-ref mstibdszibcheodvnprm` gives each function's
+  `version` and `updated_at` — that, not the commit log, is the truth about what is running.
+
+  To actually fix it: add `SUPABASE_ACCESS_TOKEN` under repo Settings → Secrets and variables →
+  Actions. Worth making that guard `exit 1` at the same time, so a missing token fails loudly rather
+  than reporting a green tick for a no-op.
+
+  Note `_shared/**` changes redeploy **every** function (~255) by design, since import graphs are not
+  parsed — so a shared-module edit is an expensive deploy, not a cheap one.
 - **Migrations** — not auto-applied; run `npm run db:push` deliberately.
 - Other workflows: `build-print-client.yml`, `repricer-preset-tests.yml`, `supabase-db-lint.yml`.
 
