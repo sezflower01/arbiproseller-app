@@ -17,10 +17,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # PINNED for the same reason as deploy-edge-functions.yml: CLI 2.115
+      # validates the whole config.toml before running anything, including
+      #   [auth.hook.send_email] secrets = "env(SEND_EMAIL_HOOK_SECRET)"
+      # which is unset on the runner, so every command aborts with
+      #   Invalid hook config: auth.hook.send_email.secrets must be formatted...
+      # That is what failed this workflow in 12 seconds on 2026-08-20, the first
+      # run after SUPABASE_ACCESS_TOKEN was added -- before then the guard below
+      # exited 0 and the gate had never actually run. Reproduced locally: 2.115
+      # fails, 2.109.1 lints fine.
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.109.1
 
       # Runs the same PL/pgSQL linter that the migration tool runs post-apply.
       # Fails the build on any error-level finding (missing RLS, unsafe search_path, etc.).

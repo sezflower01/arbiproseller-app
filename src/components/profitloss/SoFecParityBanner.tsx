@@ -57,7 +57,11 @@ interface Props {
   endDate: string;   // YYYY-MM-DD
 }
 
-const LAST_BACKFILL_KEY = (uid: string) => `arbi.last_orders_backfill.${uid}`;
+// NOTE: the "last backfill" stamp used to live in localStorage, keyed per user.
+// That made it a statement about THIS BROWSER, not about the account -- it read
+// "never" on a new browser or after clearing site data, regardless of what had
+// actually run. Observed 2026-08-20: the banner said "never" while
+// sales_sync_state held a real run from 2026-07-08. It now reads the server.
 
 /**
  * SoFecParityBanner — Detects when the selected P&L period overlaps a
@@ -72,16 +76,44 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
   const [progressMsg, setProgressMsg] = useState<string | null>(null);
   const [verification, setVerification] = useState<VerificationResult | null>(null);
   const [lastBackfillAt, setLastBackfillAt] = useState<string | null>(null);
+  /** true when the stored run never wrote finished_at, so the stamp is a start time. */
+  const [lastBackfillIncomplete, setLastBackfillIncomplete] = useState(false);
+  /**
+   * Date range proven clear by a completed backfill, so the warning can hide
+   * itself. Scoped to the repaired range on purpose: dismissing everything
+   * would mask gaps on days the repair never touched.
+   */
+  const [verifiedClearRange, setVerifiedClearRange] = useState<{ start: string; end: string } | null>(null);
   const [placementRange, setPlacementRange] = useState<{ min: string; max: string } | null>(null);
 
-  // Hydrate "last backfill" stamp from localStorage
+  // Hydrate "last backfill" from sales_sync_state -- the account's own record.
   useEffect(() => {
     if (!userId) return;
-    try {
-      const raw = localStorage.getItem(LAST_BACKFILL_KEY(userId));
-      if (raw) setLastBackfillAt(raw);
-    } catch { /* ignore */ }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("sales_sync_state")
+        .select("last_backfill_stats")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (cancelled) return;
+      const stats = (data as { last_backfill_stats?: Record<string, unknown> } | null)?.last_backfill_stats;
+      if (!stats) { setLastBackfillAt(null); return; }
+      const finished = typeof stats.finished_at === "string" ? stats.finished_at : null;
+      const started = typeof stats.started_at === "string" ? stats.started_at : null;
+      // A run that completed every chunk but never wrote finished_at is still a
+      // real backfill -- report its start time and say the record is incomplete
+      // rather than claiming it never happened.
+      setLastBackfillAt(finished ?? started ?? null);
+      setLastBackfillIncomplete(!finished && !!started);
+    })();
+    return () => { cancelled = true; };
   }, [userId]);
+
+  // A new period is a fresh question: nothing is proven clear until re-verified.
+  useEffect(() => {
+    setVerifiedClearRange(null);
+  }, [startDate, endDate]);
 
   const fetchGaps = useCallback(async () => {
     if (!userId || !startDate || !endDate) return;
@@ -403,11 +435,21 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
       };
       setVerification(result);
 
-      // Persist last-backfill stamp
-      try {
-        localStorage.setItem(LAST_BACKFILL_KEY(userId), finishedAt);
-        setLastBackfillAt(finishedAt);
-      } catch { /* ignore quota errors */ }
+      setLastBackfillAt(finishedAt);
+      setLastBackfillIncomplete(false);
+
+      // Dismiss the warning ONLY on evidence, never on the click.
+      //
+      // Both halves are required. remainingGapDays === 0 is the parity check
+      // re-run against the repaired range; syncStatus === 'complete' is Amazon's
+      // own record (finished_at, or every chunk done). Hiding on either alone
+      // would clear the warning while the background job was still landing rows,
+      // which is indistinguishable from a repair that silently did nothing.
+      if (remainingGapDays === 0 && syncStatus === "complete") {
+        setVerifiedClearRange({ start: repairStart, end: repairEnd });
+      } else {
+        setVerifiedClearRange(null);
+      }
 
       if (remainingGapDays === 0) {
         toast.success(`Backfill verified: +${inserted} new, ${updated} updated. No gaps remain.`);
@@ -441,7 +483,14 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
 
   // ALWAYS render a status row so the user can see "Last backfill" and
   // manually trigger a check, even when no gap is currently detected.
-  const hasGaps = gaps.length > 0;
+  // Gaps still outstanding after any verified repair. A repair proves only the
+  // days it covered, so days outside that range stay visible.
+  const outstandingGaps = verifiedClearRange
+    ? gaps.filter(
+        (g) => !(g.check_date >= verifiedClearRange.start && g.check_date <= verifiedClearRange.end),
+      )
+    : gaps;
+  const hasGaps = outstandingGaps.length > 0;
   if (loading) return null;
 
   if (!hasGaps) {
@@ -459,6 +508,9 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
               <Clock className="h-3 w-3" />
               <span>
                 Last Orders API backfill: <strong>{formatStamp(lastBackfillAt)}</strong>
+                {lastBackfillIncomplete && (
+                  <span className="ml-1 text-amber-600">(started, never recorded finishing)</span>
+                )}
               </span>
             </div>
             <Button
@@ -490,11 +542,11 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
     );
   }
 
-  const totalMissingShipments = gaps.reduce(
+  const totalMissingShipments = outstandingGaps.reduce(
     (acc, g) => acc + Math.max(0, g.fec_count - g.so_count),
     0
   );
-  const dateList = gaps.map((g) => g.check_date).join(", ");
+  const dateList = outstandingGaps.map((g) => g.check_date).join(", ");
 
   return (
     <Alert className="mb-4 border-yellow-500/50 bg-yellow-500/5">
@@ -543,8 +595,16 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
             )}
             {repairing ? "Backfilling…" : "Backfill missing orders now"}
           </Button>
+          {/* The line here used to read "Auto-repair also runs nightly at 04:30
+              UTC." It was false twice over: the 04:30 migration schedules
+              nightly-ghost-cleanup, which contains no parity or order-backfill
+              code, and that job is not present in cron.job at all. Checked
+              2026-08-20 against the live scheduler. Nothing repairs these gaps
+              automatically -- this button is the only thing that does, so
+              promising otherwise invited people to wait for a fix that was
+              never coming. */}
           <span className="text-[11px] text-muted-foreground">
-            Auto-repair also runs nightly at 04:30 UTC.
+            Nothing repairs these gaps automatically — run this when you see one.
           </span>
         </div>
 
