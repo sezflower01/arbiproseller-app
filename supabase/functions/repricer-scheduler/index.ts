@@ -170,7 +170,6 @@ Deno.serve(async (req) => {
         min_price_override, max_price_override,
         consecutive_profit_guard_hits, last_floor_price_cents,
         last_evaluated_at, rule_id, is_priority, is_manual_priority,
-        checks_today_count, checks_today_date,
         manual_override_started_at, manual_override_checks,
         anomaly_score, anomaly_flags, recent_prices,
         oscillation_state, oscillation_detected_at,
@@ -393,16 +392,25 @@ Deno.serve(async (req) => {
       }
 
       // ── Daily check counter (observability, no cap) ──
-      // Increment checks_today_count for monitoring, but do NOT block on any cap.
-      // The unified dispatch ack suppression already handles check frequency intelligently.
-      const todayStr = new Date().toISOString().split('T')[0];
-      const currentChecks = (assignment.checks_today_date === todayStr)
-        ? (assignment.checks_today_count || 0)
-        : 0;
-      supabase.from('repricer_assignments').update({
-        checks_today_count: currentChecks + 1,
-        checks_today_date: todayStr,
-      }).eq('id', assignmentId).then(() => {});
+      // Writes to repricer_assignment_check_counters, NOT to repricer_assignments.
+      //
+      // repricer_assignments is in the supabase_realtime publication, and realtime
+      // broadcasts on ANY row change regardless of which column moved. This counter
+      // is pure telemetry -- nothing in src/ reads it, and the only other references
+      // were this function reading its own previous value to increment it -- yet it
+      // was firing 295,964 updates per 51h (17.4% of all writes to the hottest table
+      // in the database), each one decoded and fanned out to live subscribers.
+      // Measured 2026-08-20; see the migration for the full numbers.
+      //
+      // The RPC does the day-rollover comparison server-side in one statement, so
+      // checks_today_count/checks_today_date no longer need to be SELECTed with the
+      // assignment either -- this removed them from the query above as well.
+      //
+      // Still fire-and-forget: a telemetry counter must never delay or fail a
+      // repricing decision.
+      supabase.rpc('bump_assignment_check_counter', {
+        p_assignment_id: assignmentId,
+      }).then(() => {});
 
       const lockAcquired = await acquireLock(supabase, userId, asin, marketplace, lockOwner, 120);
       if (!lockAcquired) {
