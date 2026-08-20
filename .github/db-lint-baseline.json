@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Error-level db lint findings that are KNOWN and consciously accepted.",
+    "The gate fails on anything NOT listed here, so this file is the line between",
+    "'we decided to live with that' and 'something new just broke'.",
+    "",
+    "An empty baseline would be ideal. A growing one is a smell: every entry is a",
+    "known-broken function shipped on purpose, and each needs a reason and a date",
+    "so the next person can tell a deliberate deferral from an abandoned one.",
+    "",
+    "To accept a new finding, add it here WITH a reason. To retire one, fix the",
+    "function and delete the entry -- the gate warns when a baseline entry no",
+    "longer appears, so stale entries surface instead of silently protecting",
+    "code that no longer needs it."
+  ],
+  "accepted": [
+    {
+      "function": "public.derive_repricer_eligibility",
+      "message": "column \"available_quantity\" does not exist",
+      "reason": "Diagnostics-only, reached from /tools/repricer-eligibility-diagnostics. inventory has no available_quantity, reserved_quantity or inbound_quantity -- only `units`. Mapping them is a judgement about original intent, not a rename, and a wrong guess in repricer code is worse than a page that throws. Deferred deliberately 2026-08-20.",
+      "accepted_on": "2026-08-20"
+    },
+    {
+      "function": "public.snapshot_repricer_eligibility",
+      "message": "column \"deleted_by\" does not exist",
+      "reason": "Same page, same call. repricer_assignments has NO deletion column at all, so there is no successor to map `WHERE deleted_by IS NULL` onto -- the filter either drops entirely or the table lost a concept. Needs a decision, not a rename. Deferred deliberately 2026-08-20.",
+      "accepted_on": "2026-08-20"
+    }
+  ]
+}
