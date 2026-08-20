@@ -46,6 +46,22 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_ID: mstibdszibcheodvnprm
+          # NOT A SECRET, and deliberately not the real one.
+          #
+          # config.toml declares
+          #   [auth.hook.send_email] secrets = "env(SEND_EMAIL_HOOK_SECRET)"
+          # and the CLI validates that field's FORMAT before running any command.
+          # `db lint` fails without it on 2.109.1 and 2.115 alike -- pinning the
+          # version does not help here, though it does for `functions deploy`,
+          # which takes a different path. Live proof: the gate's first two runs
+          # died on this before linting anything.
+          #
+          # A format-valid placeholder is enough, because `db lint` is read-only:
+          # it inspects function bodies and never writes auth config. Putting the
+          # REAL auth-email signing secret into GitHub Actions would widen that
+          # secret's blast radius to every workflow for no benefit, so the dummy
+          # is the safer option, not the lazy one.
+          SEND_EMAIL_HOOK_SECRET: "v1,whsec_Q0lQTEFDRUhPTERFUk5PVEFSRUFMU0VDUkVUQUFBQQ=="
         run: |
           # FAILS rather than skipping. This guard was ::warning:: + exit 0, and
           # the secret was unset, so the gate reported success without ever
