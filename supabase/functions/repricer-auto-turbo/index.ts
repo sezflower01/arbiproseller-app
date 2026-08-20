@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkCircuitBreaker } from '../_shared/repricer-hardening.ts';
-import { requireInternalOrUser } from '../_shared/require-internal.ts';
+import { isInternalCaller } from '../_shared/require-internal.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,26 +8,44 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-function isLegacyAnonCronCall(req: Request): boolean {
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  return Boolean(anonKey && bearer === anonKey && !req.headers.get("x-internal-secret"));
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (isLegacyAnonCronCall(req)) {
-    console.log("[auto-turbo] Legacy anon cron call ignored; v2 internal cron handles this job.");
-    return new Response(JSON.stringify({ success: true, ignored_legacy_anon_cron: true }), {
+  // INTERNAL CALLERS ONLY, checked before anything else runs.
+  //
+  // Two pg_cron jobs call this function every minute: the current one sends
+  // x-internal-secret from the INTERNAL_SYNC_SECRET vault secret, and an older
+  // duplicate sends only Authorization: Bearer <anon key>. The old job cannot be
+  // unscheduled directly because of a Supabase permissions issue, so it is
+  // stopped here instead.
+  //
+  // This previously answered the legacy job with 200 + ignored_legacy_anon_cron,
+  // which did no work but was indistinguishable from a successful run in the
+  // logs -- the duplicate looked like it was still doing its job. It now returns
+  // 401 so a rejected call is visibly a rejected call.
+  //
+  // requireInternalOrUser (which also accepted any logged-in user's JWT) was
+  // deliberately narrowed to internal-only: nothing in the frontend invokes this
+  // function. The one repricer-auto-turbo reference in RepricerMonitor.tsx is an
+  // <a href> to the Supabase logs page, not an invocation, and that file has no
+  // functions.invoke at all. Checked 2026-08-20 across src/ and every edge
+  // function.
+  //
+  // isInternalCaller is imported rather than reimplemented so there is one
+  // definition of "internal" (x-internal-secret, or a service-role bearer).
+  if (!isInternalCaller(req)) {
+    console.warn(
+      "[auto-turbo] REJECTED non-internal call — has_internal_secret=%s has_auth_header=%s",
+      Boolean(req.headers.get("x-internal-secret")),
+      Boolean(req.headers.get("Authorization")),
+    );
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-
-  const __forbidden = await requireInternalOrUser(req);
-  if (__forbidden) return __forbidden;
 
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
