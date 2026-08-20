@@ -57,9 +57,27 @@ jobs:
           fi
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
 
+          # --linked is REQUIRED. Without it `db lint` targets the LOCAL database,
+          # which does not exist on a runner: it wrote nothing to stdout and the
+          # gate reported "db lint produced no output" on its first real run.
+          # Every local test had passed --linked, which is exactly why the gap
+          # only appeared in CI.
+          #
           # `supabase db lint` exits 0 even when it reports errors, so its exit
-          # code cannot gate anything. Capture the JSON and let the checker
-          # decide. set -o pipefail so a CLI crash is not masked by a passing
-          # python process.
-          set -o pipefail
-          supabase db lint --level error | tee /tmp/db-lint.json | python3 .github/scripts/check-db-lint.py
+          # code cannot gate anything -- the checker turns findings into one.
+          # stderr is kept separate and surfaced, so a CLI failure is readable
+          # from the annotations rather than only from the (auth-gated) log.
+          set +e
+          supabase db lint --level error --linked > /tmp/db-lint.json 2> /tmp/db-lint.err
+          lint_rc=$?
+          if [ -s /tmp/db-lint.err ]; then
+            echo "::group::supabase db lint stderr"
+            cat /tmp/db-lint.err
+            echo "::endgroup::"
+          fi
+          if [ ! -s /tmp/db-lint.json ]; then
+            echo "::error::supabase db lint wrote no output (exit $lint_rc): $(head -c 400 /tmp/db-lint.err)"
+            exit 1
+          fi
+          set -e
+          python3 .github/scripts/check-db-lint.py < /tmp/db-lint.json
