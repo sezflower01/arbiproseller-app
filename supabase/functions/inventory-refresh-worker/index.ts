@@ -11,7 +11,22 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const INTERNAL_SECRET = Deno.env.get('INTERNAL_SYNC_SECRET') || '';
 
-const DEFAULT_BATCH = 60;
+// 30, not 60, because 30 is the platform's per-invocation outbound-fetch
+// ceiling -- not a guess. Measured 2026-08-20 across 25 consecutive runs, every
+// one identical: processed=60, success=30, errors=30. Distinct success values
+// across all 25 runs: [30].
+//
+// The failures were NOT SP-API errors. The queue recorded
+//   "fetch: Rate limit exceeded for trace <id>. Retry after 55756ms."
+// which is Supabase's own outbound-call quota (the same limit documented in
+// prewarm-pl-resume-sweep). Those calls never reached Amazon, so they never
+// appeared in the SP-API dashboard either -- worth remembering before
+// attributing any error rate there to this worker.
+//
+// Claiming 60 to complete 30 meant half of every batch was dequeued, failed,
+// and had to be swept back by full-inv-refresh-timeout-sweep before it could be
+// retried -- so the queue drained at half speed while looking busy.
+const DEFAULT_BATCH = 30;
 const CONCURRENCY = 4;
 const PER_ITEM_TIMEOUT_MS = 25_000;
 
