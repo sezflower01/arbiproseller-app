@@ -32,6 +32,17 @@ interface OrderRecord {
   sold_price: number;
   total_fees: number;
   unit_cost: number | null;
+  /**
+   * What the P&L actually costs this order at, via resolve_unit_cost_v1 --
+   * snapshot, then manual override, cost_history, purchase batches /
+   * created_listings, and finally inventory. This, NOT unit_cost, decides
+   * whether a cost is missing: unit_cost is only the first of those five
+   * sources, so judging by it alone reported orders as missing that COGS had
+   * already costed correctly.
+   */
+  resolved_unit_cost?: number | null;
+  /** Which source supplied resolved_unit_cost. 'unresolved' = genuinely none. */
+  resolved_source?: string | null;
   order_date: string;
   marketplace: string | null;
 }
@@ -78,6 +89,9 @@ export default function OrdersCostEditor({
   const { homeCurrencySymbol } = useHomeMarketplace();
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  // True when resolve_order_costs_v1 could not be reached, so the counts
+  // below fall back to stored costs and the UI must say so.
+  const [resolveUnavailable, setResolveUnavailable] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [fetchingAmazon, setFetchingAmazon] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
@@ -147,7 +161,45 @@ export default function OrdersCostEditor({
         if (((o as any).order_status || "").toLowerCase() === "pending") return false;
         return true;
       });
-      setOrders(filtered);
+      // Ask the P&L's resolver what each order actually costs. One RPC for the
+      // whole range rather than a call per order.
+      //
+      // A failure here must NOT silently fall back to unit_cost -- that is the
+      // exact misreporting this replaced, and it would return without warning.
+      // Leave resolved_* undefined and let the UI say it could not check.
+      let resolvedById = new Map<string, { cost: number; source: string }>();
+      let resolveFailed = false;
+      try {
+        const { data: resolvedRows, error: resolveErr } = await (supabase as any).rpc(
+          "resolve_order_costs_v1",
+          { p_start: startDate, p_end: endDate },
+        );
+        if (resolveErr) throw resolveErr;
+        resolvedById = new Map(
+          ((resolvedRows || []) as Array<{
+            order_row_id: string;
+            resolved_unit_cost: number | null;
+            resolved_source: string | null;
+          }>).map((r) => [
+            r.order_row_id,
+            { cost: Number(r.resolved_unit_cost) || 0, source: r.resolved_source || "unresolved" },
+          ]),
+        );
+      } catch (e) {
+        resolveFailed = true;
+        console.error("[OrdersCostEditor] resolve_order_costs_v1 failed", e);
+        toast.error("Could not check resolved costs — showing stored costs only.");
+      }
+
+      setResolveUnavailable(resolveFailed);
+      setOrders(
+        filtered.map((o) => {
+          const hit = resolvedById.get(o.id);
+          return hit
+            ? { ...o, resolved_unit_cost: hit.cost, resolved_source: hit.source }
+            : o;
+        }),
+      );
     } catch (err) {
       console.error("Error:", err);
       toast.error("Failed to fetch orders");
@@ -808,7 +860,17 @@ export default function OrdersCostEditor({
       !o.image_url
   ).length;
 
-  const missingCostOrders = orders.filter((o) => !o.unit_cost || o.unit_cost === 0);
+  /**
+   * An order counts as missing a cost only when the P&L cannot resolve one.
+   *
+   * When the resolver is unavailable we fall back to the stored cost, but the
+   * UI says so rather than quietly reverting to the old, over-reporting rule.
+   */
+  const effectiveCost = (o: OrderRecord): number => {
+    if (typeof o.resolved_unit_cost === "number") return o.resolved_unit_cost;
+    return Number(o.unit_cost) || 0;
+  };
+  const missingCostOrders = orders.filter((o) => effectiveCost(o) <= 0);
   const displayOrders = showMissingOnly ? missingCostOrders : orders;
 
   const missingCount = missingCostOrders.length;
@@ -1086,7 +1148,15 @@ export default function OrdersCostEditor({
                     editedCosts[order.id] !== undefined &&
                     editedCosts[order.id] !== (order.unit_cost?.toString() || "");
                   const isSaving = savingIds.has(order.id);
-                  const hasCost = order.unit_cost && order.unit_cost > 0;
+                  // Highlight only what the P&L genuinely cannot cost. A stored
+                  // cost of 0 that resolves from cost_history or a listing is
+                  // NOT missing -- flagging those is what drove the pointless
+                  // backfill loop.
+                  const hasCost = effectiveCost(order) > 0;
+                  const inheritedFrom =
+                    hasCost && !(order.unit_cost && order.unit_cost > 0)
+                      ? order.resolved_source
+                      : null;
 
                   return (
                     <TableRow key={order.id} className={!hasCost ? "bg-orange-50/50 dark:bg-orange-950/20" : ""}>
@@ -1140,6 +1210,15 @@ export default function OrdersCostEditor({
                           className={`w-full ${!hasCost && !editedCosts[order.id] ? "border-orange-400" : ""}`}
                           disabled={isSaving}
                         />
+                        {/* This order has no stored cost but the P&L costs it
+                            anyway, from the source named here. Saying so is the
+                            difference between "no cost" and "cost came from
+                            somewhere other than this box". */}
+                        {inheritedFrom && (
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                            from {inheritedFrom}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -1167,6 +1246,11 @@ export default function OrdersCostEditor({
             ? `${groupedByAsin.length} unique ASINs across ${missingCount} orders missing cost`
             : `Showing ${displayOrders.length} of ${orders.length} orders`}
         </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {resolveUnavailable
+            ? "Could not reach the cost resolver — counts above reflect stored costs only and may overstate what is missing."
+            : "“Missing” means the P&L cannot resolve a cost from any source — stored cost, manual override, cost history, purchase batches, listings or inventory. An order with a blank box here is not missing a cost if it resolves from one of the others."}
+        </p>
       </CardContent>
     </Card>
   );
