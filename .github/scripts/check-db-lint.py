@@ -53,7 +53,18 @@ def load_findings(raw: str):
     if not docs:
         raise ValueError("no JSON object in lint output")
 
-    results_docs = [d for d in docs if isinstance(d, dict) and "results" in d]
+    # TWO SHAPES, both real and both seen on the same CLI version. Locally it
+    # wraps the findings: {"results": [...], "message": "db lint"}. In CI it
+    # emits the BARE ARRAY: [{"function": ..., "issues": [...]}, ...]. Accepting
+    # only the wrapped form is what made the gate fail against its own database.
+    def as_results(d):
+        if isinstance(d, dict) and "results" in d:
+            return d["results"]
+        if isinstance(d, list) and all(isinstance(x, dict) and "issues" in x for x in d):
+            return d
+        return None
+
+    results_docs = [r for r in (as_results(d) for d in docs) if r is not None]
     if not results_docs:
         # Every document parsed but none carried results. Treating that as "no
         # findings" would be a silent pass on output we do not understand.
@@ -65,9 +76,9 @@ def load_findings(raw: str):
         raise ValueError(
             f"no document with a 'results' key in {len(docs)} JSON document(s): {preview}"
         )
-    doc = results_docs[-1]
+    results = results_docs[-1]
     out = []
-    for result in doc.get("results", []):
+    for result in results:
         fn = result.get("function", "<unknown>")
         for issue in result.get("issues", []):
             if str(issue.get("level", "")).lower() != "error":
