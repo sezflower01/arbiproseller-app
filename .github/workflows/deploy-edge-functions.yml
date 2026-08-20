@@ -49,9 +49,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          # FAILS, does not skip. This was `::warning::` + `exit 0` until
+          # 2026-08-19, and the secret had never been set -- so every run since
+          # the workflow was added reported a green tick having deployed
+          # nothing, for at least the 205 runs the API still holds. The deploy
+          # step took 0 seconds every time; run durations of 14-108s were
+          # runner and CLI-install overhead, which is exactly what made it look
+          # like real deploys were happening.
+          #
+          # A red push is recoverable. A green one that shipped nothing is not
+          # noticed at all -- the fleet drifted for weeks behind a passing
+          # check, and the only reliable statement of what is live became
+          # `supabase functions list` rather than the commit log.
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping deploy. Add it in repo Settings → Secrets to enable this workflow."
-            exit 0
+            echo "::error::SUPABASE_ACCESS_TOKEN not set — cannot deploy. Add it in repo Settings → Secrets and variables → Actions."
+            exit 1
           fi
 
           # BEFORE_SHA is the all-zero SHA on a new branch / first push, and
