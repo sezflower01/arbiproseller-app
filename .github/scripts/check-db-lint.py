@@ -23,15 +23,44 @@ BASELINE_PATH = os.path.join(os.path.dirname(__file__), "..", "db-lint-baseline.
 
 
 def load_findings(raw: str):
-    """Pull the JSON document out of the CLI's output.
+    """Pull the results document out of the CLI's output.
 
-    The CLI prints progress lines ("Linting schema: public") before the JSON, so
-    the document starts at the first brace rather than at position zero.
+    Not a plain json.loads. On a TTY the CLI writes progress ("Linting schema:
+    public") to stderr and one JSON document to stdout, but in CI it emits
+    SEVERAL JSON documents back to back on stdout -- so parsing from the first
+    brace fails with "Extra data", which is exactly how the first green-path run
+    in CI died.
+
+    So: decode every document in the stream and take the one carrying "results".
     """
-    start = raw.find("{")
-    if start == -1:
+    decoder = json.JSONDecoder()
+    docs = []
+    idx = 0
+    n = len(raw)
+    while idx < n:
+        while idx < n and raw[idx] not in "{[":
+            idx += 1
+        if idx >= n:
+            break
+        try:
+            doc, end = decoder.raw_decode(raw, idx)
+        except ValueError:
+            idx += 1
+            continue
+        docs.append(doc)
+        idx = end
+
+    if not docs:
         raise ValueError("no JSON object in lint output")
-    doc = json.loads(raw[start:])
+
+    results_docs = [d for d in docs if isinstance(d, dict) and "results" in d]
+    if not results_docs:
+        # Every document parsed but none carried results. Treating that as "no
+        # findings" would be a silent pass on output we do not understand.
+        raise ValueError(
+            f"no document with a 'results' key in {len(docs)} JSON document(s)"
+        )
+    doc = results_docs[-1]
     out = []
     for result in doc.get("results", []):
         fn = result.get("function", "<unknown>")
