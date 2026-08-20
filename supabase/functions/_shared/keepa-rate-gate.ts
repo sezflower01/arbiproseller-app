@@ -47,6 +47,29 @@
 // NOT derived from the observed refill_per_min: that would add a DB read to
 // the hot path of every claim, and the rate changes about once a year.
 const KEEPA_GUARD_LIMIT = 20; // plan: 25 tokens/min (5 Pro + 20 API); guard at 20
+// ⚠️ A PARTIAL DEPLOY OF THIS FILE SPLITS THE GATE IN TWO. Layer 1 works by
+// claiming ONE shared row (keepa_daily_usage.last_called_at), and a caller may
+// claim it only once KEEPA_GUARD_INTERVAL_MS has elapsed. That interval is
+// compiled into each function's own bundle, so functions running different
+// versions of this file enforce DIFFERENT intervals against the SAME row.
+//
+// Measured 2026-08-19, hours after raising the limit 4 -> 20: six functions
+// (asin-dimensions, check-price-alerts, import-amazon-categories,
+// keepa-historical-price, keepa-product-finder, mobile-scan-price-stability)
+// still carried the old value, because deploys had been done one function at a
+// time. Their index.ts was byte-identical to the committed source -- only the
+// bundled copy of THIS file was old, which is why nothing looked wrong.
+//
+// The failure is asymmetric and silent. The stale callers needed 15s of quiet
+// (60000/4) while the current ones refreshed the row every 3s (60000/20), so
+// the stale ones were starved rather than overdrawing -- the safe direction for
+// quota, and invisible unless you go looking. It reads as "the product finder
+// feels slow", not as a deploy problem.
+//
+// So: when this file changes, EVERY importer must be redeployed together.
+//   grep -rl keepa-rate-gate supabase/functions --include=index.ts
+// The CI workflow does this correctly (any _shared/** change redeploys the
+// whole fleet). Hand deploys are what break it.
 const KEEPA_GUARD_INTERVAL_MS = Math.ceil(60_000 / KEEPA_GUARD_LIMIT);
 
 // Measured 2026-08-15. Used as pre-call reservations.
