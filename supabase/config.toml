@@ -479,3 +479,18 @@ verify_jwt = false
 # Browser-invoked only, with the user JWT. Never called by cron -- see the
 # function header for why an automatic sweep would be wrong.
 verify_jwt = true
+
+[functions.pricing-suppression-worker]
+# MUST be false, for the same reason as inventory-refresh-worker: cron job 122
+# sends x-internal-secret and NO Authorization header, so verify_jwt = true had
+# the gateway returning UNAUTHORIZED_NO_AUTH_HEADER before the function ran.
+# There was no entry here at all, so it defaulted to true.
+#
+# pg_cron reported 4,296 successes in 3 days while the function had not executed
+# since 2026-08-18 and 1,979 queue items sat pending -- the POST completing is
+# not the function running.
+#
+# Cron-only apart from trigger-pricing-suppression-check, which is an edge
+# function calling with a service-role bearer and so passes the gateway either
+# way. The function keeps its own guard.
+verify_jwt = false
