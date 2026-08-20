@@ -17,6 +17,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { formatMarketplaceDate } from "@/lib/sales/dateLocale";
+// Category lists, totals and the disposition rule are shared with the Excel
+// export so the two reports cannot drift apart again. See plModel.ts.
+import {
+  type PlMonthRow as MonthRow,
+  type RowDef,
+  rowValue,
+  INCOME_ROWS,
+  EXPENSE_ROWS,
+  OTHER_ROWS,
+  MEMO_ROWS,
+  DISPOSITION_STATUSES,
+  dispositionLoss,
+} from "@/lib/profitloss/plModel";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -32,50 +45,6 @@ import {
   isAfter,
   isBefore,
 } from "date-fns";
-
-interface MonthRow {
-  month_num: number;
-  sales: number;
-  refunds: number;
-  reimbursements: number;
-  shipping_credits: number;
-  shipping_credit_refunds: number;
-  gift_wrap_credits: number;
-  gift_wrap_credit_refunds: number;
-  promotional_rebates: number;
-  promotional_rebate_refunds: number;
-  other_income: number;
-  liquidations: number;
-  intl_markets: number;
-  referral_fees: number;
-  fba_fees: number;
-  variable_closing_fees: number;
-  fixed_closing_fees: number;
-  fba_inbound_fees: number;
-  fba_storage_fees: number;
-  fba_removal_fees: number;
-  fba_disposal_fees: number;
-  fba_long_term_storage_fees: number;
-  fba_customer_return_fees: number;
-  digital_services_fee: number;
-  fba_inbound_convenience_fee: number;
-  other_fees: number;
-  liquidations_brokerage_fee: number;
-  re_commerce_grading_charge: number;
-  compensated_clawback: number;
-  hrr_non_apparel: number;
-  warehouse_lost: number;
-  warehouse_damage: number;
-  reversal_reimbursement: number;
-  free_replacement_refund_items: number;
-  sales_tax_collected: number;
-  marketplace_facilitator_tax: number;
-  sales_tax_refunds: number;
-  marketplace_facilitator_tax_refunds: number;
-  shipping_chargeback: number;
-  shipping_chargeback_refund: number;
-  restocking_fee: number;
-}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const SETTLEMENT_REPORT_RETENTION_DAYS = 90;
@@ -98,98 +67,6 @@ const fmt = (n: number, negative = false) => {
   const formatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(abs);
   return negative && abs > 0 ? `(${formatted})` : formatted;
 };
-
-interface RowDef {
-  label: string;
-  /** Single source column. Use `keys` instead to sum multiple columns (e.g. closing fees = variable + fixed). */
-  key?: keyof MonthRow;
-  /** Sum of multiple source columns. Used for InventoryLab-style merged buckets. */
-  keys?: (keyof MonthRow)[];
-  /** true → render as negative (expense / refund) */
-  negative?: boolean;
-  /** indent (sub-row) */
-  indent?: boolean;
-  /** bold header row (no values) */
-  header?: boolean;
-  /** display only — do NOT include in section total (avoids double-counting) */
-  informational?: boolean;
-}
-
-/** Read a row value: either a single column or the sum of multiple columns. */
-const rowValue = (r: MonthRow, d: RowDef): number => {
-  if (d.keys && d.keys.length > 0) {
-    return d.keys.reduce((acc, k) => acc + Number(r[k] ?? 0), 0);
-  }
-  if (d.key) return Number(r[d.key] ?? 0);
-  return 0;
-};
-
-const INCOME_ROWS: RowDef[] = [
-  // ── Credits first (positive contributions to income) ──────────────────
-  { label: "Sales", key: "sales" },
-  // Reimbursements is the merged total (generic + reversal + free-replacement subtypes)
-  // computed in get_monthly_pl_breakdown. Memo subtype rows live in MEMO_ROWS below.
-  { label: "Reimbursements", key: "reimbursements" },
-  { label: "Shipping Credits", key: "shipping_credits" },
-  { label: "Gift Wrap Credits", key: "gift_wrap_credits" },
-  { label: "Promotional Rebate Refunds", key: "promotional_rebate_refunds" },
-  { label: "Restocking Fee", key: "restocking_fee" },
-  { label: "Other Income", key: "other_income" },
-  { label: "Liquidations", key: "liquidations" },
-  { label: "Warehouse Lost", key: "warehouse_lost" },
-  { label: "Warehouse Damage", key: "warehouse_damage" },
-  { label: "Shipping Chargeback Refund (FBM / FBA Remote Fulfillment)", key: "shipping_chargeback_refund" },
-  // NOTE: Refunds, Shipping Credit Refunds, Gift Wrap Credit Refunds, and
-  // Promotional Rebates have been moved to EXPENSE_ROWS (Amazon Fees) below.
-  // Memo items (Compensated Clawbacks, Intl Markets) moved to MEMO_ROWS.
-];
-
-const EXPENSE_ROWS: RowDef[] = [
-  // InventoryLab-style: Referral and Closing are shown as two separate top-level
-  // line items. "Closing Fees" is the sum of variable_closing_fees + fixed_closing_fees
-  // (Amazon's SP-API splits these internally; InventoryLab combines them under one label).
-  { label: "Referral Fees", key: "referral_fees", negative: true },
-  { label: "Closing Fees", keys: ["variable_closing_fees", "fixed_closing_fees"], negative: true },
-  { label: "FBA Fulfillment Fees", key: "fba_fees", negative: true },
-  { label: "FBA Customer Return Per Unit Fee", key: "fba_customer_return_fees", negative: true },
-  { label: "FBA Inbound Fees", key: "fba_inbound_fees", negative: true },
-  { label: "FBA Inbound Convenience Fee", key: "fba_inbound_convenience_fee", negative: true },
-  { label: "FBA Storage Fees", key: "fba_storage_fees", negative: true },
-  { label: "FBA Removal Fees", key: "fba_removal_fees", negative: true },
-  { label: "FBA Disposal Fees", key: "fba_disposal_fees", negative: true },
-  { label: "Long-Term Storage Fees", key: "fba_long_term_storage_fees", negative: true },
-  { label: "Digital Services Fee", key: "digital_services_fee", negative: true },
-  { label: "Amazon Fee Adjustments (Net)", key: "other_fees", negative: true },
-  { label: "Liquidations Brokerage Fee", key: "liquidations_brokerage_fee", negative: true },
-  { label: "Re-Commerce Grading Charge", key: "re_commerce_grading_charge", negative: true },
-  { label: "High Return Rate (Non-Apparel)", key: "hrr_non_apparel", negative: true },
-  // Shipping chargeback = Amazon-purchased shipping label billed back to the seller.
-  // Comes from BOTH FBM Buy Shipping AND FBA Remote Fulfillment orders (e.g. US FBA
-  // shipped to CA/MX where Amazon collects shipping then charges it back).
-  { label: "Shipping Chargebacks (FBM Buy Shipping / FBA Remote Fulfillment)", key: "shipping_chargeback", negative: true },
-  // ── Reclassified from Income (customer refunds and promotions) ────────
-  { label: "Refunds", key: "refunds", negative: true },
-  { label: "Shipping Credit Refunds", key: "shipping_credit_refunds", negative: true },
-  { label: "Gift Wrap Credit Refunds", key: "gift_wrap_credit_refunds", negative: true },
-  { label: "Promotional Rebates", key: "promotional_rebates", negative: true },
-  // Memo: Free Replacement Refund Items moved to MEMO_ROWS.
-];
-
-// Sales Tax — shown BELOW Net Profit as informational only. Never included in profit.
-const OTHER_ROWS: RowDef[] = [
-  { label: "Sales Tax Collected", key: "sales_tax_collected" },
-  { label: "Marketplace Facilitator Tax", key: "marketplace_facilitator_tax", negative: true },
-  { label: "Sales Tax Refunds", key: "sales_tax_refunds", negative: true },
-  { label: "Marketplace Facilitator Tax Refunds", key: "marketplace_facilitator_tax_refunds" },
-];
-
-// Memo items — already counted inside another line above. Shown below Net Profit
-// so users can audit the breakdown without subconsciously adding them.
-const MEMO_ROWS: RowDef[] = [
-  { label: "Compensated Clawbacks / Reversal Reimbursements (already in Reimbursements)", keys: ["compensated_clawback", "reversal_reimbursement"], informational: true },
-  { label: "Free Replacement Refund Items (already in Reimbursements)", key: "free_replacement_refund_items", informational: true },
-  { label: "Amazon International Markets (already in Sales)", key: "intl_markets", informational: true },
-];
 
 interface Props {
   year: number;
@@ -330,6 +207,11 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
   const [cogsAdjustments, setCogsAdjustments] = useState<CogsAdjustmentRow[]>([]);
   const [dispoMonthly, setDispoMonthly] = useState<number[]>(() => Array(12).fill(0));
   const [dispoUnits, setDispoUnits] = useState(0);
+  // Warehouse write-offs. This report had NO write-off term at all until
+  // 2026-08-19: real inventory losses recorded in inventory_writeoffs never
+  // reached the on-screen Net Profit, while the Excel export did include them.
+  // That was one of the three components of the $2,499.72 gap between them.
+  const [writeoffMonthly, setWriteoffMonthly] = useState<number[]>(() => Array(12).fill(0));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -430,7 +312,7 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
       const yearEndIso = `${year}-12-31`;
       const yearEndExclusiveIso = `${year + 1}-01-01`;
 
-      const [rpcRes, expRes, cogsRes, cogsAdjustmentsRes, dispoRes] = await Promise.all([
+      const [rpcRes, expRes, cogsRes, cogsAdjustmentsRes, dispoRes, writeoffRes] = await Promise.all([
         (supabase as any).rpc("get_monthly_pl_breakdown", { p_year: year, p_marketplace: mpParam }),
         user
           ? supabase
@@ -456,7 +338,15 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
               .eq("user_id", user.id)
               .gte("disposition_date", yearStartIso)
               .lte("disposition_date", yearEndIso)
-              .in("status", ["accepted", "adjusted"])
+              .in("status", DISPOSITION_STATUSES as unknown as string[])
+          : Promise.resolve({ data: [], error: null }),
+        user
+          ? (supabase as any)
+              .from("inventory_writeoffs")
+              .select("writeoff_date,total_cost")
+              .eq("user_id", user.id)
+              .gte("writeoff_date", yearStartIso)
+              .lte("writeoff_date", yearEndIso)
           : Promise.resolve({ data: [], error: null }),
       ]);
 
@@ -465,30 +355,31 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
       if (cogsRes.error) throw cogsRes.error;
       if (cogsAdjustmentsRes.error) throw cogsAdjustmentsRes.error;
 
-      // Bucket disposition losses by month (Amazon loss + Business loss).
+      // Bucket disposition losses by month, via the rule shared with the export.
       const dispoBuckets = Array(12).fill(0) as number[];
       let unitsCount = 0;
       for (const r of ((dispoRes as any)?.data || []) as Array<any>) {
         const d = r.disposition_date ? new Date(r.disposition_date) : null;
         if (!d || d.getFullYear() !== year) continue;
-        const m = d.getMonth();
-        const sellable = Number(r.sellable_qty) || 0;
-        const unsellable = Number(r.unsellable_qty) || 0;
-        const cost = Number(r.unit_cost) || 0;
-        const recovery = Number(r.recovery_amount) || 0;
-        const o = (r.outcome as string) || "pending";
-        const businessOutcome = o === "sold_elsewhere" || o === "disposed" || o === "restricted_unsold" || o === "partial_recovery";
-        // Amazon-reported loss only counts when no business outcome takes over the row.
-        const amazonLoss = businessOutcome ? 0 : Math.max(0, unsellable * cost - recovery);
-        const businessLoss = businessOutcome ? Math.max(0, (sellable + unsellable) * cost - recovery) : 0;
-        const total = amazonLoss + businessLoss;
-        if (total > 0) {
-          dispoBuckets[m] += total;
-          unitsCount += businessOutcome ? (sellable + unsellable) : unsellable;
+        const { loss, units } = dispositionLoss(r);
+        if (loss > 0) {
+          dispoBuckets[d.getMonth()] += loss;
+          unitsCount += units;
         }
       }
       setDispoMonthly(dispoBuckets);
       setDispoUnits(unitsCount);
+
+      // Warehouse write-offs, bucketed the same way. Only positive costs count,
+      // matching the export -- a zero or negative total_cost is not a loss.
+      const writeoffBuckets = Array(12).fill(0) as number[];
+      for (const r of ((writeoffRes as any)?.data || []) as Array<any>) {
+        const d = r.writeoff_date ? new Date(r.writeoff_date) : null;
+        if (!d || d.getFullYear() !== year) continue;
+        const c = Number(r.total_cost) || 0;
+        if (c > 0) writeoffBuckets[d.getMonth()] += c;
+      }
+      setWriteoffMonthly(writeoffBuckets);
 
       const filled: MonthRow[] = Array.from({ length: 12 }, (_, i) => {
         const found = (rpcRes.data as MonthRow[] | null)?.find((r) => r.month_num === i + 1);
@@ -1070,6 +961,18 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
     return { totalUnits, withCost, missingUnits, missingOrders, missingAsins, pct };
   }, [cogsRows]);
 
+  // Inventory Loss = disposition + warehouse write-off. Both halves are real
+  // losses; the write-off half was missing from this report entirely until
+  // 2026-08-19, which is why its Net Profit was better than the Excel export's.
+  const inventoryLossMonthly = useMemo(
+    () => Array.from({ length: 12 }, (_, i) => (dispoMonthly[i] || 0) + (writeoffMonthly[i] || 0)),
+    [dispoMonthly, writeoffMonthly],
+  );
+  const writeoffGrandTotal = useMemo(
+    () => writeoffMonthly.reduce((a, b) => a + b, 0),
+    [writeoffMonthly],
+  );
+
   // ─── Section totals per month + grand totals ────────────────────────
   const monthTotals = useMemo(() => {
     if (!rows || !signedRows) return null;
@@ -1086,12 +989,16 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
     const other = sum(OTHER_ROWS);
     // Net = Income + Amazon expenses (negative) − COGS − operating expenses − disposition loss
     const net = income.map(
-      (v, i) => v + expenses[i] - totalCogsMonthly[i] - opExpensesMonthTotals[i] - (dispoMonthly[i] || 0)
+      (v, i) => v + expenses[i] - totalCogsMonthly[i] - opExpensesMonthTotals[i] - (inventoryLossMonthly[i] || 0)
     );
     return { income, expenses, other, net };
-  }, [rows, signedRows, opExpensesMonthTotals, totalCogsMonthly, dispoMonthly, effectiveIncomeRows, effectiveExpenseRows]);
+  }, [rows, signedRows, opExpensesMonthTotals, totalCogsMonthly, inventoryLossMonthly, effectiveIncomeRows, effectiveExpenseRows]);
 
   const dispoGrandTotal = useMemo(() => dispoMonthly.reduce((a, b) => a + b, 0), [dispoMonthly]);
+  const inventoryLossGrandTotal = useMemo(
+    () => inventoryLossMonthly.reduce((a, b) => a + b, 0),
+    [inventoryLossMonthly],
+  );
 
   const grand = useMemo(() => {
     if (!monthTotals) return null;
@@ -1466,7 +1373,7 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
                   </Link>
                 </td>
               </tr>
-              {dispoGrandTotal > 0.005 ? (
+              {inventoryLossGrandTotal > 0.005 ? (
                 <>
                   <tr className="hover:bg-muted/30 border-b border-border/40">
                     <td className="px-3 py-1.5 sticky left-0 bg-background hover:bg-muted/30 z-10 text-foreground">
@@ -1484,12 +1391,30 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
                       </td>
                     ))}
                   </tr>
+                  {/* Warehouse write-offs. Shown as its own line rather than folded
+                      into the disposition row, because the two come from different
+                      tables and only one of them was previously counted here. */}
+                  {writeoffGrandTotal > 0.005 && (
+                    <tr className="hover:bg-muted/30 border-b border-border/40">
+                      <td className="px-3 py-1.5 sticky left-0 bg-background hover:bg-muted/30 z-10 text-foreground">
+                        Warehouse Write-Off
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums font-medium text-destructive">
+                        {fmt(-writeoffGrandTotal, true)}
+                      </td>
+                      {writeoffMonthly.map((v, i) => (
+                        <td key={i} className="px-3 py-1.5 text-right tabular-nums text-destructive">
+                          {fmt(-v, v > 0.005)}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
                   <tr className="bg-muted/40 border-y-2 border-border">
                     <td className="px-3 py-2 font-bold text-foreground sticky left-0 bg-muted/40 z-10">Total Inventory Loss</td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums text-destructive">
-                      {fmt(-dispoGrandTotal, dispoGrandTotal > 0.005)}
+                      {fmt(-inventoryLossGrandTotal, inventoryLossGrandTotal > 0.005)}
                     </td>
-                    {dispoMonthly.map((v, i) => (
+                    {inventoryLossMonthly.map((v, i) => (
                       <td key={i} className="px-3 py-2 text-right font-bold tabular-nums text-destructive">
                         {fmt(-v, v > 0.005)}
                       </td>
@@ -1573,7 +1498,7 @@ export default function MonthlyPLBreakdown({ year, refreshKey = 0, onCogsBaseTot
           <div className="flex flex-col items-end">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Total Expenses</span>
             {(() => {
-              const trueTotal = Math.abs(grand.expenses) + totalCogsGrandTotal + opExpensesGrandTotal + dispoGrandTotal;
+              const trueTotal = Math.abs(grand.expenses) + totalCogsGrandTotal + opExpensesGrandTotal + inventoryLossGrandTotal;
               return (
                 <span className="text-2xl font-extrabold tabular-nums text-foreground">
                   {fmt(-trueTotal, true)}

@@ -11,6 +11,23 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useModuleAccess } from "@/hooks/useModuleAccess";
 import { useHomeMarketplace } from "@/hooks/use-home-marketplace";
 import { getMarketplaceFromId } from "@/lib/marketplaceCurrency";
+// The Excel export renders from the SAME category definitions and the SAME RPC
+// as the on-screen P&L. It used to build its own totals from fetch-profit-loss,
+// which omitted 10 categories entirely and produced a Net Profit $2,499.72 apart
+// from the screen. See plModel.ts for the full decomposition.
+import {
+  type PlMonthRow,
+  type DispositionRowLike,
+  type RowDef,
+  rowValue,
+  INCOME_ROWS,
+  EXPENSE_ROWS,
+  OTHER_ROWS,
+  MEMO_ROWS,
+  DISPOSITION_STATUSES,
+  dispositionLoss as computeDispositionLoss,
+  sumRows,
+} from "@/lib/profitloss/plModel";
 import { format } from "date-fns";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -1457,6 +1474,8 @@ export default function ProfitLoss() {
 
       type MonthData = {
         summary: FinancialSummary | null;
+        /** The row the on-screen P&L uses. Source of every income/expense line. */
+        plRow: PlMonthRow | null;
         cogs: number;
         cogsAdjustment: number;
         disposition: number;
@@ -1616,7 +1635,7 @@ export default function ProfitLoss() {
 
       // Helper: fetch one month's summary + COGS + disposition + writeoff
       const fetchMonth = async (mo: typeof months[number]): Promise<MonthData> => {
-        const result: MonthData = { summary: null, cogs: 0, cogsAdjustment: 0, disposition: 0, writeoff: 0, opExpenses: 0, opByCategory: {} };
+        const result: MonthData = { summary: null, plRow: null, cogs: 0, cogsAdjustment: 0, disposition: 0, writeoff: 0, opExpenses: 0, opByCategory: {} };
 
         // 1) Summary via cached fetch-profit-loss (no force refresh)
         try {
@@ -1637,17 +1656,19 @@ export default function ProfitLoss() {
 
         // 2) Disposition Loss
         try {
+          // sellable_qty and outcome are selected because the shared rule needs
+          // them: once a business outcome is recorded the SELLABLE units are lost
+          // too. Counting only unsellable understated the loss on those rows.
           const { data } = await (supabase as any)
             .from('inventory_dispositions')
-            .select('unsellable_qty,unit_cost,recovery_amount,status')
+            .select('sellable_qty,unsellable_qty,unit_cost,recovery_amount,outcome,status')
             .eq('user_id', user.id)
             .gte('disposition_date', mo.from)
             .lte('disposition_date', mo.to)
-            .in('status', ['accepted', 'adjusted']);
+            .in('status', DISPOSITION_STATUSES as unknown as string[]);
           let total = 0;
-          for (const r of (data || []) as Array<{ unsellable_qty: number | null; unit_cost: number | null; recovery_amount: number | null }>) {
-            const loss = (Number(r.unsellable_qty) || 0) * (Number(r.unit_cost) || 0) - (Number(r.recovery_amount) || 0);
-            if (loss > 0) total += loss;
+          for (const r of (data || []) as DispositionRowLike[]) {
+            total += computeDispositionLoss(r).loss;
           }
           result.disposition = total;
         } catch (e) {
@@ -1684,6 +1705,28 @@ export default function ProfitLoss() {
         return result;
       };
 
+      // The on-screen P&L's data source, fetched once for the whole year with the
+      // same marketplace filter. One call, not twelve -- it returns all months.
+      let plRowsByMonth: Array<PlMonthRow | null> = Array(12).fill(null);
+      try {
+        const { data: plData, error: plErr } = await (supabase as any)
+          .rpc('get_monthly_pl_breakdown', { p_year: exportYear, p_marketplace: mpParam });
+        if (plErr) throw plErr;
+        const byMonth: Array<PlMonthRow | null> = Array(12).fill(null);
+        for (const r of (plData || []) as PlMonthRow[]) {
+          const idx = Number(r.month_num) - 1;
+          if (idx >= 0 && idx < 12) byMonth[idx] = r;
+        }
+        plRowsByMonth = byMonth;
+      } catch (e) {
+        console.error('[Export] get_monthly_pl_breakdown failed', e);
+        // Loud, because every income and expense line depends on it. Silently
+        // exporting zeros would look like a genuinely empty year.
+        toast.error('Could not load the P&L breakdown — export aborted rather than write zeros.');
+        toast.dismiss(exportToast);
+        return;
+      }
+
       // Sequential with 800ms spacing to respect inter-edge-function rate limits
       for (let i = 0; i < months.length; i++) {
         const mo = months[i];
@@ -1691,6 +1734,10 @@ export default function ProfitLoss() {
         const md = await fetchMonth(mo);
         if (hasAuthoritativeMonthlyCogs) md.cogs = authoritativeCogsMonthly[mo.month] || 0;
         md.cogsAdjustment = cogsAdjustmentMonthly[mo.month] || 0;
+        // Every income and expense line comes from here -- the SAME RPC row the
+        // on-screen P&L renders -- not from the fetch-profit-loss summary, which
+        // does not expose shipping_chargeback or restocking_fee at all.
+        md.plRow = plRowsByMonth[mo.month] ?? null;
         perMonth[mo.key] = md;
         if (i < months.length - 1) await new Promise(r => setTimeout(r, 800));
       }
@@ -1786,6 +1833,20 @@ export default function ProfitLoss() {
               totalExpenses: (Number(md.summary.totalExpenses) || 0) + d.expenses,
             } as any;
           }
+          // The rows render from plRow, so the delta MUST land there too. Updating
+          // only md.summary (as this did until 2026-08-19) would silently export
+          // reconciled figures under an "ESTIMATED" heading.
+          //
+          // Same approximation as above: the income delta goes to Sales and the
+          // expense delta to Amazon Fee Adjustments, because the estimate is a
+          // per-order total with no category breakdown to distribute.
+          if (md.plRow) {
+            md.plRow = {
+              ...md.plRow,
+              sales: (Number(md.plRow.sales) || 0) + d.income,
+              other_fees: (Number(md.plRow.other_fees) || 0) + d.expenses,
+            };
+          }
           md.cogs = (md.cogs || 0) + d.cogs;
         }
       }
@@ -1819,13 +1880,25 @@ export default function ProfitLoss() {
 
       // Build rows: each metric is a row, each month is a column
       const headerRow = ['Category', ...months.map(m => m.label), 'TOTAL'];
+      const EMPTY_MD: MonthData = { summary: null, plRow: null, cogs: 0, cogsAdjustment: 0, disposition: 0, writeoff: 0, opExpenses: 0, opByCategory: {} };
       const get = (key: string, sel: (d: MonthData) => number) => {
-        const vals = months.map(m => sel(perMonth[m.key] || { summary: null, cogs: 0, cogsAdjustment: 0, disposition: 0, writeoff: 0, opExpenses: 0, opByCategory: {} }));
+        const vals = months.map(m => sel(perMonth[m.key] || EMPTY_MD));
         const total = vals.reduce((a, b) => a + b, 0);
         return [key, ...vals.map(v => Number(v.toFixed(2))), Number(total.toFixed(2))];
       };
       const s = (d: MonthData) => d.summary;
       const num = (v: number | undefined | null) => Number(v) || 0;
+
+      // Render one shared RowDef. Same label, same columns, same sign as the
+      // screen -- because it is literally the same definition object.
+      const getDef = (def: RowDef) =>
+        get(def.label, d => {
+          const r = d.plRow;
+          if (!r) return 0;
+          const v = rowValue(r, def);
+          return def.negative ? -v : v;
+        });
+      const sumDefs = (defs: RowDef[]) => (d: MonthData) => (d.plRow ? sumRows(d.plRow, defs) : 0);
 
       const rows: any[][] = [];
       const modeLabel = isEstimatedExport ? 'ESTIMATED' : 'RECONCILED';
@@ -1833,43 +1906,39 @@ export default function ProfitLoss() {
       rows.push([`Mode: ${modeLabel}${isEstimatedExport ? ' ⚠ Not for tax use — includes unsettled orders' : ' ✔ Settled financial events (tax-ready)'}`]);
       rows.push([]);
 
-      // Income (Refunds, Promotional Rebates, Shipping/Gift Wrap Credit Refunds moved to Expenses below)
+      // INCOME and EXPENSES are rendered from the shared row definitions, in the
+      // shared order. Adding a category in plModel.ts adds it to both reports at
+      // once -- which is the whole point: the previous hand-written list here
+      // silently omitted 10 categories the screen counted.
+      // Honour the screen's InventoryLab-style toggle. When it is on, the four
+      // refund/rebate rows sit under Income as negatives instead of under
+      // Expenses. Net Profit is identical either way, but the SECTION totals are
+      // not -- so a sheet that ignored the toggle would disagree with the screen
+      // it was exported from on both Total Income and Total Amazon Fees.
+      const ilStyle = (() => {
+        try { return localStorage.getItem('pl_il_style_view') === '1'; } catch { return false; }
+      })();
+      const RECLASSIFIED = new Set(['refunds', 'shipping_credit_refunds', 'gift_wrap_credit_refunds', 'promotional_rebates']);
+      const isReclassified = (d: RowDef) => !!d.key && RECLASSIFIED.has(d.key as string);
+      const incomeDefs: RowDef[] = ilStyle
+        ? [...INCOME_ROWS, ...EXPENSE_ROWS.filter(isReclassified)]
+        : INCOME_ROWS;
+      const expenseDefs: RowDef[] = ilStyle
+        ? EXPENSE_ROWS.filter((d) => !isReclassified(d))
+        : EXPENSE_ROWS;
+
       rows.push(['INCOME']);
       rows.push(headerRow);
-      rows.push(get('Sales',                 d => num(s(d)?.sales)));
-      rows.push(get('Reimbursements',        d => num(s(d)?.reimbursements)));
-      // Memo (informational): subtype breakdown of Reimbursements above.
-      // Already included in "Reimbursements" — shown for audit, NOT added again to TOTAL INCOME.
-      rows.push(get('Compensated Clawbacks / Reversal Reimbursements (memo)',
-                                            d => num(s(d)?.compensatedClawback) + num(s(d)?.reversalReimbursement)));
-      rows.push(get('Shipping Credits',      d => num(s(d)?.shippingCredits)));
-      rows.push(get('Gift Wrap Credits',     d => num(s(d)?.giftWrapCredits)));
-      rows.push(get('Promotional Rebate Refunds', d => num(s(d)?.promotionalRebateRefunds)));
-      rows.push(get('Other Income',          d => num(s(d)?.otherIncome)));
-      rows.push(get('Liquidations',          d => num(s(d)?.liquidations)));
-      // TOTAL INCOME = canonical positive income components (see recomputeReconciledTotals).
-      rows.push(get('TOTAL INCOME',          d => num(s(d)?.totalIncome)));
+      for (const def of incomeDefs) rows.push(getDef(def));
+      rows.push(get('TOTAL INCOME', sumDefs(incomeDefs)));
       rows.push([]);
 
-      // Expenses (Amazon Fees + Refunds + Promotional Rebates + Credit Refunds)
+      // Expenses (Amazon Fees + Refunds + Promotional Rebates + Credit Refunds).
+      // Rendered negative, and TOTAL EXPENSES is negative to match.
       rows.push(['EXPENSES (Amazon Fees)']);
       rows.push(headerRow);
-      rows.push(get('Referral Fees',         d => -num(s(d)?.referralFees)));
-      rows.push(get('FBA Fees',              d => -num(s(d)?.fbaFees)));
-      rows.push(get('Variable Closing Fees', d => -num(s(d)?.variableClosingFees)));
-      rows.push(get('Fixed Closing Fees',    d => -num(s(d)?.fixedClosingFees)));
-      rows.push(get('FBA Inbound Fees',      d => -num(s(d)?.fbaInboundFees)));
-      rows.push(get('FBA Storage Fees',      d => -num(s(d)?.fbaStorageFees)));
-      rows.push(get('FBA Removal Fees',      d => -num(s(d)?.fbaRemovalFees)));
-      rows.push(get('FBA Disposal Fees',     d => -num(s(d)?.fbaDisposalFees)));
-      rows.push(get('FBA Long-Term Storage Fees', d => -num(s(d)?.fbaLongTermStorageFees)));
-      rows.push(get('FBA Customer Return Fees',   d => -num(s(d)?.fbaCustomerReturnFees)));
-      rows.push(get('Other Fees',            d => -num(s(d)?.otherFees)));
-      rows.push(get('Refunds',               d => -num(s(d)?.refunds)));
-      rows.push(get('Promotional Rebates',   d => -num(s(d)?.promotionalRebates)));
-      rows.push(get('Shipping Credit Refunds', d => -num(s(d)?.shippingCreditRefunds)));
-      rows.push(get('Gift Wrap Credit Refunds', d => -num(s(d)?.giftWrapCreditRefunds)));
-      rows.push(get('TOTAL EXPENSES',        d => -num(s(d)?.totalExpenses)));
+      for (const def of expenseDefs) rows.push(getDef(def));
+      rows.push(get('TOTAL EXPENSES', sumDefs(expenseDefs)));
       rows.push([]);
 
       // COGS + Inventory Damage & Loss (combined IRS-friendly line)
@@ -1896,24 +1965,34 @@ export default function ProfitLoss() {
       // Tax
       rows.push(['TAX SUMMARY']);
       rows.push(headerRow);
-      rows.push(get('Sales Tax Collected',          d => num(s(d)?.salesTaxCollected)));
-      rows.push(get('Marketplace Facilitator Tax', d => -num(s(d)?.marketplaceFacilitatorTax)));
-      rows.push(get('Sales Tax Refunds',            d => -num(s(d)?.salesTaxRefunds)));
-      rows.push(get('NET TAX',                       d => num(s(d)?.totalTax)));
+      for (const def of OTHER_ROWS) rows.push(getDef(def));
+      rows.push(get('NET TAX', sumDefs(OTHER_ROWS)));
+      rows.push([]);
+
+      // Memo — already counted inside a line above, never added again.
+      rows.push(['MEMO (already counted above — do not add)']);
+      rows.push(headerRow);
+      for (const def of MEMO_ROWS) rows.push(getDef(def));
       rows.push([]);
 
       // Net Profit per month
       rows.push(['PROFIT & LOSS SUMMARY']);
       rows.push(headerRow);
-      rows.push(get('Total Income',          d => num(s(d)?.totalIncome)));
-      rows.push(get('Total Amazon Fees',     d => -num(s(d)?.totalExpenses)));
-      rows.push(get('Cost of Goods Sold',    d => -(d.cogs + d.cogsAdjustment)));
+      rows.push(get('Total Income',            sumDefs(incomeDefs)));
+      rows.push(get('Total Amazon Fees',       sumDefs(expenseDefs)));
+      rows.push(get('Cost of Goods Sold',      d => -(d.cogs + d.cogsAdjustment)));
       rows.push(get('Inventory Damage & Loss', d => -(d.disposition + d.writeoff)));
-      rows.push(get('Operating Expenses',    d => -d.opExpenses));
+      rows.push(get('Operating Expenses',      d => -d.opExpenses));
+      // EXPENSE_ROWS already carry their own sign, so this is a sum, not a
+      // subtraction -- identical to the screen's
+      // income + expenses - COGS - opEx - inventory loss.
       rows.push(get('NET PROFIT', d => {
-        const sum = s(d);
-        if (!sum) return 0;
-        return num(sum.totalIncome) - num(sum.totalExpenses) - (d.cogs + d.cogsAdjustment) - (d.disposition + d.writeoff) - d.opExpenses;
+        if (!d.plRow) return 0;
+        return sumRows(d.plRow, incomeDefs)
+          + sumRows(d.plRow, expenseDefs)
+          - (d.cogs + d.cogsAdjustment)
+          - (d.disposition + d.writeoff)
+          - d.opExpenses;
       }));
 
       // Build a styled workbook using ExcelJS (borders, section headers, bold totals, freeze pane)
