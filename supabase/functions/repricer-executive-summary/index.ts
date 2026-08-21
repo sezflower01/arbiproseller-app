@@ -87,9 +87,12 @@ async function computeForUser(
   // Recent eval acks → blocker reasons + recovered + protected
   const { data: acks } = await admin
     .from("repricer_eval_acks")
-    .select("reason,reason_business,strategy_state,asin,created_at")
+    // acked_at, not created_at -- repricer_eval_acks has never had a
+    // created_at column, so this query errored and every blocker/recovered/
+    // protected figure below was computed from an empty list.
+    .select("reason,reason_business,strategy_state,asin,acked_at")
     .eq("user_id", userId)
-    .gte("created_at", since24h)
+    .gte("acked_at", since24h)
     .limit(5000);
 
   const blockerCounts = new Map<string, number>();

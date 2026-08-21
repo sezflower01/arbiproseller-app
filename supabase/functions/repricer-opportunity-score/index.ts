@@ -6,6 +6,7 @@
 // GET  ?live=1 with JWT                   → compute & return without persist
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { marketplaceIdToCode } from "../_shared/marketplace-map.ts";
 import { requireInternalCall } from "../_shared/require-internal.ts";
 
 const corsHeaders = {
@@ -78,7 +79,7 @@ async function scoreUser(
       .limit(10000),
     admin
       .from("repricer_strategy_states")
-      .select("asin,marketplace,state,signals")
+      .select("asin,marketplace_id,state,signals")
       .eq("user_id", userId)
       .limit(10000),
     admin
@@ -102,9 +103,22 @@ async function scoreUser(
 
   const invByAsin = new Map<string, any>();
   for (const r of invRows ?? []) invByAsin.set(r.asin, r);
+  // Asked strategy_states for a `marketplace` column that does not exist (it is
+  // `marketplace_id`), so the query errored, `states` was always empty, and every
+  // ASIN scored as if it had no strategy state. Broken since 2026-05-13.
+  //
+  // ⚠️ `marketplace_id` is misnamed: its default is an Amazon id, but both
+  // writers store the CODE from repricer_assignments.marketplace, so the column
+  // in practice holds US/CA/MX/BR. The map translates a defaulted id, passes a
+  // code through untouched, and leaves anything unrecognised as-is so a miss
+  // stays visible rather than being coerced to US.
   const stateByKey = new Map<string, any>();
-  for (const r of states ?? [])
-    stateByKey.set(`${r.asin}|${r.marketplace}`, r);
+  for (const r of states ?? []) {
+    // String(): rows come back untyped, and marketplaceIdToCode takes a string.
+    const rawId = String(r.marketplace_id ?? "");
+    const code = marketplaceIdToCode(rawId) ?? rawId;
+    stateByKey.set(`${r.asin}|${code}`, r);
+  }
 
   const sales30Map = new Map<string, number>();
   for (const s of salesRows ?? []) {

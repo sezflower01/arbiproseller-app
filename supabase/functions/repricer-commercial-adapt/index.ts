@@ -10,6 +10,7 @@
 // (which the evaluator reads) and writes a recommendation row that the evaluator can honor.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { marketplaceIdToCode } from "../_shared/marketplace-map.ts";
 import { requireInternalCall } from "../_shared/require-internal.ts";
 
 const corsHeaders = {
@@ -86,22 +87,51 @@ async function adaptUser(
         .limit(10000),
       admin
         .from("repricer_strategy_states")
-        .select("asin,marketplace,state,signals,reason_business")
+        .select("asin,marketplace_id,state,signals,reason_business")
         .eq("user_id", userId)
         .limit(10000),
       admin
+        // acked_at, not created_at: this table has never had a created_at
+        // column, so the query errored and `acks` was always empty -- meaning
+        // the oscillation counter below always read zero.
         .from("repricer_eval_acks")
-        .select("asin,reason,created_at")
+        .select("asin,reason,acked_at")
         .eq("user_id", userId)
-        .gte("created_at", since7d)
+        .gte("acked_at", since7d)
         .limit(20000),
     ]);
 
   const invByAsin = new Map<string, any>();
   for (const r of invRows ?? []) invByAsin.set(r.asin, r);
+
+// ---------------------------------------------------------------------------
+// This file asked repricer_strategy_states for a column named `marketplace`.
+// The column is `marketplace_id`, so Postgres rejected the whole query, `states`
+// came back empty, and every strategy lookup below fell through to "unknown".
+// Broken since the table was added 2026-05-13; found 2026-08-21 in the Postgres
+// error log, firing on this function's own schedule.
+//
+// ⚠️ `marketplace_id` is MISNAMED. Its schema DEFAULT is an Amazon marketplace
+// id ('ATVPDKIKX0DER'), but BOTH writers -- repricer-classify-strategy and this
+// file's own upsert below -- store the CODE from repricer_assignments.marketplace
+// ('US'/'CA'/'MX'/'BR'). So in practice the column holds codes, and only rows
+// that took the default carry an actual id.
+//
+// Hence marketplaceIdToCode(...) ?? rawId rather than a rename alone: a code
+// passes straight through the map untouched, a defaulted id is translated, and
+// anything unrecognised keeps its raw value so a miss stays visible instead of
+// being coerced to US and attaching one marketplace's strategy to another's.
+// ---------------------------------------------------------------------------
   const stateByKey = new Map<string, any>();
-  for (const r of states ?? [])
-    stateByKey.set(`${r.asin}|${r.marketplace}`, r);
+  for (const r of states ?? []) {
+    // Fall back to the raw id rather than assuming US. An unmapped id then
+    // simply fails to match, which is inspectable; coercing it to US would
+    // attach one marketplace's strategy to another's assignment.
+    // String(): rows come back untyped, and marketplaceIdToCode takes a string.
+    const rawId = String(r.marketplace_id ?? "");
+    const code = marketplaceIdToCode(rawId) ?? rawId;
+    stateByKey.set(`${r.asin}|${code}`, r);
+  }
 
   // Count oscillation signals per ASIN in last 7d
   const oscByAsin = new Map<string, number>();
