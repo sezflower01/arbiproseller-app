@@ -9089,10 +9089,32 @@ async function processFinancialEvent(
         .eq('order_id', orderId)
         .not('order_id', 'like', '%-REFUND');
       
-      const matchingExisting = (broadMatch || []).find((row: any) => {
-        if (row.asin === 'PENDING' || row.asin === 'UNKNOWN') return true; // always safe to update placeholders
-        return row.quantity === quantity && Math.abs((row.sold_price || 0) - soldPrice) < 2.0;
-      });
+      // EXACT ASIN FIRST. The unique index is (user_id, order_id, asin), so a row
+      // with the same ASIN IS the row we are about to collide with -- match it
+      // before applying any heuristic.
+      //
+      // The fuzzy test below (same quantity, price within $2) exists to catch
+      // rows whose ASIN differs between sources, and it is still needed. But it
+      // was the ONLY test, so a row with a MATCHING ASIN whose quantity or price
+      // had since moved by $2+ was judged "not a match", fell through to INSERT,
+      // and collided with the very row broadMatch had just returned.
+      //
+      // That was not merely log noise. The insert carries the settled payload --
+      // settlement_date, financial-events fees, price_source, and
+      // price_confidence CONFIRMED -- and its failure is swallowed as
+      // EVENTS_DEBUG_INSERT_ERROR while wasSettled is set to true regardless. So
+      // the order kept its older ESTIMATED fees and was marked settled anyway.
+      // Financial events are the authoritative fee source, so those orders were
+      // silently excluded from the P&L's best data.
+      //
+      // Observed 2026-08-21: duplicate-key errors every 2-3 seconds through a
+      // sync window, on real ASINs (e.g. B001DKV5H8), not placeholders.
+      const matchingExisting =
+        (broadMatch || []).find((row: any) => row.asin && row.asin === finalAsin) ??
+        (broadMatch || []).find((row: any) => {
+          if (row.asin === 'PENDING' || row.asin === 'UNKNOWN') return true; // always safe to update placeholders
+          return row.quantity === quantity && Math.abs((row.sold_price || 0) - soldPrice) < 2.0;
+        });
       
       if (matchingExisting) {
         // Found an existing row that's likely the same item — update instead of creating duplicate
