@@ -7419,15 +7419,46 @@ async function insertPendingOrderLite(
   }
   // No order ID prefix fallback - 701- can be CA or MX, unreliable
 
-  // Check if the pending placeholder row already exists (avoid maybeSingle on multiple ASIN rows)
-  const { data: existingPending } = await supabase
+  // Does this order already exist in ANY form?
+  //
+  // ⚠️ This check used to filter `.eq('asin', 'PENDING')`, and that single clause
+  // was the source of ~1,079 ghost rows (diagnosed 2026-08-21). Once
+  // enrich-pending-orders resolves an order's ASIN there is NO 'PENDING' row left,
+  // so the next sync of the same order saw "not present" and inserted a fresh
+  // placeholder. The upsert below cannot catch it either: its onConflict is
+  // (user_id, order_id, asin), and 'PENDING' never conflicts with the real ASIN.
+  //
+  // The ghost is then picked up by enrich-pending-orders, resolved to the real
+  // ASIN, and the write collides with the already-settled row on
+  // sales_orders_user_order_asin_idx -- an error that function swallows, so the
+  // ghost is never cleared and the loop repeats ~2.7s apart, indefinitely.
+  //
+  // Two generators were confirmed from the row data:
+  //   * routine incremental sync -- ghost appears exactly one ~30-minute cycle
+  //     after the real row (11:41:34 -> 12:11:33, 09:40:33 -> 10:10:33, ...)
+  //   * performBackfillChunk walking backwards through history -- 1,070 ghosts in
+  //     ~2 minutes on 2026-08-20 13:13-13:15, all for orders that settled in July
+  //
+  // The cancelled-order branch at the top of this function already queries
+  // (user_id, order_id) with no ASIN filter. This now matches it.
+  const { data: existingRows } = await supabase
     .from('sales_orders')
-    .select('id, status, marketplace, quantity')
+    .select('id, asin, status, marketplace, quantity')
     .eq('user_id', userId)
     .eq('order_id', orderId)
-    .eq('asin', 'PENDING')
-    .limit(1)
-    .maybeSingle();
+    .limit(50);
+
+  const rowsForOrder = existingRows || [];
+  const existingPending = rowsForOrder.find((r: any) => r.asin === 'PENDING') || null;
+
+  // Already known under a real ASIN, with no placeholder left: there is nothing to
+  // insert. Deliberately NOT falling through to the upsert -- the resolved row
+  // already carries settled price and fees, and writing a placeholder beside it is
+  // exactly the defect this guard exists to prevent.
+  if (!existingPending && rowsForOrder.length > 0) {
+    console.log(`LITE_SKIP_ALREADY_RESOLVED: ${orderId} | ${rowsForOrder.length} row(s) | asins=${rowsForOrder.map((r: any) => r.asin).join(',')}`);
+    return false;
+  }
 
   // Compute correct quantity (shipped + unshipped)
   const desiredQty = (() => {
@@ -7437,7 +7468,12 @@ async function insertPendingOrderLite(
     return total > 0 ? total : 1;
   })();
 
-  // If order exists, fix marketplace/quantity if needed
+  // Placeholder still present: fix marketplace/quantity in place.
+  //
+  // These corrections stay scoped to the PENDING placeholder ON PURPOSE. desiredQty
+  // is the ORDER-level unit count, while a resolved multi-item order carries one row
+  // per ASIN -- applying it to a real row would overwrite a correct per-item
+  // quantity with the order total.
   if (existingPending) {
     const updates: any = { updated_at: new Date().toISOString() };
 
