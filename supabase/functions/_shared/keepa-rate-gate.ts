@@ -273,9 +273,32 @@ async function acquireCallRateSlot(supabase: any): Promise<{ ok: boolean; waitSe
     return !!claimNull.data;
   };
 
+  // CLAIM FIRST, create only if the row is genuinely absent.
+  //
+  // This used to INSERT unconditionally and treat 23505 as "row already exists,
+  // carry on". The control flow was correct, but the row exists for all but the
+  // first call of each UTC day, so EVERY subsequent call issued an insert that
+  // Postgres rejected -- and Postgres logs a rejected insert as an ERROR whether
+  // or not the client tolerates it. Measured 2026-08-21: this was the dominant
+  // entry in the Postgres error log, repeating every few seconds and restarting
+  // at ~01:42 each day when the date rolls over and a new row is created.
+  //
+  // Claiming first also makes the hot path cheaper: one UPDATE when a slot is
+  // free, instead of a doomed INSERT followed by the same UPDATE.
+  if (await tryClaimExisting()) {
+    return { ok: true, waitSeconds: 0 };
+  }
+
+  // Not claimable: either today's row does not exist yet, or it does and was
+  // claimed too recently. upsert with ignoreDuplicates emits ON CONFLICT DO
+  // NOTHING, so the second case is a silent no-op rather than a logged error.
+  // `data` is returned only when this call actually created the row.
   const insertAttempt = await supabase
     .from('keepa_daily_usage')
-    .insert({ usage_date: usageDate, call_count: 0, last_called_at: nowIso })
+    .upsert(
+      { usage_date: usageDate, call_count: 0, last_called_at: nowIso },
+      { onConflict: 'usage_date', ignoreDuplicates: true },
+    )
     .select('usage_date')
     .maybeSingle();
 
@@ -288,8 +311,9 @@ async function acquireCallRateSlot(supabase: any): Promise<{ ok: boolean; waitSe
     return { ok: false, waitSeconds: Math.ceil(KEEPA_GUARD_INTERVAL_MS / 1000) };
   }
 
-  const claimed = await tryClaimExisting();
-  if (claimed) {
+  // Lost a race to another caller that created the row between our claim
+  // attempt and our upsert. One more claim before giving up.
+  if (await tryClaimExisting()) {
     return { ok: true, waitSeconds: 0 };
   }
 
