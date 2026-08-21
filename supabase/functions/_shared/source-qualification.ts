@@ -117,7 +117,7 @@ export const MAX_SALES_RANK = 500_000;
 export function qualifyListing(input: QualificationInput): QualificationResult {
   // Checked FIRST and unconditionally. A restricted ASIN cannot be sold at
   // any price, so no other property can redeem it -- and reporting
-  // "restricted" rather than a downstream reason like no_upc tells the user
+  // "restricted" rather than a downstream reason like excluded_group tells the user
   // the actionable fact.
   if (input.eligibility === 'restricted') {
     return { qualified: false, reason: 'restricted' };
@@ -161,20 +161,40 @@ export function qualifyListing(input: QualificationInput): QualificationResult {
   // express the same thing: what the seller has decided against, as opposed to
   // what Amazon forbids (handled by `eligibility` at the top).
   //
-  // Placed BEFORE the no_upc check so the stored reason names the user's own
-  // rule rather than a downstream technicality, when a listing trips both.
+  // Ordering note: this used to sit deliberately ahead of a no_upc check so the
+  // stored reason named the user's own rule rather than a technicality. That
+  // check is gone (see below); the ordering is kept because the user's rules
+  // should always be the reported reason when several could apply.
   const excludedTitle = findExcludedTitleTerm(input.title, input.excludedTitleTerms);
   if (excludedTitle) {
     return { qualified: false, reason: `excluded_title:${excludedTitle}` };
   }
 
-  // Strongest single signal (48% of detections). Principled rather than
-  // arbitrary: find-source-candidates searches UPC-first and degrades to
-  // brand+title without one, which is precisely why untagged items come back
-  // "no likely sources" after spending a full verification budget.
-  if (!input.upc || !String(input.upc).trim()) {
-    return { qualified: false, reason: 'no_upc' };
-  }
+  // A MISSING UPC NO LONGER DISQUALIFIES -- rule removed 2026-08-21.
+  //
+  // It used to, and the reasoning was sound when it was written:
+  // find-source-candidates searched UPC-first and degraded to brand+title
+  // without one, so untagged items spent a full verification budget and came
+  // back "no likely sources".
+  //
+  // That function no longer exists. Automated sourcing was removed 2026-08-19
+  // (commit ee359a3 -- Google CSE returned 403 across three projects) and
+  // replaced with a manual "Search on Google" button that deliberately carries
+  // the TITLE ONLY, never the UPC, because retail pages print the product name
+  // and almost never the raw barcode.
+  //
+  // So the rule was rejecting listings for lacking a field the current workflow
+  // does not use -- and it was by far the largest filter: 6,116 of 8,717 queued
+  // rows, 70%, measured 2026-08-21. It was quietly deciding what never reached
+  // the user for review. Their call, in their words: "I don't want to disqualify
+  // if no upc because I'm losing potential checking."
+  //
+  // Stated consequence, so nobody later reads the volume as a regression:
+  // qualified detections go from roughly 25/day to roughly 3,000/day. That is
+  // the intended trade -- see everything, filter by eye -- not an oversight. If
+  // the queue later needs trimming, trim it on a criterion someone actually
+  // believes in (rank, price, offer count), not on a deleted searcher's
+  // preferred input format.
 
   if (typeof input.salesRank === 'number' && input.salesRank > MAX_SALES_RANK) {
     return { qualified: false, reason: `rank_over_${MAX_SALES_RANK}:${input.salesRank}` };

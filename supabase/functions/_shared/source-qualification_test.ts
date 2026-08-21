@@ -35,9 +35,12 @@ Deno.test('non-media groups seen in the probe still pass', () => {
   }
 });
 
-Deno.test('missing UPC disqualifies -- search is UPC-first', () => {
-  assertEquals(qualifyListing({ productGroup: 'Toy', salesRank: 100, upc: null }).reason, 'no_upc');
-  assertEquals(qualifyListing({ productGroup: 'Toy', salesRank: 100, upc: '   ' }).reason, 'no_upc');
+Deno.test('missing UPC does NOT disqualify -- the manual search uses the title', () => {
+  // Inverted 2026-08-21. The UPC-first searcher this guarded is gone; the
+  // replacement searches by title, so a missing barcode costs nothing.
+  assertEquals(qualifyListing({ productGroup: 'Toy', salesRank: 100, upc: null }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', salesRank: 100, upc: '   ' }).qualified, true);
+  assertEquals(qualifyListing({ productGroup: 'Toy', salesRank: 100, upc: null }).reason, null);
 });
 
 Deno.test('rank ceiling applies only when a rank EXISTS', () => {
@@ -205,8 +208,10 @@ Deno.test('restricted still outranks a title rule', () => {
   assertEquals(r.reason, 'restricted');
 });
 
-Deno.test('the title rule is reported ahead of no_upc when both trip', () => {
-  // The user's own rule is the actionable fact; no_upc is a technicality.
+Deno.test("the user's title rule still fires on a listing with no UPC", () => {
+  // Was "reported ahead of no_upc". That rule is gone, so this now guards the
+  // opposite risk: removing it must not have disturbed the user's own rules,
+  // which are the ones that still decide what gets rejected.
   const r = qualifyListing({ productGroup: 'Toy', title: 'Pokémon TCG', excludedTitleTerms: ['pokemon'] });
   assertEquals(r.reason, 'excluded_title:pokemon');
 });
