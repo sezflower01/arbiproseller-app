@@ -76,7 +76,6 @@ export default function RestoreMissingOrdersDialog({
     }
   }, [open, startDate]);
 
-  // Admin check removed temporarily — always show for debugging visibility
 
   const handleRestore = async () => {
     if (!startDate || !endDate) {
@@ -144,6 +143,20 @@ export default function RestoreMissingOrdersDialog({
       setRunning(false);
     }
   };
+
+  // Admin-only. This replays the Amazon Orders API over an arbitrary date range
+  // and writes to sales_orders, so it must not be reachable by ordinary users --
+  // the platform has more than one login and they are separated only by RLS.
+  //
+  // The gate was previously computed and then ignored ("removed temporarily for
+  // debugging visibility") while the component was unmounted, which made it
+  // harmless. Mounting it on /tools/sales makes it reachable, so the gate is
+  // reinstated at the same time.
+  //
+  // Rendering nothing (rather than a disabled button) keeps the tool invisible to
+  // non-admins. isAdmin starts false and is set by an async check, so a brief
+  // render-nothing on first paint is expected and correct -- failing closed.
+  if (!isAdmin) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
