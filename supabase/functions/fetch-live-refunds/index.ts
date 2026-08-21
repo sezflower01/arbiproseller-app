@@ -1478,6 +1478,12 @@ serve(async (req) => {
           title: r.title ? `[REFUND] ${r.title}` : `[REFUND] ${r.asin}`,
           image_url: r.imageUrl || null,
           sold_price: -Math.abs(r.amount),
+          // NOT NULL with no default (sales_orders was created that way in
+          // 20251130052926). Omitting it made every insert below fail outright --
+          // observed 2026-08-21 retrying the same 9 refunds every ~29 minutes and
+          // never landing one. sync-sales-orders' own refund writer has always set
+          // both fields from the same figure; this one just never did.
+          total_sale_amount: -Math.abs(r.amount),
           refund_amount: Math.abs(r.amount),
           referral_fee: -Math.abs(r.referralFee),
           total_fees: 0,
@@ -1494,16 +1500,33 @@ serve(async (req) => {
       });
 
       // Upsert on fec_refund_key so the same refund event never creates a new row.
+      //
+      // The failure is REPORTED, not counted as success. This previously read
+      // `if (!upsertErr) insertedCount++` and then logged the remainder as
+      // "already existed" -- which inverted the meaning of a hard error, since an
+      // upsert that matches an existing row succeeds and is already inside
+      // insertedCount. A NOT NULL violation therefore surfaced as a routine no-op,
+      // and the writer looked healthy while persisting nothing.
       let insertedCount = 0;
+      let failedCount = 0;
       for (const row of refundRows) {
         const { error: upsertErr } = await supabase
           .from('sales_orders')
           .upsert(row, { onConflict: 'user_id,fec_refund_key' });
-        if (!upsertErr) insertedCount++;
+        if (upsertErr) {
+          failedCount++;
+          console.error(
+            `[LIVE_REFUNDS] UPSERT FAILED ${row.order_id} (${row.asin}): ${upsertErr.message}`,
+          );
+        } else {
+          insertedCount++;
+        }
       }
 
-      
-      console.log(`[LIVE_REFUNDS] Persisted ${insertedCount} new refunds to sales_orders (${refundRows.length - insertedCount} already existed)`);
+      console.log(
+        `[LIVE_REFUNDS] Persisted ${insertedCount}/${refundRows.length} refunds to sales_orders` +
+          (failedCount > 0 ? ` -- ${failedCount} FAILED, see errors above` : ''),
+      );
     }
 
     // Write sync trace for refund fetch
