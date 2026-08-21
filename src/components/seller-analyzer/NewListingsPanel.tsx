@@ -121,7 +121,7 @@ function formatDisqualifiedReason(raw: string | null): string {
 
 
 export default function NewListingsPanel() {
-  const { done, pending, doneTotal, pendingTotal, loading, eligibility, sellerNames, deleteListings, deleteByStatus } = useSellerNewListings();
+  const { done, pending, doneTotal, pendingTotal, pendingQualifiedTotal, loading, eligibility, sellerNames, deleteListings, deleteByStatus } = useSellerNewListings();
   const [tab, setTab] = useState("done");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
@@ -202,13 +202,27 @@ export default function NewListingsPanel() {
 
         <Tabs value={tab} onValueChange={changeTab}>
           <TabsList className="mb-3">
+            {/*
+              Badges show SERVER-SIDE totals, never `done.length` / `pending.length`.
+              Those are one PAGE_SIZE window, so the queued badge sat at exactly 200
+              from the moment the backlog passed 200 -- it read as a nearly-empty
+              queue while the table held 8,717 rows and 6,166 of them were actionable.
+
+              The queued badge counts QUALIFIED rows only: a disqualified listing is
+              never going to be worked, so counting it promises work that will not
+              happen. The full queued figure still appears on "Clear in bulk", which
+              is the one place it is the honest number, because a purge deletes
+              disqualified rows too.
+            */}
             <TabsTrigger value="done" className="gap-2">
               Done
-              {done.length > 0 && <Badge variant="secondary">{done.length}</Badge>}
+              {doneTotal > 0 && <Badge variant="secondary">{doneTotal.toLocaleString()}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="searching" className="gap-2">
               Searching
-              {pending.length > 0 && <Badge variant="secondary">{pending.length}</Badge>}
+              {pendingQualifiedTotal > 0 && (
+                <Badge variant="secondary">{pendingQualifiedTotal.toLocaleString()}</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 

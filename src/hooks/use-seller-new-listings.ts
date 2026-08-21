@@ -97,6 +97,16 @@ export function useSellerNewListings() {
   const [doneTotal, setDoneTotal] = useState(0);
   /** Total queued rows, which exceeds `pending.length` whenever PAGE_SIZE bites. */
   const [pendingTotal, setPendingTotal] = useState(0);
+  /**
+   * Queued rows the user can actually act on, i.e. qualified !== false.
+   *
+   * Kept SEPARATE from pendingTotal on purpose. The two answer different
+   * questions and conflating them is what made the panel misleading: the tab
+   * badge should say how much work there is, while "Clear in bulk" must say how
+   * many rows a purge would really delete -- which is every queued row,
+   * disqualified ones included.
+   */
+  const [pendingQualifiedTotal, setPendingQualifiedTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [eligibility, setEligibility] = useState<Record<string, EligibilityStatus>>({});
   /** `${seller_id}|${marketplace}` -> seller_name, for listings to show their origin. */
@@ -111,6 +121,7 @@ export function useSellerNewListings() {
         { data: watchRows },
         { count: doneCount },
         { count: pendingCount },
+        { count: pendingQualifiedCount },
       ] = await Promise.all([
         // DONE and SEARCHING are fetched separately with their own limits.
         // A single combined query ordered by detected_at is exactly what buried
@@ -146,12 +157,22 @@ export function useSellerNewListings() {
           .from("seller_watch_new_listings")
           .select("id", { count: "exact", head: true })
           .in("source_status", ["unsourced", "sourcing"]),
+        // Counted server-side rather than derived from `pending`, which is one
+        // PAGE_SIZE window. Deriving it was the bug: the badge read the page
+        // length and so sat at exactly 200 from the moment the queue passed 200,
+        // reporting a nearly-empty queue while the table held 8,717 rows.
+        supabase
+          .from("seller_watch_new_listings")
+          .select("id", { count: "exact", head: true })
+          .in("source_status", ["unsourced", "sourcing"])
+          .eq("qualified", true),
       ]);
       if (error) throw error;
       setDone((doneRows as unknown as NewListing[]) || []);
       setPending((pendingRows as unknown as NewListing[]) || []);
       setDoneTotal(doneCount ?? 0);
       setPendingTotal(pendingCount ?? 0);
+      setPendingQualifiedTotal(pendingQualifiedCount ?? 0);
 
       const names: Record<string, string> = {};
       type WatchNameRow = { seller_id: string; marketplace: string; seller_name: string | null };
@@ -314,7 +335,7 @@ export function useSellerNewListings() {
   }, [refresh]);
 
   return {
-    done, pending, doneTotal, pendingTotal, loading,
+    done, pending, doneTotal, pendingTotal, pendingQualifiedTotal, loading,
     eligibility, sellerNames, deleteListings,
     deleteByStatus, refresh,
   };
