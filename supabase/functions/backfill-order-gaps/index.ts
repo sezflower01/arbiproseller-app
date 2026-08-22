@@ -38,7 +38,13 @@ const corsHeaders = {
  * across successive nightly runs instead.
  */
 
-const LOOKBACK_DAYS   = 30;  // matches the banner's own window
+// 60, not 30. The dry run on 2026-08-22 found 3 gaps where the banner showed 4:
+// 2026-07-10 had already fallen outside a 30-day window. A day that ages out of
+// the lookback is never repaired and never marked permanent -- it just sits in
+// the banner forever while the job reports itself healthy. Widening costs
+// nothing per run, because MAX_RANGE_DAYS bounds the Orders API work regardless;
+// a larger backlog simply takes more nights to clear.
+const LOOKBACK_DAYS   = 60;
 const MAX_ATTEMPTS    = 3;   // then `permanent`
 const MAX_RANGE_DAYS  = 14;  // per run, per user
 
