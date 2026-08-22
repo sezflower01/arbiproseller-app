@@ -494,3 +494,6 @@ verify_jwt = true
 # function calling with a service-role bearer and so passes the gateway either
 # way. The function keeps its own guard.
 verify_jwt = false
+
+[functions.backfill-order-gaps]
+verify_jwt = false
