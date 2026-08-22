@@ -20,6 +20,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useSellerNewListings, type NewListing } from "@/hooks/use-seller-new-listings";
 import EligibilityBadge from "@/components/common/EligibilityBadge";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Manual source search, replacing the automated pipeline removed 2026-08-19.
@@ -120,8 +121,127 @@ function formatDisqualifiedReason(raw: string | null): string {
 }
 
 
+
+/**
+ * Delete queued listings whose TITLE matches the user's own excluded words.
+ *
+ * The same sweep exists on the Excluded Title Words card in the settings
+ * column, and that is the wrong place to need it. You notice a listing you do
+ * not want while looking AT the queue, so the action to remove it belongs on
+ * the queue -- not two panels away, behind a card about word lists.
+ *
+ * Counts first, always. The dry run uses the exact matcher the delete uses, so
+ * the number in the dialog is the number that goes. That matters more here than
+ * on the settings card: from this tab the user is reacting to something they
+ * just saw, not deliberately administering rules.
+ *
+ * Deleting is permanent in a way worth restating in the dialog: detection
+ * compares each seller against a stored known-ASIN baseline that updates
+ * whether or not a listing row survives, so these are not re-detected -- and do
+ * not return if the matching word is later removed.
+ */
+function DeleteMatchingExcludedWords({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [running, setRunning] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<{ matched: number; byTerm: Record<string, number> } | null>(null);
+
+  const run = async (dryRun: boolean) => {
+    setRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("apply-title-exclusions", {
+        body: { dryRun, mode: "delete" },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      if (dryRun) {
+        setPreview({ matched: data?.matched ?? 0, byTerm: data?.byTerm ?? {} });
+        setOpen(true);
+      } else {
+        setOpen(false);
+        setPreview(null);
+        toast({ title: `Deleted ${(data?.deleted ?? 0).toLocaleString()} matching listing(s)` });
+        onDone();
+      }
+    } catch (e) {
+      toast({ title: "Could not check listings", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs"
+        disabled={running}
+        onClick={() => run(true)}
+      >
+        {running && !open ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+        Matching your excluded words
+      </Button>
+
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {preview?.matched
+                ? `Delete ${preview.matched.toLocaleString()} queued listing${preview.matched === 1 ? "" : "s"}?`
+                : "Nothing matches your excluded words"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {preview?.matched ? (
+                <>
+                  These queued listings contain one of your excluded title words. Deleting is
+                  permanent: they are not re-detected on the next seller check, and they do not
+                  come back if you later remove the word that matched them. Finished results on
+                  the Done tab are not affected.
+                </>
+              ) : (
+                <>
+                  No queued listing contains any of your excluded title words, so there is nothing
+                  to delete.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {preview?.matched ? (
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(preview.byTerm).map(([term, n]) => (
+                <Badge key={term} variant="outline" className="font-normal">
+                  {term} - {n.toLocaleString()}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {preview?.matched ? (
+              <AlertDialogAction
+                onClick={(e) => {
+                  // Keep the dialog open while the delete runs; run() closes it.
+                  e.preventDefault();
+                  void run(false);
+                }}
+              >
+                {running ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+                Delete {preview.matched.toLocaleString()}
+              </AlertDialogAction>
+            ) : null}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 export default function NewListingsPanel() {
-  const { done, pending, doneTotal, pendingTotal, pendingQualifiedTotal, loading, eligibility, sellerNames, deleteListings, deleteByStatus } = useSellerNewListings();
+  const { done, pending, doneTotal, pendingTotal, pendingQualifiedTotal, loading, eligibility, sellerNames, deleteListings, deleteByStatus, refresh } = useSellerNewListings();
   const [tab, setTab] = useState("done");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
@@ -319,6 +439,10 @@ export default function NewListingsPanel() {
                 {!isDone && pendingTotal > 0 && (
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Clear in bulk:</span>
+                    {/* Placed BEFORE "Everything queued" deliberately: the
+                        targeted action should be reached first, since it is
+                        almost always the one wanted. */}
+                    <DeleteMatchingExcludedWords onDone={refresh} />
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={removing}>
