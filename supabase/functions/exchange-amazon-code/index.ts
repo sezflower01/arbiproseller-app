@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  checkSellerAuthorizationOwnership,
+  ownershipConflictBody,
+} from "../_shared/seller-authorization-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -119,6 +123,28 @@ serve(async (req: Request) => {
       }
     } catch (parseError) {
       console.error("Failed to parse marketplace from state:", parseError);
+    }
+
+    // OWNERSHIP GUARD -- see _shared/seller-authorization-guard.ts.
+    //
+    // The upsert below conflicts on (seller_id, marketplace_id), which does NOT
+    // include user_id, so ON CONFLICT UPDATE would rewrite user_id and hand this
+    // seller account to whoever authorized last. Refuse instead. Re-authorizing
+    // your own account still passes -- that is how an expired token is replaced.
+    const resolvedSellerId = selling_partner_id || "unknown";
+    const ownership = await checkSellerAuthorizationOwnership(supabase as never, {
+      userId: user.id,
+      sellerId: resolvedSellerId,
+      marketplaceId,
+    });
+    if (!ownership.ok) {
+      console.warn(
+        `[exchange-amazon-code] refused claim on seller ${resolvedSellerId}/${marketplaceId}: held by another user`,
+      );
+      return new Response(JSON.stringify(ownershipConflictBody(marketplaceId)), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Save tokens to database
