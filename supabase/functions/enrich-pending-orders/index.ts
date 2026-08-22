@@ -709,8 +709,60 @@ serve(async (req) => {
           // If multiple items, we may need to insert additional rows
           const resolvedAsins = new Set<string>();
           
-          for (let i = 0; i < orderItems.length; i++) {
-            const item = orderItems[i];
+          // ONE ROW PER ASIN, NOT ONE ROW PER ORDER-ITEM LINE.
+          //
+          // sales_orders is uniquely indexed on (user_id, order_id, asin), so a
+          // given ASIN can only ever occupy one row of an order. Amazon's
+          // getOrderItems does not honour that shape -- it splits a single ASIN
+          // across several OrderItem lines whenever condition, promotion or
+          // gift-wrap differs. The loop below walked those lines one-for-one:
+          // it updated stuck row 0 to ASIN X, then inserted ASIN X again, and
+          // collided with the row it had just written, inside the same run.
+          //
+          // Observed 2026-08-22 15:35 UTC on 112-3065259-2877055 / B07WR2R8WY:
+          //   duplicate key value violates unique constraint
+          //   "sales_orders_user_order_asin_idx"
+          // Invisible in this function's own logs, because neither the update
+          // nor the insert captured `error`. The only trace was the Postgres
+          // log -- which is why both now destructure it. Same shape as the bug
+          // fixed in sync-sales-orders on 2026-08-21, one function over.
+          //
+          // Merging first makes the code agree with the constraint. Quantities
+          // sum, and the unit price is quantity-weighted so a single-line item
+          // comes out byte-identical to the previous behaviour while a genuine
+          // two-price split no longer silently keeps only one of them.
+          const mergedItems = (() => {
+            const byAsin = new Map<string, { asin: string; title: string; quantity: number; sku: string; itemPrice: number | null }>();
+            for (const it of orderItems) {
+              const qty = Math.max(it.quantity || 1, 1);
+              const prev = byAsin.get(it.asin);
+              if (!prev) {
+                byAsin.set(it.asin, {
+                  asin: it.asin, title: it.title, quantity: qty,
+                  sku: it.sku, itemPrice: it.itemPrice,
+                });
+                continue;
+              }
+              const totalQty = prev.quantity + qty;
+              // Weighted only when BOTH lines carry a price. A missing price on
+              // either side must not be read as zero -- that would invent a
+              // discount out of an absent field.
+              if (typeof prev.itemPrice === 'number' && typeof it.itemPrice === 'number') {
+                prev.itemPrice = ((prev.itemPrice * prev.quantity) + (it.itemPrice * qty)) / totalQty;
+              } else {
+                prev.itemPrice = prev.itemPrice ?? it.itemPrice;
+              }
+              prev.quantity = totalQty;
+              prev.sku = prev.sku || it.sku;
+            }
+            return [...byAsin.values()];
+          })();
+          if (mergedItems.length !== orderItems.length) {
+            console.log(`[ENRICH_PENDING] Merged ${orderItems.length} order-item line(s) into ${mergedItems.length} ASIN row(s) for order ${orderId}`);
+          }
+
+          for (let i = 0; i < mergedItems.length; i++) {
+            const item = mergedItems[i];
             resolvedAsins.add(item.asin);
             const hasOrderItemPrice = typeof item.itemPrice === 'number' && Number.isFinite(item.itemPrice) && item.itemPrice > 0;
             const itemUnitPrice = hasOrderItemPrice ? Number(item.itemPrice) : null;
@@ -735,10 +787,15 @@ serve(async (req) => {
                 updatePayload.needs_price_enrich = false;
               }
 
-              await supabase
+              const { error: updateErr } = await supabase
                 .from('sales_orders')
                 .update(updatePayload)
                 .eq('id', stuckRows[i].id);
+
+              if (updateErr) {
+                console.error(`[ENRICH_PENDING] ✗ Update failed for ASIN ${item.asin} order ${orderId}: ${updateErr.message}`);
+                continue;
+              }
               
               console.log(`[ENRICH_PENDING] ✓ Updated PENDING row to ASIN ${item.asin} for order ${orderId}${itemUnitPrice !== null ? ` (price ${itemUnitPrice})` : ''}`);
             } else {
@@ -769,9 +826,19 @@ serve(async (req) => {
                   insertPayload.needs_price_enrich = false;
                 }
 
-                await supabase
+                // upsert, not insert. Merging above removes the same-run
+                // collision; this covers the cross-run one, where an earlier
+                // pass -- or sync-sales-orders -- already created the row for
+                // this ASIN. Conflict target is the index that was actually
+                // being violated, not a plausible-looking other one.
+                const { error: insertErr } = await supabase
                   .from('sales_orders')
-                  .insert(insertPayload);
+                  .upsert(insertPayload, { onConflict: 'user_id,order_id,asin' });
+
+                if (insertErr) {
+                  console.error(`[ENRICH_PENDING] ✗ Insert failed for ASIN ${item.asin} order ${orderId}: ${insertErr.message}`);
+                  continue;
+                }
                 
                 console.log(`[ENRICH_PENDING] ✓ Inserted new row for ASIN ${item.asin} order ${orderId}${itemUnitPrice !== null ? ` (price ${itemUnitPrice})` : ''}`);
               }
@@ -779,8 +846,8 @@ serve(async (req) => {
           }
 
           // If we had more PENDING rows than items, delete the extras
-          if (stuckRows.length > orderItems.length) {
-            for (let i = orderItems.length; i < stuckRows.length; i++) {
+          if (stuckRows.length > mergedItems.length) {
+            for (let i = mergedItems.length; i < stuckRows.length; i++) {
               await supabase
                 .from('sales_orders')
                 .delete()
@@ -822,7 +889,7 @@ serve(async (req) => {
           await supabase.from('enrichment_logs').insert({
             user_id: userIdToProcess,
             order_id: orderId,
-            asin: orderItems.map(i => i.asin).join(','),
+            asin: mergedItems.map(i => i.asin).join(','),
             enrichment_type: 'pending_asin_backfill',
             source: 'enrich-pending-orders',
             status: 'success',
