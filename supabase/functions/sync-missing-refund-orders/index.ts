@@ -320,10 +320,24 @@ serve(async (req) => {
             }
           }
 
-          // Insert the order
+          // ON CONFLICT DO NOTHING, deliberately -- not DO UPDATE like the four
+          // other refund write sites fixed this week.
+          //
+          // Those upsert a fully-enriched payload, so overwriting on conflict is
+          // an upgrade. This one is not: it is a minimal stub with referral, FBA
+          // and closing fees hard-coded to 0, written only when the pre-check
+          // above found no row for this order at all. The single way to reach it
+          // with a row already present is a race against a concurrent sync -- and
+          // in that race the other writer holds the better data. DO UPDATE here
+          // would overwrite real fees with zeros, which is a worse outcome than
+          // the duplicate-key error it replaces.
+          //
+          // ignoreDuplicates therefore preserves exactly what the error already
+          // achieved -- the existing row is left alone -- minus the Postgres log
+          // line, which is the entire point of the change.
           const { error: insertError } = await supabase
             .from('sales_orders')
-            .insert({
+            .upsert({
               user_id: user.id,
               order_id: orderId,
               asin,
@@ -339,7 +353,7 @@ serve(async (req) => {
               fba_fee: 0,
               closing_fee: 0,
               total_fees: 0,
-            });
+            }, { onConflict: 'user_id,order_id,asin', ignoreDuplicates: true });
 
           if (insertError) {
             console.log(`[SYNC_MISSING] Failed to insert order ${orderId}: ${insertError.message}`);
