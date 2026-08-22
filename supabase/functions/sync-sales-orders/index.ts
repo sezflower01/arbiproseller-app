@@ -607,7 +607,13 @@ async function syncRefundRowsFromFinancialEventsCache(
   }
 
   for (const chunk of chunkArray(newPayloads, 250)) {
-    const { error } = await supabase.from('sales_orders').upsert(chunk, { onConflict: 'user_id,fec_refund_key' });
+    // Conflict on (user_id, order_id, asin), not fec_refund_key. sales_orders
+    // carries BOTH unique constraints and ON CONFLICT guards only one; a refund
+    // arriving with a different key does not conflict here, attempts a fresh
+    // INSERT, and violates the asin index instead. See fetch-live-refunds
+    // (commit 6a43a19) -- same defect, same reasoning, this is the second and
+    // third instance of it.
+    const { error } = await supabase.from('sales_orders').upsert(chunk, { onConflict: 'user_id,order_id,asin' });
     if (error) throw new Error(`Refund bulk insert failed: ${error.message}`);
     refundsCreated += chunk.length;
     processed += chunk.length;
@@ -2427,7 +2433,9 @@ async function handleSyncRequest(req: Request): Promise<Response> {
                     order_date: ptDate,
                     status: 'pending',
                     fec_refund_key: fecRefundKey,
-                  }, { onConflict: 'user_id,fec_refund_key' });
+                    // See the note on the bulk refund upsert above: the asin
+                    // index is the constraint that actually gets violated.
+                  }, { onConflict: 'user_id,order_id,asin' });
                 if (!upsertErr) {
                   totalRefundsCreated++;
                 } else {
