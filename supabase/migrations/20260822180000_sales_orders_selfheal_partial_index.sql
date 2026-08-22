@@ -1,5 +1,11 @@
--- Index for self-heal-pending-prices -> repairUser(), which runs hourly and
--- was appearing in the logs as "canceling statement due to statement timeout".
+-- Index for self-heal-pending-prices -> repairUser(), which appears in the logs
+-- as "canceling statement due to statement timeout".
+--
+-- Cadence, verified rather than assumed: pg_cron jobid 99,
+-- 'self-heal-pending-prices-15m', schedule '*/15 * * * *', active. So it runs
+-- FOUR times an hour, not once. Note it is scheduled directly in the database
+-- and not by any migration -- nothing in this repo schedules or invokes the
+-- function, so the commit log cannot tell you when it runs. cron.job can.
 --
 -- ⚠️ THE TIMEOUTS WERE NOT THIS QUERY'S FAULT. Measured warm it ran in 66.8ms.
 -- It shows up in the timeout log as a VICTIM of the connection contention
@@ -7,7 +13,11 @@
 -- capture_system_load and net.http_post appear there at ~45-64s with nothing
 -- slow inside them. This index is a genuine efficiency fix that removes one
 -- contributor to that pressure. It is NOT the fix for the timeouts, and if the
--- hourly timeout lines continue, that is expected and not a regression here.
+-- timeout lines continue, that is expected and not a regression here.
+--
+-- The cadences do not even match: this job fires every 15 minutes while the
+-- timeouts recur roughly hourly. A cause would have to fire at least as often
+-- as its effect, which is further evidence this query is a victim.
 --
 -- WHY THIS SHAPE, AFTER TWO WRONG ONES
 -- ------------------------------------
@@ -62,7 +72,8 @@
 -- not materially worse than the custom plans, and here it is far worse, so it
 -- should keep replanning. The authoritative check is not a prepared-statement
 -- experiment but pg_stat_user_indexes.idx_scan on this index after a real
--- hourly cycle -- if the live caller is using it, idx_scan climbs.
+-- cycle -- if the live caller is using it, idx_scan climbs. At */15 that is a
+-- 15-minute wait, not an hour.
 
 CREATE INDEX IF NOT EXISTS idx_sales_orders_selfheal_partial
   ON public.sales_orders
