@@ -123,7 +123,9 @@ function formatDisqualifiedReason(raw: string | null): string {
 
 
 /**
- * Delete queued listings whose TITLE matches the user's own excluded words.
+ * Delete queued listings matching the user's own excluded title words OR
+ * excluded brands. Both are the user's own rules, as opposed to Amazon's
+ * restricted/needs-approval state, which changes and is never deleted here.
  *
  * The same sweep exists on the Excluded Title Words card in the settings
  * column, and that is the wrong place to need it. You notice a listing you do
@@ -150,7 +152,7 @@ function DeleteMatchingExcludedWords({ onDone }: { onDone: () => void }) {
     setRunning(true);
     try {
       const { data, error } = await supabase.functions.invoke("apply-title-exclusions", {
-        body: { dryRun, mode: "delete" },
+        body: { dryRun, mode: "delete", kinds: ["title_keyword", "brand"] },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
@@ -181,7 +183,7 @@ function DeleteMatchingExcludedWords({ onDone }: { onDone: () => void }) {
         onClick={() => run(true)}
       >
         {running && !open ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
-        Matching your excluded words
+        Matching your excluded words or brands
       </Button>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
@@ -190,19 +192,19 @@ function DeleteMatchingExcludedWords({ onDone }: { onDone: () => void }) {
             <AlertDialogTitle>
               {preview?.matched
                 ? `Delete ${preview.matched.toLocaleString()} queued listing${preview.matched === 1 ? "" : "s"}?`
-                : "Nothing matches your excluded words"}
+                : "Nothing matches your excluded words or brands"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {preview?.matched ? (
                 <>
-                  These queued listings contain one of your excluded title words. Deleting is
+                  These queued listings match one of your excluded title words or excluded brands. Deleting is
                   permanent: they are not re-detected on the next seller check, and they do not
                   come back if you later remove the word that matched them. Finished results on
                   the Done tab are not affected.
                 </>
               ) : (
                 <>
-                  No queued listing contains any of your excluded title words, so there is nothing
+                  No queued listing matches any of your excluded title words or brands, so there is nothing
                   to delete.
                 </>
               )}

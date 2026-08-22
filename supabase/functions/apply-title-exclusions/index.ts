@@ -69,23 +69,61 @@ Deno.serve(async (req) => {
     // path opt-in, and the dryRun preview in front of it is the safeguard.
     const mode: 'mark' | 'delete' = body?.mode === 'delete' ? 'delete' : 'mark';
 
+    // Which of the user's own rules to apply. Defaults to title_keyword ALONE
+    // so the Excluded Title Words card, which has always called this endpoint
+    // with no `kinds`, keeps doing exactly what its label promises. A card
+    // about words must not silently start deleting on brand rules.
+    //
+    // The queue-side button passes both, because from there the user is
+    // clearing listings they do not want, not administering one rule list.
+    const requested: string[] = Array.isArray(body?.kinds) && body.kinds.length
+      ? body.kinds.map((k: unknown) => String(k))
+      : ['title_keyword'];
+    const kinds = requested.filter((k) => k === 'title_keyword' || k === 'brand');
+    if (!kinds.length) return json({ error: 'kinds must include title_keyword and/or brand' }, 400);
+
     const { data: termRows, error: termErr } = await admin
       .from('source_excluded_terms')
-      .select('value, label')
+      .select('kind, value, label')
       .eq('user_id', user.id)
-      .eq('kind', 'title_keyword');
+      .in('kind', kinds);
     if (termErr) return json({ error: termErr.message }, 500);
 
     // `label` is what the user typed and is what the reason should name; `value`
     // is the normalised form. The matcher normalises either way, so preferring
     // the label costs nothing and keeps the stored reason readable.
-    const terms = (termRows ?? []).map((t) => String(t.label || t.value)).filter(Boolean);
+    const rows_ = (termRows ?? []) as Array<{ kind: string; value: string; label?: string }>;
+    const terms = rows_
+      .filter((t) => t.kind === 'title_keyword')
+      .map((t) => String(t.label || t.value))
+      .filter(Boolean);
+
+    // Brands are matched EXACTLY, never as a substring -- "Generic" excludes
+    // "Generic" and not "Generic Electric". Built from `value` (the normalised
+    // form) rather than `label`, and compared against the row's brand lowercased
+    // and trimmed. That mirrors qualifyListing byte for byte:
+    //
+    //     const brand = (input.brand || '').trim().toLowerCase();
+    //     if (brand && brands.has(brand)) ...
+    //
+    // Deliberately NOT "improved" by lowercasing the set here. A sweep that
+    // matched more than detection does would delete listings the live rule
+    // would have kept, and the two must agree.
+    const brandSet = new Set(
+      rows_.filter((t) => t.kind === 'brand').map((t) => String(t.value)).filter(Boolean),
+    );
+
     // No rules is a valid state, not an error, and must be a no-op that touches
     // no rows at all.
-    if (!terms.length) return json({ scanned: 0, matched: 0, updated: 0, deleted: 0, byTerm: {}, dryRun, mode });
+    if (!terms.length && !brandSet.size) {
+      return json({ scanned: 0, matched: 0, updated: 0, deleted: 0, byTerm: {}, dryRun, mode, kinds });
+    }
 
     let scanned = 0;
-    const matches: Array<{ id: string; term: string }> = [];
+    // `reason` is the full stored verdict (excluded_brand:x / excluded_title:y)
+    // so mark mode writes exactly what detection would have written, and the
+    // per-term breakdown the UI shows names the rule that actually fired.
+    const matches: Array<{ id: string; term: string; reason: string }> = [];
     const byTerm: Record<string, number> = {};
 
     // Only rows still counted as qualified can change. A row already excluded
@@ -94,7 +132,7 @@ Deno.serve(async (req) => {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await admin
         .from('seller_watch_new_listings')
-        .select('id, title')
+        .select('id, title, brand')
         .eq('user_id', user.id)
         .eq('qualified', true)
         .order('detected_at', { ascending: true })
@@ -103,10 +141,18 @@ Deno.serve(async (req) => {
       if (!data?.length) break;
 
       scanned += data.length;
-      for (const row of data as Array<{ id: string; title: string | null }>) {
-        const term = findExcludedTitleTerm(row.title, terms);
+      for (const row of data as Array<{ id: string; title: string | null; brand: string | null }>) {
+        // Brand BEFORE title, matching qualifyListing's own order, so a listing
+        // tripping both is recorded under the same rule detection would name.
+        const brand = (row.brand || '').trim().toLowerCase();
+        if (brand && brandSet.has(brand)) {
+          matches.push({ id: row.id, term: brand, reason: `excluded_brand:${brand}` });
+          byTerm[brand] = (byTerm[brand] ?? 0) + 1;
+          continue;
+        }
+        const term = terms.length ? findExcludedTitleTerm(row.title, terms) : null;
         if (term) {
-          matches.push({ id: row.id, term });
+          matches.push({ id: row.id, term, reason: `excluded_title:${term}` });
           byTerm[term] = (byTerm[term] ?? 0) + 1;
         }
       }
@@ -114,7 +160,7 @@ Deno.serve(async (req) => {
     }
 
     if (dryRun) {
-      return json({ scanned, matched: matches.length, updated: 0, deleted: 0, byTerm, dryRun: true, mode });
+      return json({ scanned, matched: matches.length, updated: 0, deleted: 0, byTerm, dryRun: true, mode, kinds });
     }
 
     // Grouped by term so each write carries the reason that actually fired
@@ -123,11 +169,11 @@ Deno.serve(async (req) => {
     let updated = 0;
     const groups = new Map<string, string[]>();
     for (const m of matches) {
-      const list = groups.get(m.term) ?? [];
+      const list = groups.get(m.reason) ?? [];
       list.push(m.id);
-      groups.set(m.term, list);
+      groups.set(m.reason, list);
     }
-    for (const [term, ids] of groups) {
+    for (const [reason, ids] of groups) {
       for (let i = 0; i < ids.length; i += 500) {
         const chunk = ids.slice(i, i + 500);
         // user_id is repeated on the write even though the ids came from a
@@ -142,7 +188,7 @@ Deno.serve(async (req) => {
               .in('id', chunk)
           : await admin
               .from('seller_watch_new_listings')
-              .update({ qualified: false, disqualified_reason: `excluded_title:${term}` })
+              .update({ qualified: false, disqualified_reason: reason })
               .eq('user_id', user.id)
               .in('id', chunk);
         if (error) return json({ error: error.message, updated, mode }, 500);
@@ -151,7 +197,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[apply-title-exclusions] user=${user.id} mode=${mode} scanned=${scanned} affected=${updated}`,
+      `[apply-title-exclusions] user=${user.id} mode=${mode} kinds=${kinds.join(',')} scanned=${scanned} affected=${updated}`,
       JSON.stringify(byTerm),
     );
     return json({
@@ -162,6 +208,7 @@ Deno.serve(async (req) => {
       byTerm,
       dryRun: false,
       mode,
+      kinds,
     });
   } catch (e) {
     console.error('[apply-title-exclusions] failed', e);
