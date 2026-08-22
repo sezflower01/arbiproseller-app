@@ -58,6 +58,16 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const dryRun = body?.dryRun === true;
+    // 'mark' (default) flips qualified=false and stores the reason, leaving the
+    // row visible with an explanation. 'delete' removes it outright.
+    //
+    // DELETE IS PERMANENT IN A WAY THAT IS NOT OBVIOUS: detection compares each
+    // seller against a stored known-ASIN baseline, and that baseline is updated
+    // whether or not a listing row survives. So a deleted listing is never
+    // re-detected -- not on the next check, and not if the user later removes
+    // the very term that matched it. Defaulting to 'mark' keeps the destructive
+    // path opt-in, and the dryRun preview in front of it is the safeguard.
+    const mode: 'mark' | 'delete' = body?.mode === 'delete' ? 'delete' : 'mark';
 
     const { data: termRows, error: termErr } = await admin
       .from('source_excluded_terms')
@@ -72,7 +82,7 @@ Deno.serve(async (req) => {
     const terms = (termRows ?? []).map((t) => String(t.label || t.value)).filter(Boolean);
     // No rules is a valid state, not an error, and must be a no-op that touches
     // no rows at all.
-    if (!terms.length) return json({ scanned: 0, matched: 0, updated: 0, byTerm: {}, dryRun });
+    if (!terms.length) return json({ scanned: 0, matched: 0, updated: 0, deleted: 0, byTerm: {}, dryRun, mode });
 
     let scanned = 0;
     const matches: Array<{ id: string; term: string }> = [];
@@ -104,7 +114,7 @@ Deno.serve(async (req) => {
     }
 
     if (dryRun) {
-      return json({ scanned, matched: matches.length, updated: 0, byTerm, dryRun: true });
+      return json({ scanned, matched: matches.length, updated: 0, deleted: 0, byTerm, dryRun: true, mode });
     }
 
     // Grouped by term so each write carries the reason that actually fired
@@ -124,21 +134,35 @@ Deno.serve(async (req) => {
         // user-scoped read. Belt and braces on a service-role client, where a
         // future edit to the read is the only thing standing between this and
         // another account's rows.
-        const { error } = await admin
-          .from('seller_watch_new_listings')
-          .update({ qualified: false, disqualified_reason: `excluded_title:${term}` })
-          .eq('user_id', user.id)
-          .in('id', chunk);
-        if (error) return json({ error: error.message, updated }, 500);
+        const { error } = mode === 'delete'
+          ? await admin
+              .from('seller_watch_new_listings')
+              .delete()
+              .eq('user_id', user.id)
+              .in('id', chunk)
+          : await admin
+              .from('seller_watch_new_listings')
+              .update({ qualified: false, disqualified_reason: `excluded_title:${term}` })
+              .eq('user_id', user.id)
+              .in('id', chunk);
+        if (error) return json({ error: error.message, updated, mode }, 500);
         updated += chunk.length;
       }
     }
 
     console.log(
-      `[apply-title-exclusions] user=${user.id} scanned=${scanned} updated=${updated}`,
+      `[apply-title-exclusions] user=${user.id} mode=${mode} scanned=${scanned} affected=${updated}`,
       JSON.stringify(byTerm),
     );
-    return json({ scanned, matched: matches.length, updated, byTerm, dryRun: false });
+    return json({
+      scanned,
+      matched: matches.length,
+      updated: mode === 'mark' ? updated : 0,
+      deleted: mode === 'delete' ? updated : 0,
+      byTerm,
+      dryRun: false,
+      mode,
+    });
   } catch (e) {
     console.error('[apply-title-exclusions] failed', e);
     return json({ error: (e as Error).message }, 500);

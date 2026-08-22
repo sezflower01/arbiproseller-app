@@ -230,13 +230,16 @@ function ApplyToExisting({ termCount }: { termCount: number }) {
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<{ matched: number; byTerm: Record<string, number> } | null>(null);
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<{ n: number; mode: "mark" | "delete" } | null>(null);
 
-  const call = async (dryRun: boolean) => {
+  // The preview is shared by both outcomes on purpose: one count, one matcher,
+  // then a choice of what to do with it. Running a separate scan for "delete"
+  // would risk showing a number that no longer matches what gets removed.
+  const call = async (dryRun: boolean, mode: "mark" | "delete" = "mark") => {
     setRunning(true);
     try {
       const { data, error } = await supabase.functions.invoke("apply-title-exclusions", {
-        body: { dryRun },
+        body: { dryRun, mode },
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
@@ -244,11 +247,12 @@ function ApplyToExisting({ termCount }: { termCount: number }) {
         setPreview({ matched: data?.matched ?? 0, byTerm: data?.byTerm ?? {} });
         setDone(null);
       } else {
-        setDone(data?.updated ?? 0);
+        const n = mode === "delete" ? (data?.deleted ?? 0) : (data?.updated ?? 0);
+        setDone({ n, mode });
         setPreview(null);
         toast({
-          title: "Applied",
-          description: `${(data?.updated ?? 0).toLocaleString()} listing(s) excluded.`,
+          title: mode === "delete" ? "Deleted" : "Applied",
+          description: `${n.toLocaleString()} listing(s) ${mode === "delete" ? "deleted" : "excluded"}.`,
         });
       }
     } catch (e) {
@@ -282,7 +286,8 @@ function ApplyToExisting({ termCount }: { termCount: number }) {
         )}
         {done !== null && (
           <span className="text-xs text-muted-foreground">
-            {done.toLocaleString()} listing{done === 1 ? "" : "s"} excluded.
+            {done.n.toLocaleString()} listing{done.n === 1 ? "" : "s"}{" "}
+            {done.mode === "delete" ? "deleted." : "excluded."}
           </span>
         )}
       </div>
@@ -306,15 +311,41 @@ function ApplyToExisting({ termCount }: { termCount: number }) {
                   </Badge>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Button type="button" size="sm" disabled={running} onClick={() => call(false)}>
+              {/*
+                Two outcomes from one preview. "Exclude" keeps the row and
+                records WHY it was excluded, which is what makes "why is this
+                not being searched" answerable later. "Delete" removes it.
+
+                Delete is deliberately the second, destructive-styled button
+                rather than the default: detection compares each seller against
+                a stored known-ASIN baseline that updates regardless, so a
+                deleted listing is never seen again -- not on the next check,
+                and not if the matching word is later removed.
+              */}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" disabled={running} onClick={() => call(false, "mark")}>
                   {running ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
                   Exclude {preview.matched.toLocaleString()}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={running}
+                  onClick={() => call(false, "delete")}
+                >
+                  {running ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+                  Delete {preview.matched.toLocaleString()} permanently
                 </Button>
                 <Button type="button" size="sm" variant="ghost" disabled={running} onClick={() => setPreview(null)}>
                   Cancel
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Deleting removes these listings for good. They are not re-detected on the next
+                seller check, and they do not come back if you later remove the word that matched
+                them. Excluding keeps them, marked with the reason.
+              </p>
             </>
           )}
         </div>
