@@ -1,0 +1,85 @@
+-- Index for resolveTimeAnchoredPrice() in sync-sales-orders (enrich_by_asin).
+--
+-- This one is not a micro-optimisation. Measured live on 2026-08-22 it took
+-- 85,902 ms -- eighty-six seconds -- to return a single row, and it runs ONCE
+-- PER ORDER during enrichment. It is a genuine cause of the
+-- "canceling statement due to statement timeout" lines in the logs, not a
+-- victim of contention like the sales_orders self-heal query was.
+--
+-- WHY IT WAS SLOW, AND WHY IT LOOKED FINE
+-- ---------------------------------------
+-- The query is:
+--
+--   SELECT new_price, amazon_accepted_price FROM repricer_price_actions
+--   WHERE user_id = $1 AND asin = $2 AND marketplace = $3
+--     AND success = $4 AND created_at <= $5
+--   ORDER BY created_at DESC LIMIT 1
+--
+-- The planner chose idx_rpa_user_marketplace_created (user_id, marketplace,
+-- created_at), seeking to the anchor timestamp and walking BACKWARDS, applying
+-- `asin` as a filter on each heap row. Its cost estimate for the Limit was
+-- 161.31 against an inner-scan cost of 56,585 -- it assumed LIMIT 1 would let
+-- it stop almost immediately, having estimated ~352 matching rows spread
+-- through the range.
+--
+-- That assumption is correct for a HOT asin, which is repriced every few
+-- minutes and matches within a few hundred rows. It is catastrophic for a COLD
+-- one -- delisted, out of stock, or unassigned -- because the walk cannot stop
+-- until it reaches that asin's last action. Measured on B07VSNBTSH / MX, whose
+-- single action was 16 days old:
+--
+--   Rows Removed by Filter   253,843
+--   Buffers                  164,078 hit + 83,722 read  (~1.9 GB)
+--   Execution                85,902 ms
+--
+-- The time is almost entirely those 83,722 random disk reads. The planner has
+-- no way to distinguish a hot asin from a cold one here, so this is not a
+-- statistics problem that ANALYZE would fix -- the access path itself is wrong.
+--
+-- This also explains the intermittency. Most orders enrich in milliseconds; the
+-- occasional cold-asin order holds a connection for a minute and a half while
+-- doing 1.9 GB of I/O. That is more than enough to starve the pool and push
+-- unrelated statements past their own timeouts, which is very likely a driver
+-- of the cron congestion tracked as item 8 rather than a bystander in it.
+--
+-- WHY NOT THE INDEX THAT ALREADY EXISTS FOR THIS
+-- ----------------------------------------------
+-- idx_repricer_price_actions_lookup (added 2026-05-10) is:
+--
+--   ON repricer_price_actions (user_id, asin, marketplace, created_at DESC)
+--   WHERE success = true AND new_price IS NOT NULL
+--
+-- which looks purpose-built for this exact lookup and has almost certainly
+-- never served it. A partial index is only usable when its predicate is
+-- PROVABLY IMPLIED by the query's WHERE clause, and:
+--
+--   * `new_price IS NOT NULL` appears nowhere in the query. It selects
+--     new_price but never filters on it, so that conjunct can never be
+--     implied, under any plan. This alone is fatal.
+--   * `success = $4` is parameterised, so even the first conjunct cannot be
+--     proven under a generic plan.
+--
+-- Hence this index is deliberately NON-PARTIAL. Every condition is a real
+-- column, so nothing has to be proven about a parameter and the index works
+-- identically for PostgREST's parameterised calls and for hand-written SQL.
+-- The same lesson was learned an hour earlier on sales_orders, twice.
+--
+-- MEASURED AFTER, same query, same asin:
+--   Index Cond now carries all five conditions; the Filter line is gone.
+--   Rows Removed by Filter   253,843  ->  0
+--   Buffers                  247,800  ->  5
+--   Execution                85,902ms ->  3.139ms      (~27,000x)
+--
+-- STILL OPEN, deliberately not done here:
+--   1. idx_repricer_price_actions_lookup is unusable for this query and should
+--      be checked against pg_stat_user_indexes before being dropped -- another
+--      caller may filter on new_price and legitimately use it. Do not drop it
+--      on the reasoning above alone.
+--   2. resolveTimeAnchoredPrice ends with `|| 0`, so an order older than the
+--      prune-repricer-price-actions-nightly window resolves to a price of 0
+--      rather than to "unknown". Confirmed 2026-08-22: no successful actions
+--      survive beyond 30 days. That is a correctness issue in its own right.
+
+CREATE INDEX IF NOT EXISTS idx_rpa_time_anchor
+  ON public.repricer_price_actions
+     (user_id, asin, marketplace, success, created_at DESC);
