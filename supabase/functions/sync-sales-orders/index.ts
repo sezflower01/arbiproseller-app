@@ -9405,7 +9405,7 @@ async function processRefundEvent(
           status: 'refund',
           asin_source: asinSource,
           fec_refund_key: fecRefundKey,
-        }, { onConflict: 'user_id,fec_refund_key' });
+        }, { onConflict: 'user_id,order_id,asin' });
 
       if (!upsertError) {
         console.log(`💸 Created standalone refund ${fecRefundKey}: asin=${asin}, qty=${qty}, amount=$${itemRefundAmount.toFixed(2)}`);
@@ -9695,7 +9695,7 @@ async function applyRefundToOrder(
         order_date: ptDate,
         status: 'pending',
         fec_refund_key: fecRefundKey,
-      }, { onConflict: 'user_id,fec_refund_key' });
+      }, { onConflict: 'user_id,order_id,asin' });
 
     if (!upsertError) {
       console.log(`💸 Upserted refund record ${fecRefundKey}: asin=${asin}, amount=$${itemRefundAmount.toFixed(2)}`);
