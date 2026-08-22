@@ -79,6 +79,20 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
   /** true when the stored run never wrote finished_at, so the stamp is a start time. */
   const [lastBackfillIncomplete, setLastBackfillIncomplete] = useState(false);
   /**
+   * What the nightly repair job knows about each gap day.
+   *
+   * A gap is one of three things, and conflating them is what makes this banner
+   * either alarming or dishonest:
+   *   unknown    -- the job has not seen it yet; genuinely actionable now
+   *   pending    -- under the attempt cap; being retried nightly, no action needed
+   *   permanent  -- cap reached, Amazon never returned those rows; nothing to do
+   *
+   * Read-only and failure-tolerant on purpose: if order_gap_repair_attempts does
+   * not exist yet, every gap simply reads as `unknown` and the banner behaves
+   * exactly as it did before. A missing table must not blank the warning.
+   */
+  const [attemptsByDate, setAttemptsByDate] = useState<Map<string, { attempts: number; status: string }>>(new Map());
+  /**
    * Date range proven clear by a completed backfill, so the warning can hide
    * itself. Scoped to the repaired range on purpose: dismissing everything
    * would mask gaps on days the repair never touched.
@@ -106,6 +120,27 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
       // rather than claiming it never happened.
       setLastBackfillAt(finished ?? started ?? null);
       setLastBackfillIncomplete(!finished && !!started);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Hydrate the nightly job's verdict per gap day.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("order_gap_repair_attempts")
+        .select("check_date, attempts, status")
+        .eq("user_id", userId);
+      if (cancelled) return;
+      // Tolerate the table not existing: fall back to "unknown" for everything.
+      if (error || !data) { setAttemptsByDate(new Map()); return; }
+      const m = new Map<string, { attempts: number; status: string }>();
+      for (const r of data as Array<{ check_date: string; attempts: number; status: string }>) {
+        m.set(r.check_date, { attempts: r.attempts, status: r.status });
+      }
+      setAttemptsByDate(m);
     })();
     return () => { cancelled = true; };
   }, [userId]);
@@ -491,6 +526,18 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
       )
     : gaps;
   const hasGaps = outstandingGaps.length > 0;
+
+  // Split by what the nightly job has established. `permanent` days are still
+  // SHOWN -- they are a fact about the data, and hiding them would be the same
+  // mistake as the old copy that promised an auto-repair which did not exist.
+  // They just stop being presented as something to act on.
+  const permanentGaps = outstandingGaps.filter(
+    (g) => attemptsByDate.get(g.check_date)?.status === "permanent",
+  );
+  const activeGaps = outstandingGaps.filter(
+    (g) => attemptsByDate.get(g.check_date)?.status !== "permanent",
+  );
+  const allPermanent = hasGaps && activeGaps.length === 0;
   if (loading) return null;
 
   if (!hasGaps) {
@@ -542,11 +589,36 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
     );
   }
 
+  // Every gap here is settled: retried to the cap and still missing. One muted
+  // line, no button, no alert styling. Visible because the data really is
+  // incomplete and the reader should know; quiet because there is nothing to do.
+  if (allPermanent) {
+    const days = permanentGaps.map((g) => g.check_date).join(", ");
+    const missing = permanentGaps.reduce(
+      (acc, g) => acc + Math.max(0, g.fec_count - g.so_count),
+      0,
+    );
+    return (
+      <div className="mb-4 flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+        <Clock className="h-3 w-3 mt-0.5 shrink-0" />
+        <span>
+          <strong className="font-medium">Known data gap, permanent.</strong>{" "}
+          Amazon's Orders API never returned placement rows for {days}
+          {missing > 0 && <> ({missing} shipment{missing === 1 ? "" : "s"})</>}. Retried
+          automatically and still missing, so it is not being retried again. Profit &amp; Loss
+          above is unaffected — it reports settled revenue from Financial Events. Only the
+          Live Sales chart, which counts by placement date, shows these days as zero.
+        </span>
+      </div>
+    );
+  }
+
   const totalMissingShipments = outstandingGaps.reduce(
     (acc, g) => acc + Math.max(0, g.fec_count - g.so_count),
     0
   );
-  const dateList = outstandingGaps.map((g) => g.check_date).join(", ");
+  const dateList = activeGaps.map((g) => g.check_date).join(", ");
+  const permanentList = permanentGaps.map((g) => g.check_date).join(", ");
 
   return (
     <Alert className="mb-4 border-yellow-500/50 bg-yellow-500/5">
@@ -567,6 +639,18 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
           <strong>{dateList}</strong> because the Orders API never returned the
           original placement rows for those days.
         </p>
+
+        {/* Mixed case: some days still being retried, others already given up
+            on. The settled ones are named rather than folded into the count --
+            "4 gaps" reads as four fixable problems when two of them are simply
+            facts about the data. */}
+        {permanentList && (
+          <p className="text-[11px] text-muted-foreground">
+            Also permanently missing, retried to the limit and not retried again:{" "}
+            <strong>{permanentList}</strong>. Profit &amp; Loss is unaffected; only the
+            Live Sales placement counts show these as zero.
+          </p>
+        )}
 
         {placementRange && (
           <p className="text-sm flex items-start gap-1.5">
@@ -595,16 +679,25 @@ export default function SoFecParityBanner({ userId, startDate, endDate }: Props)
             )}
             {repairing ? "Backfilling…" : "Backfill missing orders now"}
           </Button>
-          {/* The line here used to read "Auto-repair also runs nightly at 04:30
-              UTC." It was false twice over: the 04:30 migration schedules
-              nightly-ghost-cleanup, which contains no parity or order-backfill
-              code, and that job is not present in cron.job at all. Checked
-              2026-08-20 against the live scheduler. Nothing repairs these gaps
-              automatically -- this button is the only thing that does, so
-              promising otherwise invited people to wait for a fix that was
-              never coming. */}
+          {/* HISTORY, because this line has been wrong before. It once read
+              "Auto-repair also runs nightly at 04:30 UTC", which was false
+              twice over: the 04:30 migration schedules nightly-ghost-cleanup,
+              which contains no parity or backfill code, and that job was not in
+              cron.job at all. It was replaced 2026-08-20 with "nothing repairs
+              these automatically", which was true at the time.
+
+              As of 2026-08-22 it is automated for real: backfill-order-gaps
+              runs daily (cron jobid 164, 05:37 UTC), retries each gap day up to
+              3 times, then marks it permanent and stops. Verified against the
+              live scheduler, not assumed -- that is the whole reason the
+              previous version of this sentence was wrong.
+
+              The button stays: it repairs NOW rather than tonight, and Amazon
+              occasionally backfills its own history, so a manual retry on a day
+              the job gave up on is still worth offering. */}
           <span className="text-[11px] text-muted-foreground">
-            Nothing repairs these gaps automatically — run this when you see one.
+            Retried automatically each night (up to 3 attempts, then left alone). Use this to
+            repair now rather than waiting.
           </span>
         </div>
 
