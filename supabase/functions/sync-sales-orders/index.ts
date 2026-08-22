@@ -2654,12 +2654,30 @@ async function handleSyncRequest(req: Request): Promise<Response> {
         const refundOrderId = `${orderId}-REFUND`;
         const ptDate = getPacificDateString(event.PostedDate || new Date().toISOString());
         
-        const { data: existingRefund } = await supabase
+        // ⚠️ NOT .maybeSingle(). PostgREST returns an ERROR, not a row, when more
+        // than one row matches -- and an order refunded across two ASINs has two
+        // -REFUND rows, because sales_orders is uniquely indexed on
+        // (user_id, order_id, asin) and refunds are stored per ASIN.
+        //
+        // With .maybeSingle() that error was never destructured, so `data` came
+        // back null, this code concluded "no refund row exists", fell through to
+        // the INSERT below, and violated the very index that guaranteed the
+        // second row existed. Not once -- every run, forever, because nothing
+        // about the situation ever changed. Logged 2026-08-22 on
+        // 111-2004018-7122615-REFUND / B016Q4DMDA, roughly every ten minutes for
+        // as long as the event stayed inside the Financial Events window.
+        //
+        // Taking [0] preserves the single-row behaviour exactly; the point of
+        // the change is that a multi-ASIN refund no longer reads as "missing".
+        const { data: existingRefundRows, error: existingRefundErr } = await supabase
           .from('sales_orders')
           .select('id, asin, refund_amount')
           .eq('user_id', userId)
-          .eq('order_id', refundOrderId)
-          .maybeSingle();
+          .eq('order_id', refundOrderId);
+        if (existingRefundErr) {
+          console.error(`REFUND_LOOKUP_ERROR ${refundOrderId}: ${existingRefundErr.message}`);
+        }
+        const existingRefund = (existingRefundRows || [])[0] ?? null;
         
         let totalRefundAmount = 0;
         let totalRefundQty = 0;
@@ -2693,12 +2711,17 @@ async function handleSyncRequest(req: Request): Promise<Response> {
           let title: string | null = null;
           let imageUrl: string | null = null;
           
-          const { data: originalOrder } = await supabase
+          // Same trap as above: a multi-ASIN order matches several rows, so
+          // .maybeSingle() errored and left asin as the 'UNKNOWN' placeholder.
+          // There is no single right ASIN for a multi-item order here, but the
+          // first real one beats a placeholder that has to be repaired later.
+          const { data: originalOrderRows } = await supabase
             .from('sales_orders')
             .select('asin, title, image_url')
             .eq('user_id', userId)
             .eq('order_id', orderId)
-            .maybeSingle();
+            .limit(20);
+          const originalOrder = (originalOrderRows || [])[0] ?? null;
           
           if (originalOrder) {
             asin = originalOrder.asin || 'UNKNOWN';
@@ -2706,9 +2729,12 @@ async function handleSyncRequest(req: Request): Promise<Response> {
             imageUrl = originalOrder.image_url;
           }
           
-          await supabase
+          // upsert on the index that was actually being violated, and capture
+          // the error -- this call swallowed it entirely, so the only evidence
+          // the write had failed was in the Postgres log.
+          const { error: refundInsertErr } = await supabase
             .from('sales_orders')
-            .insert({
+            .upsert({
               user_id: userId,
               order_id: refundOrderId,
               asin,
@@ -2725,8 +2751,12 @@ async function handleSyncRequest(req: Request): Promise<Response> {
               refund_amount: totalRefundAmount,
               order_date: ptDate,
               status: 'pending',
-            });
-          createdCount++;
+            }, { onConflict: 'user_id,order_id,asin' });
+          if (refundInsertErr) {
+            console.error(`REFUND_INSERT_ERROR ${refundOrderId} / ${asin}: ${refundInsertErr.message}`);
+          } else {
+            createdCount++;
+          }
         }
       }
       
