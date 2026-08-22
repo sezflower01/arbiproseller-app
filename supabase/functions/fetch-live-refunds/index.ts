@@ -1499,7 +1499,29 @@ serve(async (req) => {
         });
       });
 
-      // Upsert on fec_refund_key so the same refund event never creates a new row.
+      // Conflict on (user_id, order_id, asin), NOT on fec_refund_key.
+      //
+      // sales_orders carries TWO unique constraints:
+      //   sales_orders_user_order_asin_idx      (user_id, order_id, asin)
+      //   sales_orders_user_fec_refund_key_key  (user_id, fec_refund_key)
+      //
+      // ON CONFLICT protects exactly one of them. Targeting fec_refund_key meant
+      // that a refund arriving with a DIFFERENT key -- this writer derives the
+      // date as postedDate.split('T')[0] while sync-sales-orders uses the
+      // financial event's own event_date, and the two disagree across a
+      // timezone boundary -- did not conflict, attempted a fresh INSERT, and
+      // violated the asin index instead. Observed 2026-08-22 on
+      // 111-2004018-7122615-REFUND / B016Q4DMDA, erroring in pairs every ~10
+      // minutes as both writers retried.
+      //
+      // Not visible before 2026-08-21: the row previously failed earlier, on
+      // total_sale_amount NOT NULL, and never reached this constraint. Fixing
+      // that surfaced this one underneath.
+      //
+      // (user_id, order_id, asin) is the binding constraint anyway. Two partial
+      // refunds on one order+asin could never coexist as separate rows no matter
+      // what fec_refund_key said, so conflicting here and letting the latest
+      // event update the row is the only behaviour the schema actually allows.
       //
       // The failure is REPORTED, not counted as success. This previously read
       // `if (!upsertErr) insertedCount++` and then logged the remainder as
@@ -1512,7 +1534,7 @@ serve(async (req) => {
       for (const row of refundRows) {
         const { error: upsertErr } = await supabase
           .from('sales_orders')
-          .upsert(row, { onConflict: 'user_id,fec_refund_key' });
+          .upsert(row, { onConflict: 'user_id,order_id,asin' });
         if (upsertErr) {
           failedCount++;
           console.error(
