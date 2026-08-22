@@ -215,3 +215,51 @@ Deno.test("the user's title rule still fires on a listing with no UPC", () => {
   const r = qualifyListing({ productGroup: 'Toy', title: 'Pokémon TCG', excludedTitleTerms: ['pokemon'] });
   assertEquals(r.reason, 'excluded_title:pokemon');
 });
+
+// --- brand case-folding ------------------------------------------------------
+// Added 2026-08-22 after brand exclusions were found to have never matched: the
+// UI stores what the user typed ("Generic"), the matcher lowercased only the
+// listing's brand, and a user list REPLACES the lowercase built-in defaults.
+
+Deno.test('a user brand rule matches regardless of the case it was typed in', () => {
+  const brands = new Set(['Generic', 'DREAMUS', 'K-POP']);
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', brand: 'Generic', excludedBrands: brands }).reason,
+    'excluded_brand:generic',
+  );
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', brand: 'dreamus', excludedBrands: brands }).reason,
+    'excluded_brand:dreamus',
+  );
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', brand: 'K-Pop', excludedBrands: brands }).reason,
+    'excluded_brand:k-pop',
+  );
+});
+
+Deno.test('brand matching is still EXACT, not substring, after folding', () => {
+  const brands = new Set(['Generic']);
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', salesRank: 100, brand: 'Generic Electric', excludedBrands: brands }).qualified,
+    true,
+  );
+});
+
+Deno.test('surrounding whitespace in a stored brand rule does not defeat it', () => {
+  const brands = new Set(['  Generic  ']);
+  assertEquals(
+    qualifyListing({ productGroup: 'Toy', brand: 'generic', excludedBrands: brands }).reason,
+    'excluded_brand:generic',
+  );
+});
+
+Deno.test('the built-in defaults still apply when the user has no brand rules', () => {
+  assertEquals(qualifyListing({ productGroup: 'Toy', brand: 'Unbranded' }).reason, 'excluded_brand:unbranded');
+});
+
+Deno.test('category rules fold the same way', () => {
+  assertEquals(
+    qualifyListing({ productGroup: 'Book', excludedGroups: new Set(['Book']) }).reason,
+    'excluded_group:book',
+  );
+});

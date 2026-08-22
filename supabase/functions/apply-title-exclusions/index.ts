@@ -106,11 +106,16 @@ Deno.serve(async (req) => {
     //     const brand = (input.brand || '').trim().toLowerCase();
     //     if (brand && brands.has(brand)) ...
     //
-    // Deliberately NOT "improved" by lowercasing the set here. A sweep that
-    // matched more than detection does would delete listings the live rule
-    // would have kept, and the two must agree.
+    // Case-folded, exactly as qualifyListing now folds it. The point is still
+    // that the sweep and detection must agree -- when this was written they
+    // agreed on being broken, because the UI stores brands verbatim ("Generic")
+    // while the matcher lowercases only the listing's brand. Folding both sides
+    // is what makes them agree on being right.
     const brandSet = new Set(
-      rows_.filter((t) => t.kind === 'brand').map((t) => String(t.value)).filter(Boolean),
+      rows_
+        .filter((t) => t.kind === 'brand')
+        .map((t) => String(t.value).trim().toLowerCase())
+        .filter(Boolean),
     );
 
     // No rules is a valid state, not an error, and must be a no-op that touches

@@ -114,6 +114,44 @@ export const EXCLUDED_BRANDS = new Set([
  */
 export const MAX_SALES_RANK = 500_000;
 
+
+/**
+ * Case-fold a caller-supplied exclusion set, cached per Set instance.
+ *
+ * ⚠️ THIS EXISTS BECAUSE BRAND EXCLUSIONS SILENTLY DID NOTHING.
+ *
+ * The UI stores what the user typed, verbatim -- `value: v, label: v`, no
+ * normalisation -- so a list reads "Generic", "DREAMUS", "K-POP". The check
+ * below lowercases only the LISTING's brand, so `has("generic")` never matched
+ * `"Generic"`. Measured 2026-08-22: 37 of one user's 38 brand rules were inert;
+ * the single exception was "ofra", which happens to be lowercase.
+ *
+ * Worse than inert. A user list REPLACES the built-in defaults rather than
+ * extending them, so "generic"/"unbranded"/"unknown" were being excluded
+ * correctly until the user added their first brand rule -- after which brand
+ * filtering stopped entirely, with nothing to indicate it. Exactly the failure
+ * the empty-set guard in check-seller-watchlist was written to prevent, one
+ * case-fold further down.
+ *
+ * Fixed HERE rather than at the two construction sites, or by migrating stored
+ * values, so that every caller present and future is covered by one change and
+ * no data has to be rewritten to make existing rules start working.
+ *
+ * The WeakMap keys on the Set itself: callers build these once per sweep and
+ * pass the same instance for every listing, so the fold happens once rather
+ * than per row, and the entry is collected with the set.
+ */
+const FOLDED = new WeakMap<ReadonlySet<string>, ReadonlySet<string>>();
+
+function folded(raw: ReadonlySet<string>): ReadonlySet<string> {
+  const hit = FOLDED.get(raw);
+  if (hit) return hit;
+  const out = new Set<string>();
+  for (const v of raw) out.add(String(v).trim().toLowerCase());
+  FOLDED.set(raw, out);
+  return out;
+}
+
 export function qualifyListing(input: QualificationInput): QualificationResult {
   // Checked FIRST and unconditionally. A restricted ASIN cannot be sold at
   // any price, so no other property can redeem it -- and reporting
@@ -135,7 +173,7 @@ export function qualifyListing(input: QualificationInput): QualificationResult {
   // queue. Same principle as the rank ceiling only applying when a rank exists.
 
   const group = (input.productGroup || '').trim().toLowerCase();
-  const groups = input.excludedGroups ?? EXCLUDED_PRODUCT_GROUPS;
+  const groups = folded(input.excludedGroups ?? EXCLUDED_PRODUCT_GROUPS);
   if (group && groups.has(group)) {
     return { qualified: false, reason: `excluded_group:${group}` };
   }
@@ -151,7 +189,8 @@ export function qualifyListing(input: QualificationInput): QualificationResult {
   // the nulls were a lookup-coverage artefact, not a property of the product.
   // Same principle as the rank ceiling only applying when a rank exists.
   const brand = (input.brand || '').trim().toLowerCase();
-  const brands = input.excludedBrands ?? EXCLUDED_BRANDS;
+  // folded(): the stored list is whatever the user typed. See the note above.
+  const brands = folded(input.excludedBrands ?? EXCLUDED_BRANDS);
   if (brand && brands.has(brand)) {
     return { qualified: false, reason: `excluded_brand:${brand}` };
   }
